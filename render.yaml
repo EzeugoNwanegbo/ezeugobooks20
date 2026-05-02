@@ -11,5 +11,9 @@ services:
         value: 22
       - key: VITE_SUPABASE_URL
         sync: false
-      - key: VITE_SUPABASE_ANON_KEY
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
         sync: false
