@@ -4,7 +4,7 @@ import { extname, join, normalize, resolve } from "node:path";
 import { Readable } from "node:stream";
 import app from "./dist/server/server.js";
 
-const port = Number(process.env.PORT || 10000);
+const port = Number(process.env.PORT || 3000);
 const host = process.env.HOST || "0.0.0.0";
 const clientDir = resolve("dist/client");
 
