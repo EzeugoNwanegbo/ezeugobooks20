@@ -170,7 +170,7 @@ function LibraryPage() {
 
       // Text-only mode: we don't upload the original PDF to storage (saves
       // bandwidth and bypasses the 50 MB Supabase storage default limit for
-      // huge textbooks). storage_path is a virtual marker.
+      // huge course materials). storage_path is a virtual marker.
       const path = `text-only/${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
 
       setProgress("Suggesting folder...");

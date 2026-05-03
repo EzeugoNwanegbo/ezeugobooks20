@@ -3,11 +3,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "G&D - quiet intelligence for medical study" },
+      { title: "G&D - quiet intelligence for focused study" },
       {
         name: "description",
         content:
-          "A restrained, document-aware medical study interface for reading, questioning, and remembering your own notes.",
+          "A restrained, document-aware study interface for reading, questioning, and remembering your own notes.",
       },
     ],
   }),
@@ -18,7 +18,7 @@ const cards = [
   {
     label: "01 / Library",
     title: "Your files stay close to the answer.",
-    body: "Choose the exact PDF, note, or textbook chapter you want to study. If you do not choose, the library quietly selects the closest source.",
+    body: "Choose the exact PDF, note, slide deck, or chapter you want to study. If you do not choose, the library quietly selects the closest source.",
   },
   {
     label: "02 / Retrieval",
@@ -28,7 +28,7 @@ const cards = [
   {
     label: "03 / Tutor",
     title: "Depth when needed, restraint when not.",
-    body: "Move between simplified explanation, clinical detail, and story-led memory without losing the source trail beneath the answer.",
+    body: "Move between simplified explanation, deeper analysis, and story-led memory without losing the source trail beneath the answer.",
   },
 ];
 
@@ -48,11 +48,11 @@ function Landing() {
       <section className="luxury-hero" id="method">
         <p className="luxury-eyebrow">Document-aware study system</p>
         <h1>
-          Medicine feels clearer when the textbook <em>breathes back</em>.
+          Any subject feels clearer when your notes <em>answer back</em>.
         </h1>
         <p className="luxury-copy">
           Upload notes, choose the file in front of you, and let the interface pull the right
-          passage before the AI explains. Quiet, source-led, and built for serious study.
+          passage before the AI explains. Quiet, source-led, and built for serious study in any course.
         </p>
         <div className="luxury-actions">
           <Link to="/auth" search={{ mode: "signup" }} className="luxury-primary">

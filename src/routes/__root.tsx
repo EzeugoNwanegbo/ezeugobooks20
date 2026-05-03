@@ -31,17 +31,17 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "G&D — your personal medical study AI" },
+      { title: "G&D — your personal study AI" },
       {
         name: "description",
         content:
-          "A multi-AI study assistant for medical students. Personalized chat, document-aware answers from your uploaded notes, and exam practice.",
+          "A multi-AI study assistant for any course. Personalized chat, document-aware answers from your uploaded notes, and exam practice.",
       },
       { property: "og:title", content: "G&D" },
       {
         property: "og:description",
         content:
-          "Personalized AI study assistant for medical students — chat with your textbooks, get exam-ready answers.",
+          "Personalized AI study assistant for every learner — chat with your notes, get exam-ready answers.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

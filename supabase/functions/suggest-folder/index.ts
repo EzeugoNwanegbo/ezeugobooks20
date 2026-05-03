@@ -1,4 +1,4 @@
-// MedAI Hub — folder suggestion
+// G&D — folder suggestion
 // Given a document excerpt + the user's existing folders, suggest a subject.
 // Uses OpenAI gpt-4o-mini for folder classification.
 // Returns { folder: string, isNew: boolean }
@@ -47,7 +47,7 @@ Deno.serve(async (req: Request) => {
     const excerpt = (body.excerpt || "").slice(0, 6000);
     const existing = (body.existingFolders || []).join(", ") || "(none)";
 
-    const prompt = `You are organising a medical student's note library.
+    const prompt = `You are organising a student's study library.
 
 EXISTING FOLDERS: ${existing}
 
@@ -60,7 +60,7 @@ ${excerpt}
 
 Pick the best subject folder for this document.
 - If one of the EXISTING FOLDERS is a clear fit, reuse it exactly.
-- Otherwise propose ONE new short subject name (1-3 words, Title Case, e.g. "Cardiology", "Pharmacology", "Neuroanatomy", "Biochemistry", "Public Health").
+- Otherwise propose ONE new short subject name (1-3 words, Title Case, e.g. "Mathematics", "Economics", "Biology", "History", "Computer Science").
 
 Respond with ONLY a JSON object: {"folder":"<name>","isNew":<true|false>}
 No prose, no markdown.`;

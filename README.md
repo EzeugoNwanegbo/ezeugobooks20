@@ -1,7 +1,7 @@
-# MedAI Hub
+# G&D
 
-A personalized medical study assistant for MBBS students.
-Upload textbooks/notes → AI organizes them into folders → ask questions in
+A personalized study assistant for students in any course.
+Upload notes/course materials → AI organizes them into folders → ask questions in
 **Simplified**, **Detailed**, or **Storytelling** mode → use **Find connections**
 to interlink concepts across subjects.
 
@@ -125,7 +125,7 @@ Once you have your final domain:
 
 ### DeepSeek context limit (128K tokens ≈ 400K chars)
 
-Even for 300 MB textbook PDFs we extract text only and **truncate to ~280K
+Even for 300 MB course-material PDFs we extract text only and **truncate to ~280K
 chars per request**, split evenly across the documents the user has open.
 For a true full-book Q&A on enormous libraries you'd want to add **RAG**
 (chunk + embed + retrieve only relevant chunks). Not built in yet — the

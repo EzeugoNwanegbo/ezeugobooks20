@@ -83,10 +83,10 @@ type ContextDocsResult = {
 };
 
 const SUGGESTIONS = [
-  "Explain the renin-angiotensin system",
-  "Differentiate type 1 vs type 2 diabetes",
-  "What are the cranial nerves and their functions?",
-  "Walk me through the cardiac cycle step by step",
+  "Explain this topic in simple terms",
+  "Turn my notes into exam questions",
+  "Help me build a study plan for this course",
+  "Summarize the key ideas from my uploaded file",
 ];
 
 const SMART_DOC_LIMIT = 3;
@@ -321,7 +321,7 @@ function questionNeedsWebCurriculumGuidance(content: string): boolean {
 
 function suppressWebCurriculumForSpeed(content: string): string {
   return isWebCurriculumPreference(content)
-    ? "Curriculum preference: broad MBBS exam priorities."
+    ? "Course outline preference: broad exam priorities."
     : content;
 }
 
@@ -333,18 +333,18 @@ function looksCasualMessage(content: string): boolean {
 
 function explicitlyNeedsLibrary(content: string): boolean {
   return (
-    /\b(textbook|pdf|file|document|doc|notes?|library|selected|uploaded|book|chapter|page|quote|complete|finish|continue|based on|according to)\b/i.test(
+    /\b(materials?|pdf|file|document|doc|notes?|library|selected|uploaded|book|chapter|page|quote|complete|finish|continue|based on|according to)\b/i.test(
       content,
     ) ||
-    /\b(from|in)\s+(my|the|this|selected|uploaded)\s+(textbook|pdf|file|document|doc|notes?|book|chapter|page)\b/i.test(
+    /\b(from|in)\s+(my|the|this|selected|uploaded)\s+(materials?|pdf|file|document|doc|notes?|book|chapter|page)\b/i.test(
       content,
     )
   );
 }
 
-function textbookMissMessage(scope: "selected" | "library"): string {
+function studyMaterialMissMessage(scope: "selected" | "library"): string {
   const target = scope === "selected" ? "the selected file(s)" : "your library";
-  return `I couldn't find that in ${target} from the indexed textbook text. Try a more exact phrase, select the specific PDF/page, or ask me to answer from general medical knowledge.`;
+  return `I couldn't find that in ${target} from the indexed study material. Try a more exact phrase, select the specific PDF/page, or ask me to answer from general knowledge.`;
 }
 
 function ChatPage() {
@@ -654,7 +654,7 @@ function ChatPage() {
     };
 
     if (!shouldFetchWebCurriculum && isWebCurriculumPreference(profileForRequest.curriculum)) {
-      profileForRequest.curriculum = "Use broad MBBS exam priorities as the curriculum guide.";
+      profileForRequest.curriculum = "Use broad course-level exam priorities as the study guide.";
     }
 
     if (curriculumPreference) {
@@ -743,7 +743,7 @@ function ChatPage() {
       });
 
     if (contextResult.noLibraryMatch && contextResult.noMatchScope) {
-      const noMatchText = textbookMissMessage(contextResult.noMatchScope);
+      const noMatchText = studyMaterialMissMessage(contextResult.noMatchScope);
       setMessages([
         ...next,
         {
@@ -1142,7 +1142,7 @@ function ChatPage() {
                     m === "Storytelling"
                       ? "Explain as a story"
                       : m === "Detailed"
-                        ? "Mechanisms + clinical depth"
+                        ? "Concepts + deeper detail"
                         : "Plain English with an analogy"
                   }
                   className={`text-xs px-2.5 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1 ${
@@ -1280,7 +1280,7 @@ function ChatPage() {
                     ? "Ask with web search..."
                     : docs.length > 0 && useLibrary
                       ? "Ask anything — your library will be checked first..."
-                      : "Ask a medical question..."
+                      : "Ask a study question..."
                 }
                 className="flex-1 resize-none rounded-[28px] border border-input bg-background/35 px-5 py-2.5 text-sm min-h-[44px] max-h-[180px] backdrop-blur-[2px] focus:outline-none focus:ring-2 focus:ring-ring"
                 style={{ height: "auto" }}
@@ -1324,7 +1324,7 @@ function ChatPage() {
               )}
             </form>
             <p className="mt-1.5 text-[11px] text-muted-foreground text-center">
-              G&D can be wrong. Always verify with your lecturer or textbook.
+              G&D can be wrong. Always verify important work with your teacher, lecturer, or source material.
             </p>
           </div>
         </div>
@@ -1529,7 +1529,7 @@ function EmptyState({
       <p className="text-muted-foreground mt-1 text-balance max-w-md mx-auto">
         {hasDocs
           ? "Ask anything — I'll check your uploaded notes first, then explain."
-          : "Ask a medical question, or upload your notes in Library to ground answers in your own materials."}
+          : "Ask a study question, or upload your notes in Library to ground answers in your own materials."}
       </p>
       <div className="mt-8 grid sm:grid-cols-2 gap-2 max-w-xl mx-auto">
         {SUGGESTIONS.map((s) => (

@@ -6,7 +6,7 @@
 //   rate-limited.
 //
 // PLAIN CHAT (no documents):
-//   GPT-4o-mini handles everything directly (no DeepSeek needed).
+//   GPT-4o-mini handles general study questions directly (no DeepSeek needed).
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -134,7 +134,7 @@ function curriculumRule(p: Profile, usingWebCurriculum: boolean): string {
 
   if (isWebCurriculumPreference(curriculumText(p))) {
     return `Curriculum/syllabus: the student said they do not have one.
-- Use broad MBBS learning priorities and exam-relevant structure.
+- Use broad course-level learning priorities and exam-relevant structure.
 - Do not repeat the curriculum question unless the student asks for school-specific planning.`;
   }
 
@@ -167,22 +167,22 @@ function questionNeedsWebCurriculumGuidance(
 function modeInstruction(mode: Mode, examFormat: string): string {
   if (mode === "Storytelling") {
     return `Present the answer as a SHORT STORY.
-- Use a relatable narrative: a patient case, a journey through the body, or a mini clinical scenario.
-- Weave the science naturally into the story so facts stick in memory.
+- Use a relatable narrative, classroom moment, real-world scenario, or step-by-step journey through the idea.
+- Weave the subject matter naturally into the story so facts stick in memory.
 - 3–5 short paragraphs. End with "**The takeaway:**" (2 lines max).
-- Then on a new line: "**Exam tip:**" — one sentence directly relevant to ${examFormat} exams.`;
+- Then on a new line: "**Study tip:**" - one sentence directly relevant to ${examFormat} assessment.`;
   }
   if (mode === "Detailed") {
     return `Present the answer in DETAILED mode.
-- Cover the mechanism, clinical correlations, and exam pearls.
+- Cover the core idea, reasoning, examples, exceptions, and exam points.
 - Use short tables or bullet lists where they help clarity.
-- End with "**Exam tip:**" — one sentence directly relevant to ${examFormat} exams.`;
+- End with "**Study tip:**" - one sentence directly relevant to ${examFormat} assessment.`;
   }
   // Simplified (default)
   return `Present the answer in SIMPLIFIED mode.
 - Use plain English and one real-world analogy to make the concept click.
 - Maximum 3 short paragraphs — no jargon without explanation.
-- End with "**Exam tip:**" — one sentence directly relevant to ${examFormat} exams.`;
+- End with "**Study tip:**" - one sentence directly relevant to ${examFormat} assessment.`;
 }
 
 /** System prompt for DeepSeek — pure fact extraction, no style. */
@@ -212,11 +212,11 @@ The student wants connections drawn ACROSS subjects/folders.
 - List all cross-subject links clearly so the next stage can highlight them.`
     : "";
 
-  return `You are a precise medical research assistant. Your only job is to extract and organise the raw facts that answer the student's question.
+  return `You are a precise study research assistant. Your only job is to extract and organise the raw facts that answer the student's question.
 
 STUDENT CONTEXT:
-- Year: ${p.year || "Unknown"} MBBS at ${p.university || "Unknown"}
-- Exam format: ${p.exam_format || "MCQ"}
+- Level: ${p.year || "Unknown"} at ${p.university || "Unknown"}
+- Assessment format: ${p.exam_format || "MCQ"}
 - ${curriculumRule(p, usingWebCurriculum)}
 - Weak areas: ${(p.weak_areas || []).join(", ") || "none"}
 
@@ -229,7 +229,7 @@ ${interlinkBlock}
 
 YOUR TASK:
 1. Find every piece of information in the documents relevant to the student's question.
-2. If relevant info is NOT in the documents, clearly label it "[General medical knowledge]".
+2. If relevant info is NOT in the documents, clearly label it "[General knowledge]".
 3. Note the document name (and page if shown as "[Page N]") next to each fact.
 4. Output a structured, factual summary — bullet points and short paragraphs are fine.
 5. DO NOT apply any teaching style. DO NOT simplify or storytell. Just give the raw, accurate facts.
@@ -238,16 +238,16 @@ YOUR TASK:
 
 /** System prompt for GPT — style rewriter, human touch. */
 function buildDeepSeekDraftSystemPrompt(p: Profile, usingWebCurriculum: boolean): string {
-  return `You are a precise medical research assistant. Prepare the accurate first draft that answers the student's question.
+  return `You are a precise study research assistant. Prepare the accurate first draft that answers the student's question.
 
 STUDENT CONTEXT:
-- Year: ${p.year || "Unknown"} MBBS at ${p.university || "Unknown"}
-- Exam format: ${p.exam_format || "MCQ"}
+- Level: ${p.year || "Unknown"} at ${p.university || "Unknown"}
+- Assessment format: ${p.exam_format || "MCQ"}
 - ${curriculumRule(p, usingWebCurriculum)}
 - Weak areas: ${(p.weak_areas || []).join(", ") || "none"}
 
 YOUR TASK:
-1. Answer with medically accurate facts and clear reasoning.
+1. Answer with accurate facts and clear reasoning.
 2. Include exam-relevant points where useful.
 3. If unsure, say what needs verification.
 4. Do not apply a teaching style yet. Keep it factual so the next stage can rewrite it.`;
@@ -267,16 +267,16 @@ INTERLINK STYLE:
   naming every source document used.`
     : "";
 
-  return `You are G&D, a warm and brilliant medical tutor who genuinely cares about students.
+  return `You are G&D, a warm and brilliant study tutor who genuinely cares about students.
 
 You will receive a structured factual summary prepared by a research assistant who just read the student's uploaded notes.
 Your job is to transform that raw summary into a response the student will actually enjoy reading and remember.
 
 STUDENT PROFILE:
 - Name: ${p.name || "Student"}
-- University: ${p.university || "Unknown"}
-- Year: ${p.year || "Unknown"} MBBS
-- Exam format: ${p.exam_format || "MCQ"}
+- School: ${p.university || "Unknown"}
+- Level: ${p.year || "Unknown"}
+- Assessment format: ${p.exam_format || "MCQ"}
 - ${curriculumRule(p, usingWebCurriculum)}
 - Weak areas: ${(p.weak_areas || []).join(", ") || "none recorded"}
 - Recent topics: ${(p.recent_topics || []).slice(0, 8).join(", ") || "none yet"}
@@ -288,7 +288,7 @@ ${interlinkBlock}
 RULES:
 - Preserve every fact from the research summary — do not drop or invent information.
 - Keep source references (document names / page numbers) where they appear in the summary.
-- If the summary says "[General medical knowledge]", keep that label so the student knows.
+- If the summary says "[General knowledge]", keep that label so the student knows.
 - Write as if you are talking directly to ${p.name || "the student"} — warm, clear, encouraging.
 - Use markdown: bold key terms, short paragraphs, bullet lists where helpful.
 - If the research summary says it is uncertain about something, reflect that uncertainty honestly.`;
@@ -308,13 +308,13 @@ INTERLINK STYLE:
   naming every source document used.`
     : "";
 
-  return `You are G&D, a warm and brilliant medical tutor who answers from the student's uploaded document excerpts.
+  return `You are G&D, a warm and brilliant study tutor who answers from the student's uploaded document excerpts.
 
 STUDENT PROFILE:
 - Name: ${p.name || "Student"}
-- University: ${p.university || "Unknown"}
-- Year: ${p.year || "Unknown"} MBBS
-- Exam format: ${p.exam_format || "MCQ"}
+- School: ${p.university || "Unknown"}
+- Level: ${p.year || "Unknown"}
+- Assessment format: ${p.exam_format || "MCQ"}
 - ${curriculumRule(p, usingWebCurriculum)}
 - Weak areas: ${(p.weak_areas || []).join(", ") || "none recorded"}
 - Recent topics: ${(p.recent_topics || []).slice(0, 8).join(", ") || "none yet"}
@@ -326,7 +326,7 @@ ${interlinkBlock}
 RULES:
 - Use the provided DOCUMENT EXCERPTS first.
 - Keep document names and page/chunk labels where they help.
-- If the excerpts do not contain enough information, say that clearly before adding general medical knowledge.
+- If the excerpts do not contain enough information, say that clearly before adding general knowledge.
 - Never invent citations or page numbers.
 - Write as if talking directly to ${p.name || "the student"} — warm, clear, encouraging.
 - Use markdown: bold key terms, short paragraphs, bullet lists where helpful.`;
@@ -334,13 +334,13 @@ RULES:
 
 /** System prompt for GPT in plain-chat mode (no documents). */
 function buildGPTDirectSystemPrompt(p: Profile, mode: Mode, usingWebCurriculum: boolean): string {
-  return `You are G&D, a warm and brilliant medical tutor who genuinely cares about students.
+  return `You are G&D, a warm and brilliant study tutor who genuinely cares about students.
 
 STUDENT PROFILE:
 - Name: ${p.name || "Student"}
-- University: ${p.university || "Unknown"}
-- Year: ${p.year || "Unknown"} MBBS
-- Exam format: ${p.exam_format || "MCQ"}
+- School: ${p.university || "Unknown"}
+- Level: ${p.year || "Unknown"}
+- Assessment format: ${p.exam_format || "MCQ"}
 - ${curriculumRule(p, usingWebCurriculum)}
 - Weak areas: ${(p.weak_areas || []).join(", ") || "none recorded"}
 - Recent topics: ${(p.recent_topics || []).slice(0, 8).join(", ") || "none yet"}
@@ -348,7 +348,7 @@ STUDENT PROFILE:
 ${modeInstruction(mode, p.exam_format || "MCQ")}
 
 RULES:
-- If unsure, say: "I'm not fully certain — please verify with your lecturer or textbook."
+- If unsure, say: "I'm not fully certain - please verify with your teacher, lecturer, or source material."
 - Never invent citations or page numbers.
 - Write as if talking directly to ${p.name || "the student"} — warm, clear, encouraging.
 - Use markdown: bold key terms, short paragraphs, bullet lists where helpful.`;
@@ -455,11 +455,11 @@ async function callOpenAIRouteDecision(
         messages: [
           {
             role: "system",
-            content: `You route a medical study chat to the cheapest correct path.
+            content: `You route a general study chat to the cheapest correct path.
 Return only JSON: {"route":"direct"|"library"|"web_search"|"web_curriculum","reason":"short"}.
 
-Choose "direct" for greetings, wording fixes, basic medical explanations, general facts, or anything a tutor can answer from general knowledge.
-Choose "library" only when the student clearly wants uploaded notes/textbooks/PDFs used, asks to complete/quote/check a sentence from a file, asks "based on my document", or selected files are needed for accuracy.
+Choose "direct" for greetings, wording fixes, basic explanations, general facts, or anything a tutor can answer from general knowledge.
+Choose "library" only when the student clearly wants uploaded notes/materials/PDFs used, asks to complete/quote/check a sentence from a file, asks "based on my document", or selected files are needed for accuracy.
 Choose "web_search" when the student explicitly asks for current/latest web information or the UI web search button is on.
 Choose "web_curriculum" only when the student asks about syllabus/curriculum/study plan/high-yield topics and web curriculum is available.
 If unsure between direct and library, choose library. If unsure between direct and web_curriculum, choose direct.`,
@@ -518,7 +518,7 @@ async function callOpenAIWebCurriculumSync(
         messages: [
           {
             role: "system",
-            content: `Search the web for current public medical curriculum or syllabus guidance relevant to this student.
+            content: `Search the web for current public course outline or syllabus guidance relevant to this student.
 Return a concise, source-grounded study structure:
 1. likely curriculum topics,
 2. key learning outcomes,
@@ -530,8 +530,8 @@ Keep it short enough to paste into another tutor prompt.`,
             role: "user",
             content: `Student context:
 - University: ${p.university || "Unknown"}
-- Year: ${p.year || "Unknown"} MBBS
-- Exam format: ${p.exam_format || "MCQ"}
+- Level: ${p.year || "Unknown"}
+- Assessment format: ${p.exam_format || "MCQ"}
 - Question/topic: ${studentQuestion}`,
           },
         ],
@@ -584,20 +584,20 @@ async function callOpenAIWebAnswerSync(
         messages: [
           {
             role: "system",
-            content: `You are G&D, a warm medical tutor using web search because the student requested it.
+            content: `You are G&D, a warm study tutor using web search because the student requested it.
 
 STUDENT PROFILE:
 - Name: ${p.name || "Student"}
-- University: ${p.university || "Unknown"}
-- Year: ${p.year || "Unknown"} MBBS
-- Exam format: ${p.exam_format || "MCQ"}
+- School: ${p.university || "Unknown"}
+- Level: ${p.year || "Unknown"}
+- Assessment format: ${p.exam_format || "MCQ"}
 
 ${modeInstruction(mode, p.exam_format || "MCQ")}
 
 RULES:
 - Use current web results only when they are relevant to the question.
 - Do not list raw URLs in the answer body; the app will show clickable source icons separately.
-- If web results are weak or unrelated, say that plainly and answer from general medical knowledge.
+- If web results are weak or unrelated, say that plainly and answer from general knowledge.
 - Use markdown, short paragraphs, and direct teaching language.`,
           },
           ...messages,
@@ -782,7 +782,7 @@ Deno.serve(async (req: Request) => {
       } catch (err) {
         console.error("OpenAI web curriculum search failed:", err);
         curriculumGuidance =
-          "Web curriculum search was requested but unavailable. Use broad MBBS curriculum priorities, organise the answer by likely learning outcomes, and tell the student this fallback is not their official school syllabus.";
+          "Web course outline search was requested but unavailable. Use broad course-level priorities, organise the answer by likely learning outcomes, and tell the student this fallback is not their official school syllabus.";
       }
     }
 
@@ -806,7 +806,7 @@ Deno.serve(async (req: Request) => {
         console.error("OpenAI web answer failed:", err);
         return new Response(
           textToSse(
-            "I couldn't complete the web search quickly enough. Try again, or turn Web off and I can answer from general medical knowledge.",
+            "I couldn't complete the web search quickly enough. Try again, or turn Web off and I can answer from general knowledge.",
           ),
           {
             headers: {

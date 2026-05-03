@@ -124,7 +124,7 @@ function AuthPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="mt-1 w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
-                  placeholder="you@medschool.edu"
+                  placeholder="you@example.com"
                 />
               </div>
               <div>

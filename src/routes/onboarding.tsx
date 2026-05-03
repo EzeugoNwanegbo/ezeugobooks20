@@ -22,7 +22,7 @@ function OnboardingPage() {
 
   const [name, setName] = useState("");
   const [university, setUniversity] = useState("");
-  const [year, setYear] = useState("300L");
+  const [year, setYear] = useState("Year 1");
   const [examFormat, setExamFormat] = useState<"MCQ" | "SAQ" | "OSCE" | "Viva">("MCQ");
   const [mode, setMode] = useState<"Simplified" | "Detailed">("Simplified");
 
@@ -123,16 +123,16 @@ function OnboardingPage() {
             {step === 1 && (
               <>
                 <h1 className="font-display text-4xl font-light leading-none mt-3">
-                  Where do you study?
+                  Where are you studying?
                 </h1>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Your university and current year so answers fit your curriculum.
+                  Your school and current level help answers fit your course.
                 </p>
                 <div className="mt-6 space-y-3">
                   <input
                     value={university}
                     onChange={(e) => setUniversity(e.target.value)}
-                    placeholder="University (e.g. University of Lagos)"
+                    placeholder="School, college, or university"
                     className="w-full px-4 py-3 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring text-base"
                   />
                   <div>
@@ -140,7 +140,7 @@ function OnboardingPage() {
                       Current year/level
                     </label>
                     <div className="mt-2 grid grid-cols-3 gap-2">
-                      {["100L", "200L", "300L", "400L", "500L", "600L"].map((y) => (
+                      {["Year 1", "Year 2", "Year 3", "Year 4", "Year 5", "Other"].map((y) => (
                         <button
                           key={y}
                           type="button"
@@ -169,18 +169,23 @@ function OnboardingPage() {
                   We'll tailor exam tips and practice questions to match.
                 </p>
                 <div className="mt-6 grid grid-cols-2 gap-2">
-                  {(["MCQ", "SAQ", "OSCE", "Viva"] as const).map((f) => (
+                  {[
+                    { value: "MCQ" as const, label: "Quiz" },
+                    { value: "SAQ" as const, label: "Short answer" },
+                    { value: "OSCE" as const, label: "Practical" },
+                    { value: "Viva" as const, label: "Oral" },
+                  ].map((f) => (
                     <button
-                      key={f}
+                      key={f.value}
                       type="button"
-                      onClick={() => setExamFormat(f)}
+                      onClick={() => setExamFormat(f.value)}
                       className={`py-3 rounded-lg border font-semibold transition-colors ${
-                        examFormat === f
+                        examFormat === f.value
                           ? "border-primary bg-primary/15 text-primary"
                           : "border-border bg-background hover:bg-surface-elevated"
                       }`}
                     >
-                      {f}
+                      {f.label}
                     </button>
                   ))}
                 </div>
@@ -205,7 +210,7 @@ function OnboardingPage() {
                     {
                       v: "Detailed" as const,
                       title: "Detailed",
-                      body: "Full mechanisms, clinical correlations, exam pearls.",
+                      body: "Deeper reasoning, key details, examples, and exam points.",
                     },
                   ].map((o) => (
                     <button
