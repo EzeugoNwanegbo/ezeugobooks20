@@ -47,7 +47,7 @@ function AuthPage() {
 
   useEffect(() => {
     if (!loading && user) {
-      if (profile && !profile.onboarded) {
+      if (!profile || !profile.onboarded) {
         navigate({ to: "/onboarding" });
       } else if (profile?.onboarded) {
         navigate({ to: "/app/chat" });

@@ -39,17 +39,15 @@ function OnboardingPage() {
     if (!user) return;
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from("user_profiles")
-        .update({
-          name,
-          university,
-          year,
-          exam_format: examFormat,
-          preferred_mode: mode,
-          onboarded: true,
-        })
-        .eq("id", user.id);
+      const { error } = await supabase.from("user_profiles").upsert({
+        id: user.id,
+        name,
+        university,
+        year,
+        exam_format: examFormat,
+        preferred_mode: mode,
+        onboarded: true,
+      });
       if (error) throw error;
       await refreshProfile();
       toast.success("You're all set!");
