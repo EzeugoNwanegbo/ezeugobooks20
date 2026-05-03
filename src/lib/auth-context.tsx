@@ -26,6 +26,21 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const AUTH_REQUEST_TIMEOUT_MS = 12_000;
+
+function withTimeout<T>(promise: PromiseLike<T>, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out. Check your connection and try again.`));
+    }, AUTH_REQUEST_TIMEOUT_MS);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -34,56 +49,90 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const loadProfile = async (currentUser: User) => {
-    const { data } = await supabase
-      .from("user_profiles")
-      .select("*")
-      .eq("id", currentUser.id)
-      .maybeSingle();
+    try {
+      const { data, error } = await withTimeout(
+        supabase.from("user_profiles").select("*").eq("id", currentUser.id).maybeSingle(),
+        "Loading your profile",
+      );
 
-    if (data) {
-      setProfile(data as Profile);
-      return;
-    }
+      if (error) throw error;
 
-    const fallbackName =
-      currentUser.user_metadata?.name ?? currentUser.user_metadata?.full_name ?? "";
-    const { data: created, error } = await supabase
-      .from("user_profiles")
-      .insert({ id: currentUser.id, name: fallbackName })
-      .select("*")
-      .single();
+      if (data) {
+        setProfile(data as Profile);
+        return;
+      }
 
-    if (error) {
-      console.error("create profile", error);
+      const fallbackName =
+        currentUser.user_metadata?.name ?? currentUser.user_metadata?.full_name ?? "";
+      const { data: created, error: createError } = await withTimeout(
+        supabase
+          .from("user_profiles")
+          .insert({ id: currentUser.id, name: fallbackName })
+          .select("*")
+          .single(),
+        "Creating your profile",
+      );
+
+      if (createError) throw createError;
+
+      setProfile(created as Profile);
+    } catch (error) {
+      console.error("load profile", error);
       setProfile(null);
-      return;
     }
-
-    setProfile(created as Profile);
   };
 
   useEffect(() => {
+    let active = true;
+
     // Set up auth listener FIRST
     const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+      if (!active) return;
+
       setSession(sess);
       setUser(sess?.user ?? null);
       if (sess?.user) {
         // defer to avoid deadlock with supabase client
-        setTimeout(() => loadProfile(sess.user), 0);
+        setLoading(true);
+        setTimeout(() => {
+          if (!active) return;
+          void loadProfile(sess.user).finally(() => {
+            if (active) setLoading(false);
+          });
+        }, 0);
       } else {
         setProfile(null);
+        setLoading(false);
       }
     });
 
     // Then fetch existing session
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      if (data.session?.user) loadProfile(data.session.user);
-      setLoading(false);
-    });
+    void withTimeout(supabase.auth.getSession(), "Checking your sign-in session")
+      .then(async ({ data }) => {
+        if (!active) return;
+        setSession(data.session);
+        setUser(data.session?.user ?? null);
+        if (data.session?.user) {
+          await loadProfile(data.session.user);
+        } else {
+          setProfile(null);
+        }
+      })
+      .catch((error) => {
+        console.error("get session", error);
+        if (!active) return;
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
 
-    return () => sub.subscription.unsubscribe();
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   const value = useMemo<AuthContextValue>(

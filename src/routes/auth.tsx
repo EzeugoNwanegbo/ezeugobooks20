@@ -6,6 +6,21 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 type AuthSearch = { mode?: "signup" | "signin" };
+const AUTH_ACTION_TIMEOUT_MS = 15_000;
+
+function withAuthTimeout<T>(promise: PromiseLike<T>, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out. Check your connection and try again.`));
+    }, AUTH_ACTION_TIMEOUT_MS);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
 
 export const Route = createFileRoute("/auth")({
   validateSearch: (s: Record<string, unknown>): AuthSearch => ({
@@ -28,6 +43,7 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
 
   useEffect(() => {
     if (!loading && user) {
@@ -41,18 +57,28 @@ function AuthPage() {
 
   const handleEmail = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
+
     setSubmitting(true);
     try {
+      const trimmedEmail = email.trim();
+
       if (isSignup) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo: `${window.location.origin}/onboarding` },
-        });
+        const { error } = await withAuthTimeout(
+          supabase.auth.signUp({
+            email: trimmedEmail,
+            password,
+            options: { emailRedirectTo: `${window.location.origin}/onboarding` },
+          }),
+          "Creating your account",
+        );
         if (error) throw error;
         toast.success("Account created! Let's set up your profile.");
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await withAuthTimeout(
+          supabase.auth.signInWithPassword({ email: trimmedEmail, password }),
+          "Signing in",
+        );
         if (error) throw error;
         toast.success("Welcome back!");
       }
@@ -64,16 +90,23 @@ function AuthPage() {
   };
 
   const handleGoogle = async () => {
+    if (googleSubmitting) return;
+
+    setGoogleSubmitting(true);
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/auth`,
-        },
-      });
+      const { error } = await withAuthTimeout(
+        supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: `${window.location.origin}/auth`,
+          },
+        }),
+        "Starting Google sign-in",
+      );
       if (error) throw error;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Google sign-in failed");
+      setGoogleSubmitting(false);
     }
   };
 
@@ -103,10 +136,11 @@ function AuthPage() {
             <button
               onClick={handleGoogle}
               type="button"
-              className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background/70 hover:bg-surface-elevated transition-colors text-sm font-medium text-foreground"
+              disabled={googleSubmitting}
+              className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background/70 hover:bg-surface-elevated transition-colors text-sm font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <GoogleIcon />
-              Continue with Google
+              {googleSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
+              {googleSubmitting ? "Opening Google..." : "Continue with Google"}
             </button>
 
             <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
@@ -123,6 +157,7 @@ function AuthPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
                   className="mt-1 w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
                   placeholder="you@example.com"
                 />
@@ -135,6 +170,7 @@ function AuthPage() {
                   minLength={6}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  autoComplete={isSignup ? "new-password" : "current-password"}
                   className="mt-1 w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
                   placeholder="••••••••"
                 />
@@ -145,7 +181,13 @@ function AuthPage() {
                 className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow hover:opacity-90 transition-opacity disabled:opacity-50"
               >
                 {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isSignup ? "Create account" : "Sign in"}
+                {submitting
+                  ? isSignup
+                    ? "Creating..."
+                    : "Signing in..."
+                  : isSignup
+                    ? "Create account"
+                    : "Sign in"}
               </button>
             </form>
 
