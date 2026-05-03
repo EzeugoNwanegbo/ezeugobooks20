@@ -13,6 +13,23 @@ interface Body {
   existingFolders: string[];
 }
 
+const OPENAI_TIMEOUT_MS = 8_000;
+
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort("timeout"), timeoutMs);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -48,21 +65,25 @@ Pick the best subject folder for this document.
 Respond with ONLY a JSON object: {"folder":"<name>","isNew":<true|false>}
 No prose, no markdown.`;
 
-    const upstream = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
+    const upstream = await fetchWithTimeout(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: "You output strict JSON only. No markdown, no prose." },
+            { role: "user", content: prompt },
+          ],
+          temperature: 0.2,
+        }),
       },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: "You output strict JSON only. No markdown, no prose." },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.2,
-      }),
-    });
+      OPENAI_TIMEOUT_MS,
+    );
 
     if (!upstream.ok) {
       const text = await upstream.text();

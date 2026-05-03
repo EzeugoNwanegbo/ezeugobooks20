@@ -2,6 +2,8 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Profile } from "@/lib/auth-context";
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+const CHAT_START_TIMEOUT_MS = 45_000;
+const CHAT_STREAM_IDLE_TIMEOUT_MS = 45_000;
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -20,6 +22,43 @@ export type WebSource = {
   url: string;
 };
 
+function readWithTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal?: AbortSignal,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    const timeout = window.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      reject(new Error("stream-idle-timeout"));
+    }, CHAT_STREAM_IDLE_TIMEOUT_MS);
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+    reader.read().then(
+      (result) => {
+        cleanup();
+        resolve(result);
+      },
+      (err) => {
+        cleanup();
+        reject(err);
+      },
+    );
+  });
+}
+
 export async function streamChat({
   messages,
   profile,
@@ -33,6 +72,8 @@ export async function streamChat({
   onSources,
   onDone,
   onError,
+  onCancel,
+  signal,
 }: {
   messages: ChatMessage[];
   profile: Profile;
@@ -46,6 +87,8 @@ export async function streamChat({
   onSources?: (sources: WebSource[]) => void;
   onDone: () => void;
   onError: (err: string) => void;
+  onCancel?: () => void;
+  signal?: AbortSignal;
 }) {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token;
@@ -54,22 +97,53 @@ export async function streamChat({
     return;
   }
 
-  const resp = await fetch(CHAT_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      messages,
-      profile,
-      mode,
-      documents,
-      documentMode,
-      forceWebSearch,
-      interlink,
-    }),
-  });
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  let startTimedOut = false;
+  const timeout = window.setTimeout(() => {
+    startTimedOut = true;
+    controller.abort();
+  }, CHAT_START_TIMEOUT_MS);
+  signal?.addEventListener("abort", abortFromCaller, { once: true });
+  let resp: Response;
+
+  try {
+    if (signal?.aborted) {
+      onCancel?.();
+      return;
+    }
+    resp = await fetch(CHAT_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        messages,
+        profile,
+        mode,
+        documents,
+        documentMode,
+        forceWebSearch,
+        interlink,
+      }),
+    });
+  } catch (err) {
+    if (signal?.aborted) {
+      onCancel?.();
+      return;
+    }
+    onError(
+      startTimedOut || (err instanceof DOMException && err.name === "AbortError")
+        ? "The AI service took too long to respond. This is usually hosting/provider latency; try again or test locally."
+        : "Couldn't reach the AI service. Check your connection or hosting logs.",
+    );
+    return;
+  } finally {
+    signal?.removeEventListener("abort", abortFromCaller);
+    window.clearTimeout(timeout);
+  }
 
   onMeta?.({
     model: resp.headers.get("X-Medai-Model") ?? "",
@@ -94,7 +168,20 @@ export async function streamChat({
   let done = false;
 
   while (!done) {
-    const { done: streamDone, value } = await reader.read();
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await readWithTimeout(reader, signal);
+    } catch (err) {
+      await reader.cancel().catch(() => {});
+      if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) {
+        onCancel?.();
+        return;
+      }
+      onError("The AI stream paused for too long. Try again; if this repeats, check the Edge Function provider logs.");
+      return;
+    }
+
+    const { done: streamDone, value } = chunk;
     if (streamDone) break;
     buffer += decoder.decode(value, { stream: true });
 

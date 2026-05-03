@@ -13,8 +13,8 @@ export const Route = createFileRoute("/auth")({
   }),
   head: () => ({
     meta: [
-      { title: "Sign in — MedAI Hub" },
-      { name: "description", content: "Sign in to MedAI Hub to access your study assistant." },
+      { title: "Sign in — G&D" },
+      { name: "description", content: "Sign in to G&D to access your study assistant." },
     ],
   }),
   component: AuthPage,
@@ -84,7 +84,7 @@ function AuthPage() {
 
       <header className="relative z-10 px-6 py-6">
         <Link to="/" className="luxury-brand-text">
-          MedAI Hub
+          G&D
         </Link>
       </header>
 
@@ -96,7 +96,7 @@ function AuthPage() {
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
               {isSignup
-                ? "Join MedAI Hub and start studying smarter."
+                ? "Join G&D and start studying smarter."
                 : "Sign in to continue your studies."}
             </p>
 

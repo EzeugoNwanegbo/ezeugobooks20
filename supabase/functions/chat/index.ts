@@ -1,10 +1,9 @@
-// MedAI Hub — chat edge function
+// G&D — chat edge function
 //
-// TWO-STAGE PIPELINE (when documents are attached):
-//   Stage 1 — DeepSeek reads the documents and extracts a raw factual answer.
-//   Stage 2 — GPT-4o-mini takes that raw answer and rewrites it in the
-//             student's chosen style (Simplified / Detailed / Storytelling / Interlink).
-//             GPT streams directly to the client so the response feels instant.
+// FAST DOCUMENT PIPELINE:
+//   GPT streams directly from selected/smart library excerpts first so the
+//   client gets tokens quickly. DeepSeek is only used as a fallback when GPT is
+//   rate-limited.
 //
 // PLAIN CHAT (no documents):
 //   GPT-4o-mini handles everything directly (no DeepSeek needed).
@@ -12,6 +11,7 @@
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Expose-Headers": "X-Medai-Model, X-Medai-Source, X-Medai-Fallback",
 };
 
 interface Profile {
@@ -55,6 +55,7 @@ interface ChatBody {
 const MAX_DOC_CHARS_TOTAL = 120_000;
 const DEEPSEEK_MAX_TOKENS = 1200;
 const DEEPSEEK_TIMEOUT_MS = 18_000;
+const GPT_STREAM_START_TIMEOUT_MS = 18_000;
 const ROUTER_TIMEOUT_MS = 5_000;
 const WEB_CURRICULUM_TIMEOUT_MS = 10_000;
 
@@ -139,7 +140,7 @@ function curriculumRule(p: Profile, usingWebCurriculum: boolean): string {
 
   return `Curriculum/syllabus: not provided yet.
 - Start by briefly asking which curriculum or syllabus the student is using.
-- Tell them that if they do not have one, they can say "I don't have one" and MedAI will use web curriculum guidance.
+- Tell them that if they do not have one, they can say "I don't have one" and G&D will use web curriculum guidance.
 - Still answer the immediate question, but mark curriculum-specific priorities as provisional.`;
 }
 
@@ -266,7 +267,7 @@ INTERLINK STYLE:
   naming every source document used.`
     : "";
 
-  return `You are MedAI, a warm and brilliant medical tutor who genuinely cares about students.
+  return `You are G&D, a warm and brilliant medical tutor who genuinely cares about students.
 
 You will receive a structured factual summary prepared by a research assistant who just read the student's uploaded notes.
 Your job is to transform that raw summary into a response the student will actually enjoy reading and remember.
@@ -293,9 +294,47 @@ RULES:
 - If the research summary says it is uncertain about something, reflect that uncertainty honestly.`;
 }
 
+function buildGPTDocumentSystemPrompt(
+  p: Profile,
+  mode: Mode,
+  interlink: boolean,
+  usingWebCurriculum: boolean,
+): string {
+  const interlinkBlock = interlink
+    ? `
+INTERLINK STYLE:
+- Explicitly highlight how concepts from different subjects connect.
+- Use a subheading per subject/folder, then a final "**Connections found:**" bullet list
+  naming every source document used.`
+    : "";
+
+  return `You are G&D, a warm and brilliant medical tutor who answers from the student's uploaded document excerpts.
+
+STUDENT PROFILE:
+- Name: ${p.name || "Student"}
+- University: ${p.university || "Unknown"}
+- Year: ${p.year || "Unknown"} MBBS
+- Exam format: ${p.exam_format || "MCQ"}
+- ${curriculumRule(p, usingWebCurriculum)}
+- Weak areas: ${(p.weak_areas || []).join(", ") || "none recorded"}
+- Recent topics: ${(p.recent_topics || []).slice(0, 8).join(", ") || "none yet"}
+
+STYLE INSTRUCTIONS:
+${modeInstruction(mode, p.exam_format || "MCQ")}
+${interlinkBlock}
+
+RULES:
+- Use the provided DOCUMENT EXCERPTS first.
+- Keep document names and page/chunk labels where they help.
+- If the excerpts do not contain enough information, say that clearly before adding general medical knowledge.
+- Never invent citations or page numbers.
+- Write as if talking directly to ${p.name || "the student"} — warm, clear, encouraging.
+- Use markdown: bold key terms, short paragraphs, bullet lists where helpful.`;
+}
+
 /** System prompt for GPT in plain-chat mode (no documents). */
 function buildGPTDirectSystemPrompt(p: Profile, mode: Mode, usingWebCurriculum: boolean): string {
-  return `You are MedAI, a warm and brilliant medical tutor who genuinely cares about students.
+  return `You are G&D, a warm and brilliant medical tutor who genuinely cares about students.
 
 STUDENT PROFILE:
 - Name: ${p.name || "Student"}
@@ -358,7 +397,7 @@ async function callGPTStream(
   messages: ChatBody["messages"],
   maxTokens: number,
 ): Promise<Response> {
-  return fetch("https://api.openai.com/v1/chat/completions", {
+  return fetchWithTimeout("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -371,7 +410,7 @@ async function callGPTStream(
       temperature: 0.75, // Slightly higher — we want GPT's natural warmth
       messages: [{ role: "system", content: systemPrompt }, ...messages],
     }),
-  });
+  }, GPT_STREAM_START_TIMEOUT_MS);
 }
 
 function gptMaxTokens(mode: Mode, hasDocs: boolean): number {
@@ -545,7 +584,7 @@ async function callOpenAIWebAnswerSync(
         messages: [
           {
             role: "system",
-            content: `You are MedAI, a warm medical tutor using web search because the student requested it.
+            content: `You are G&D, a warm medical tutor using web search because the student requested it.
 
 STUDENT PROFILE:
 - Name: ${p.name || "Student"}
@@ -782,46 +821,21 @@ Deno.serve(async (req: Request) => {
     }
 
     if (hasDocs) {
-      // ── TWO-STAGE PIPELINE ──────────────────────────────────────────────────
-      // Stage 1: DeepSeek extracts facts from documents (non-streaming, silent)
-      const deepseekSystem = buildDeepSeekSystemPrompt(
-        body.profile,
-        body.documents!,
-        interlink,
-        useWebCurriculum,
-      );
-      let rawFacts: string;
-      try {
-        rawFacts = await callDeepSeekSync(DEEPSEEK_API_KEY!, deepseekSystem, body.messages);
-      } catch (err) {
-        console.error("DeepSeek stage failed:", err);
-        return new Response(
-          textToSse(
-            "I couldn't confirm that from the selected textbook material quickly enough. Try a more exact phrase, select the specific PDF/page, or ask me to answer from general medical knowledge.",
-            webSources,
-          ),
-          {
-            headers: {
-              ...corsHeaders,
-              "Content-Type": "text/event-stream",
-              "X-Medai-Model": "library-search-timeout",
-              "X-Medai-Source": "library",
-            },
-          },
-        );
-      }
-
-      // Stage 2: GPT rewrites the facts in the student's chosen style (streaming)
-      gptSystemPrompt = buildGPTRewriterSystemPrompt(
+      // Fast library path: stream GPT directly with retrieved document excerpts.
+      // DeepSeek remains available below only as a rate-limit fallback.
+      gptSystemPrompt = buildGPTDocumentSystemPrompt(
         body.profile,
         body.mode,
         interlink,
         useWebCurriculum,
       );
-      deepSeekFallbackText = rawFacts;
+      const documentExcerpts = body.documents!
+        .map(
+          (doc) =>
+            `=== DOCUMENT: ${doc.file_name}${doc.folder ? ` | folder: ${doc.folder}` : ""} (id:${doc.id}) ===\n${doc.excerpt}`,
+        )
+        .join("\n\n---\n\n");
 
-      // We pass the conversation history PLUS the DeepSeek research as the last user turn.
-      // This way GPT has full context of what was asked AND the facts to work with.
       gptMessages = [
         ...priorMessages,
         {
@@ -830,11 +844,11 @@ Deno.serve(async (req: Request) => {
 
 ---
 ${curriculumGuidance ? `WEB CURRICULUM GUIDANCE:\n${curriculumGuidance}\n\n---\n` : ""}
-RESEARCH SUMMARY (extracted from student's uploaded documents by DeepSeek):
-${rawFacts}
+DOCUMENT EXCERPTS:
+${documentExcerpts}
 ---
 
-Now rewrite the above research summary as a response to the student's question, using the style instructions in your system prompt.`,
+Answer the student's question using the document excerpts and the style instructions in your system prompt.`,
         },
       ];
     } else {
@@ -872,7 +886,14 @@ Answer the student's question using the style instructions in your system prompt
         if (!deepSeekFallbackText) {
           deepSeekFallbackText = await callDeepSeekSync(
             DEEPSEEK_API_KEY,
-            buildDeepSeekDraftSystemPrompt(body.profile, useWebCurriculum),
+            hasDocs
+              ? buildDeepSeekSystemPrompt(
+                  body.profile,
+                  body.documents!,
+                  interlink,
+                  useWebCurriculum,
+                )
+              : buildDeepSeekDraftSystemPrompt(body.profile, useWebCurriculum),
             body.messages,
           );
         }
@@ -917,7 +938,7 @@ Answer the student's question using the style instructions in your system prompt
         "X-Medai-Model": useWebCurriculum
           ? "gpt-web-gpt-4o-mini"
           : hasDocs
-            ? "deepseek-gpt-4o-mini"
+            ? "gpt-library-fast"
             : "gpt-4o-mini",
         "X-Medai-Source": source,
       },

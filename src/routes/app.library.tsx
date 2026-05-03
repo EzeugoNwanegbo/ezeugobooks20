@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 
 export const Route = createFileRoute("/app/library")({
-  head: () => ({ meta: [{ title: "Library — MedAI Hub" }] }),
+  head: () => ({ meta: [{ title: "Library — G&D" }] }),
   component: LibraryPage,
 });
 
@@ -43,12 +43,16 @@ type DocRow = {
 };
 
 const SUGGEST_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-folder`;
+const SUGGEST_FOLDER_TIMEOUT_MS = 8_000;
 
 async function suggestFolder(
   fileName: string,
   excerpt: string,
   existingFolders: string[],
 ): Promise<{ folder: string; isNew: boolean } | null> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), SUGGEST_FOLDER_TIMEOUT_MS);
+
   try {
     const { data: sess } = await supabase.auth.getSession();
     const token = sess.session?.access_token;
@@ -59,6 +63,7 @@ async function suggestFolder(
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
+      signal: controller.signal,
       body: JSON.stringify({
         fileName,
         excerpt: excerpt.slice(0, 6000),
@@ -69,6 +74,8 @@ async function suggestFolder(
     return (await r.json()) as { folder: string; isNew: boolean };
   } catch {
     return null;
+  } finally {
+    window.clearTimeout(timeout);
   }
 }
 
@@ -376,7 +383,7 @@ function LibraryPage() {
           <div>
             <h1 className="font-display text-5xl font-light leading-none">Your library</h1>
             <p className="text-sm text-muted-foreground mt-1 max-w-lg">
-              Upload notes — MedAI suggests a subject folder and you confirm.
+              Upload notes — G&D suggests a subject folder and you confirm.
             </p>
           </div>
           <button
@@ -513,7 +520,7 @@ function LibraryPage() {
             </div>
 
             <div className="text-xs text-muted-foreground mb-2">
-              MedAI suggests:{" "}
+              G&D suggests:{" "}
               <span className="text-primary font-semibold">{pendingAssign.suggestion.folder}</span>
               {pendingAssign.suggestion.isNew && <span className="ml-1">(new folder)</span>}
             </div>

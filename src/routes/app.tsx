@@ -53,7 +53,7 @@ function AppLayout() {
       <aside className="hidden md:flex md:w-64 flex-col border-r border-border bg-background/75 backdrop-blur">
         <div className="p-5 border-b border-border">
           <Link to="/app/chat" className="luxury-brand-text">
-            MedAI Hub
+            G&D
           </Link>
         </div>
         <nav className="flex-1 p-3 space-y-1">
@@ -83,7 +83,7 @@ function AppLayout() {
       {/* Mobile top bar */}
       <div className="md:hidden fixed top-0 inset-x-0 z-20 border-b border-border bg-background/90 backdrop-blur px-4 py-3 flex items-center justify-between">
         <Link to="/app/chat" className="luxury-brand-text small">
-          MedAI Hub
+          G&D
         </Link>
         <div className="flex gap-1">
           <Link

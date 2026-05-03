@@ -27,6 +27,7 @@ import {
   BookText,
   FileText,
   Search,
+  Square,
   X,
   ExternalLink,
 } from "lucide-react";
@@ -34,7 +35,7 @@ import {
 type ChatSearch = { c?: string };
 
 export const Route = createFileRoute("/app/chat")({
-  head: () => ({ meta: [{ title: "Chat — MedAI Hub" }] }),
+  head: () => ({ meta: [{ title: "Chat — G&D" }] }),
   validateSearch: (s: Record<string, unknown>): ChatSearch => ({
     c: typeof s.c === "string" ? (s.c as string) : undefined,
   }),
@@ -56,8 +57,11 @@ type ConversationRow = {
 type LibraryDocumentRow = {
   id: string;
   file_name: string;
-  extracted_text: string | null;
   folders: { name: string | null } | null;
+};
+
+type LibraryDocumentTextRow = LibraryDocumentRow & {
+  extracted_text: string | null;
 };
 
 type ChunkSearchRow = {
@@ -88,6 +92,9 @@ const SUGGESTIONS = [
 const SMART_DOC_LIMIT = 3;
 const SNIPPET_WINDOW_CHARS = 2600;
 const MAX_SNIPPETS_PER_DOC = 3;
+const CHUNK_SEARCH_TIMEOUT_MS = 8_000;
+const FALLBACK_DOC_TEXT_TIMEOUT_MS = 8_000;
+const CHAT_CANCELLED = "chat-cancelled";
 const STOP_WORDS = new Set([
   "about",
   "after",
@@ -367,6 +374,8 @@ function ChatPage() {
   const [convos, setConvos] = useState<ConversationRow[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const chatAbortRef = useRef<AbortController | null>(null);
+  const activeSendConversationRef = useRef<string | null>(null);
 
   // Load library docs (with folder names)
   useEffect(() => {
@@ -374,18 +383,16 @@ function ChatPage() {
     (async () => {
       const { data } = await supabase
         .from("documents")
-        .select("id, file_name, extracted_text, folder_id, folders(name)")
+        .select("id, file_name, folder_id, folders(name)")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
       setDocs(
-        (data ?? [])
-          .filter((d): d is LibraryDocumentRow => Boolean(d.extracted_text))
-          .map((d) => ({
-            id: d.id,
-            file_name: d.file_name,
-            folder: d.folders?.name ?? null,
-            excerpt: d.extracted_text as string,
-          })),
+        ((data as LibraryDocumentRow[] | null) ?? []).map((d) => ({
+          id: d.id,
+          file_name: d.file_name,
+          folder: d.folders?.name ?? null,
+          excerpt: "",
+        })),
       );
     })();
   }, [user]);
@@ -408,6 +415,63 @@ function ChatPage() {
   useEffect(() => {
     if (!useLibrary) setLibraryNotice(null);
   }, [useLibrary]);
+
+  const fetchDocumentExcerpts = async (
+    ids: string[],
+    content: string,
+    signal?: AbortSignal,
+  ): Promise<DocumentCtx[]> => {
+    if (!user || ids.length === 0) return [];
+    const uniqueIds = [...new Set(ids)];
+    const controller = new AbortController();
+    const abortFromCaller = () => controller.abort();
+    const timeout = window.setTimeout(() => controller.abort(), FALLBACK_DOC_TEXT_TIMEOUT_MS);
+    signal?.addEventListener("abort", abortFromCaller, { once: true });
+
+    try {
+      if (signal?.aborted) throw new Error(CHAT_CANCELLED);
+      const { data, error } = await supabase
+        .from("documents")
+        .select("id, file_name, extracted_text, folder_id, folders(name)")
+        .eq("user_id", user.id)
+        .in("id", uniqueIds)
+        .abortSignal(controller.signal);
+
+      if (error) {
+        console.warn("fallback document text fetch failed", error);
+        return [];
+      }
+
+      const byId = new Map(
+        ((data as LibraryDocumentTextRow[] | null) ?? [])
+          .filter((doc) => Boolean(doc.extracted_text))
+          .map((doc) => [
+            doc.id,
+            {
+              id: doc.id,
+              file_name: doc.file_name,
+              folder: doc.folders?.name ?? null,
+              excerpt: doc.extracted_text as string,
+            },
+          ]),
+      );
+
+      return uniqueIds
+        .map((id) => byId.get(id))
+        .filter((doc): doc is DocumentCtx => Boolean(doc))
+        .map((doc) => ({
+          ...doc,
+          excerpt: relevantExcerpt(doc, content, messages),
+        }));
+    } catch (err) {
+      if (signal?.aborted) throw new Error(CHAT_CANCELLED);
+      console.warn("fallback document text fetch unavailable", err);
+      return [];
+    } finally {
+      signal?.removeEventListener("abort", abortFromCaller);
+      window.clearTimeout(timeout);
+    }
+  };
 
   // Load conversation list
   const refreshConvos = async () => {
@@ -432,6 +496,7 @@ function ChatPage() {
       setMessages([]);
       return;
     }
+    if (activeSendConversationRef.current === conversationId) return;
     (async () => {
       setLoadingConvo(true);
       const { data, error } = await supabase
@@ -463,6 +528,16 @@ function ChatPage() {
     });
   }, [messages, streaming]);
 
+  useEffect(() => {
+    return () => chatAbortRef.current?.abort();
+  }, []);
+
+  const cancelResponse = () => {
+    const controller = chatAbortRef.current;
+    if (!controller || controller.signal.aborted) return;
+    controller.abort();
+  };
+
   const ensureConversation = async (firstUserContent: string): Promise<string | null> => {
     if (!user) return null;
     if (conversationId) return conversationId;
@@ -488,8 +563,13 @@ function ChatPage() {
   const buildContextDocs = async (
     content: string,
     manuallySelected: boolean,
+    signal?: AbortSignal,
   ): Promise<ContextDocsResult> => {
     if (!useLibrary || docs.length === 0) {
+      return { docs: [], noLibraryMatch: false, noMatchScope: null };
+    }
+
+    if (!manuallySelected && looksCasualMessage(content)) {
       return { docs: [], noLibraryMatch: false, noMatchScope: null };
     }
 
@@ -500,12 +580,17 @@ function ChatPage() {
       .join(" ");
     const terms = queryTerms(`${content} ${recentChat}`);
 
+    const controller = new AbortController();
+    const abortFromCaller = () => controller.abort();
+    const timeout = window.setTimeout(() => controller.abort(), CHUNK_SEARCH_TIMEOUT_MS);
+    signal?.addEventListener("abort", abortFromCaller, { once: true });
     try {
+      if (signal?.aborted) throw new Error(CHAT_CANCELLED);
       const { data, error } = await supabase.rpc("search_document_chunks", {
         query_terms: terms,
         match_document_ids: documentIds,
         match_count: manuallySelected ? 12 : 6,
-      });
+      }).abortSignal(controller.signal);
 
       if (error) {
         console.warn("chunk search failed; falling back to document preview", error);
@@ -526,15 +611,22 @@ function ChatPage() {
         };
       }
     } catch (err) {
+      if (signal?.aborted) throw new Error(CHAT_CANCELLED);
       console.warn("chunk search unavailable; falling back to document preview", err);
+    } finally {
+      signal?.removeEventListener("abort", abortFromCaller);
+      window.clearTimeout(timeout);
     }
 
     const fallbackDocs = manuallySelected ? selectedDocs : pickSmartDocs(docs, content, messages);
+    const fallbackWithText = await fetchDocumentExcerpts(
+      fallbackDocs.map((doc) => doc.id),
+      content,
+      signal,
+    );
+
     return {
-      docs: fallbackDocs.map((doc) => ({
-        ...doc,
-        excerpt: relevantExcerpt(doc, content, messages),
-      })),
+      docs: fallbackWithText,
       noLibraryMatch: false,
       noMatchScope: null,
     };
@@ -543,6 +635,13 @@ function ChatPage() {
   const send = async (text?: string) => {
     const content = (text ?? input).trim();
     if (!content || !profile || !user || streaming) return;
+    const requestStartedAt = performance.now();
+    const logTiming = (label: string, extra: Record<string, unknown> = {}) => {
+      console.info(`[G&D timing] ${label}`, {
+        ms: Math.round(performance.now() - requestStartedAt),
+        ...extra,
+      });
+    };
     setInput("");
 
     const curriculumPreference = curriculumPreferenceFromMessage(content);
@@ -571,6 +670,8 @@ function ChatPage() {
 
     const cid = await ensureConversation(content);
     if (!cid) return;
+    activeSendConversationRef.current = cid;
+    logTiming("conversation ready", { conversationId: cid });
 
     const next: DisplayMessage[] = [...messages, { role: "user", content }];
     const requestMessages = shouldFetchWebCurriculum
@@ -581,12 +682,42 @@ function ChatPage() {
         }));
     setMessages([...next, { role: "assistant", content: "" }]);
     setStreaming(true);
+    const requestController = new AbortController();
+    chatAbortRef.current = requestController;
 
     const manuallySelected = selectedDocs.length > 0;
-    const contextResult = webSearch
-      ? { docs: [], noLibraryMatch: false, noMatchScope: null }
-      : await buildContextDocs(content, manuallySelected);
+    let contextResult: ContextDocsResult;
+    try {
+      contextResult = webSearch
+        ? { docs: [], noLibraryMatch: false, noMatchScope: null }
+        : await buildContextDocs(content, manuallySelected, requestController.signal);
+    } catch (err) {
+      if (requestController.signal.aborted || (err as Error).message === CHAT_CANCELLED) {
+        logTiming("response cancelled");
+      } else {
+        console.error("prepare library context", err);
+        toast.error("Couldn't prepare your library context");
+      }
+      setMessages((prev) => prev.slice(0, -1));
+      setStreaming(false);
+      if (chatAbortRef.current === requestController) chatAbortRef.current = null;
+      return;
+    }
+
+    if (requestController.signal.aborted) {
+      logTiming("response cancelled");
+      setMessages((prev) => prev.slice(0, -1));
+      setStreaming(false);
+      if (chatAbortRef.current === requestController) chatAbortRef.current = null;
+      return;
+    }
+
     const documentsForRequest = contextResult.docs;
+    logTiming("library context ready", {
+      docs: documentsForRequest.length,
+      manuallySelected,
+      noLibraryMatch: contextResult.noLibraryMatch,
+    });
     const pendingLibraryNotice =
       documentsForRequest.length > 0
         ? {
@@ -623,6 +754,7 @@ function ChatPage() {
         },
       ]);
       setStreaming(false);
+      if (chatAbortRef.current === requestController) chatAbortRef.current = null;
       supabase
         .from("messages")
         .insert({
@@ -654,19 +786,26 @@ function ChatPage() {
     let metaModel = "";
     let webSources: WebSource[] = [];
     let streamFinished = false;
+    let firstDeltaSeen = false;
+    let cancelled = false;
     let revealTimer: ReturnType<typeof window.setInterval> | null = null;
     let revealDone: (() => void) | null = null;
 
     const setAssistantMessage = (contentToShow: string) => {
       setMessages((prev) => {
         const copy = [...prev];
-        copy[copy.length - 1] = {
+        const assistantMessage = {
           role: "assistant",
           content: contentToShow,
           source: metaSource,
           model: metaModel,
           webSources,
         };
+        if (copy.length === 0 || copy[copy.length - 1]?.role !== "assistant") {
+          copy.push(assistantMessage);
+        } else {
+          copy[copy.length - 1] = assistantMessage;
+        }
         return copy;
       });
     };
@@ -697,17 +836,46 @@ function ChatPage() {
       }, 12);
     };
 
+    const finishCancelled = () => {
+      if (cancelled) return;
+      cancelled = true;
+      stopReveal();
+      logTiming("response cancelled", { chars: assistant.length });
+      if (assistant) {
+        setAssistantMessage(visibleAssistant || assistant);
+      } else {
+        setMessages((prev) => prev.slice(0, -1));
+      }
+    };
+
     const waitForReveal = async () => {
       streamFinished = true;
       startReveal();
       if (visibleAssistant.length >= assistant.length) return;
+      if (requestController.signal.aborted) {
+        finishCancelled();
+        return;
+      }
+      let onAbort: (() => void) | null = null;
       await new Promise<void>((resolve) => {
+        onAbort = resolve;
+        requestController.signal.addEventListener("abort", onAbort, { once: true });
         revealDone = resolve;
       });
+      if (onAbort) requestController.signal.removeEventListener("abort", onAbort);
+      if (requestController.signal.aborted) {
+        finishCancelled();
+        return;
+      }
       setAssistantMessage(assistant);
     };
 
     try {
+      logTiming("ai request starting", {
+        webSearch,
+        documentMode:
+          documentsForRequest.length === 0 ? "none" : manuallySelected ? "selected" : "smart",
+      });
       await streamChat({
         messages: requestMessages,
         profile: profileForRequest,
@@ -717,9 +885,11 @@ function ChatPage() {
           documentsForRequest.length === 0 ? "none" : manuallySelected ? "selected" : "smart",
         forceWebSearch: webSearch,
         interlink: interlink && documentsForRequest.length > 0,
+        signal: requestController.signal,
         onMeta: (m) => {
           metaModel = m.model;
           metaSource = (m.source as "library" | "general" | "interlink") || "general";
+          logTiming("ai response headers", m);
           if (pendingLibraryNotice && metaSource !== "general") {
             setLibraryNotice(pendingLibraryNotice);
             if (pendingLibraryNotice.mode === "smart") {
@@ -732,8 +902,13 @@ function ChatPage() {
           }
         },
         onDelta: (chunk) => {
+          if (!firstDeltaSeen) {
+            firstDeltaSeen = true;
+            logTiming("first ai token", { model: metaModel, source: metaSource });
+          }
           assistant += chunk;
-          startReveal();
+          visibleAssistant = assistant;
+          setAssistantMessage(assistant);
         },
         onSources: (sources) => {
           webSources = sources;
@@ -748,12 +923,16 @@ function ChatPage() {
           });
         },
         onError: (err) => {
+          logTiming("ai error", { error: err });
           stopReveal();
           toast.error(err);
           setMessages((prev) => prev.slice(0, -1));
         },
+        onCancel: finishCancelled,
         onDone: async () => {
           await waitForReveal();
+          if (cancelled || requestController.signal.aborted) return;
+          logTiming("ai stream done", { chars: assistant.length });
           // Persist assistant message + bump conversation timestamp
           if (assistant) {
             await supabase.from("messages").insert({
@@ -786,10 +965,14 @@ function ChatPage() {
     } finally {
       stopReveal();
       setStreaming(false);
+      if (chatAbortRef.current === requestController) chatAbortRef.current = null;
+      if (activeSendConversationRef.current === cid) activeSendConversationRef.current = null;
     }
   };
 
   const newChat = () => {
+    chatAbortRef.current?.abort();
+    activeSendConversationRef.current = null;
     navigate({ to: "/app/chat", search: {} });
     setMessages([]);
   };
@@ -1120,20 +1303,28 @@ function ChatPage() {
               >
                 <GoogleGMark />
               </button>
-              <button
-                type="submit"
-                disabled={!input.trim() || streaming}
-                className="h-[44px] w-[44px] flex items-center justify-center rounded-full bg-gradient-primary text-primary-foreground shadow-glow disabled:opacity-40 transition-opacity"
-              >
-                {streaming ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
+              {streaming ? (
+                <button
+                  type="button"
+                  onClick={cancelResponse}
+                  title="Cancel response"
+                  aria-label="Cancel response"
+                  className="h-[44px] w-[44px] flex items-center justify-center rounded-full border border-destructive/40 bg-destructive/10 text-destructive backdrop-blur-[2px] transition-colors hover:bg-destructive/15"
+                >
+                  <Square className="h-3.5 w-3.5 fill-current" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!input.trim()}
+                  className="h-[44px] w-[44px] flex items-center justify-center rounded-full bg-gradient-primary text-primary-foreground shadow-glow disabled:opacity-40 transition-opacity"
+                >
                   <Send className="h-4 w-4" />
-                )}
-              </button>
+                </button>
+              )}
             </form>
             <p className="mt-1.5 text-[11px] text-muted-foreground text-center">
-              MedAI can be wrong. Always verify with your lecturer or textbook.
+              G&D can be wrong. Always verify with your lecturer or textbook.
             </p>
           </div>
         </div>
@@ -1220,10 +1411,17 @@ function FilePickerDialog({
               docs.map((doc) => {
                 const checked = selectedDocIds.includes(doc.id);
                 return (
-                  <button
+                  <div
                     key={doc.id}
-                    type="button"
                     onClick={() => onToggle(doc.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onToggle(doc.id);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
                     title={doc.file_name}
                     className={`flex w-full items-center gap-3 border-b border-border/70 px-4 py-3 text-left transition-colors last:border-b-0 ${
                       checked ? "bg-primary/10" : "hover:bg-surface-elevated"
@@ -1237,7 +1435,7 @@ function FilePickerDialog({
                         {doc.folder || "Unfoldered"}
                       </span>
                     </span>
-                  </button>
+                  </div>
                 );
               })
             )}

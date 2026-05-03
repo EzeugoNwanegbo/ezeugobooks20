@@ -31,13 +31,13 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "MedAI Hub — your personal medical study AI" },
+      { title: "G&D — your personal medical study AI" },
       {
         name: "description",
         content:
           "A multi-AI study assistant for medical students. Personalized chat, document-aware answers from your uploaded notes, and exam practice.",
       },
-      { property: "og:title", content: "MedAI Hub" },
+      { property: "og:title", content: "G&D" },
       {
         property: "og:description",
         content:

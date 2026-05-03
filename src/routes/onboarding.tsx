@@ -7,7 +7,7 @@ import { Loader2, ArrowRight, ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/onboarding")({
   head: () => ({
-    meta: [{ title: "Set up your profile — MedAI Hub" }],
+    meta: [{ title: "Set up your profile — G&D" }],
   }),
   component: OnboardingPage,
 });
@@ -77,7 +77,7 @@ function OnboardingPage() {
       <div className="symbiote-blob auth-blob-two" />
 
       <header className="relative z-10 px-6 py-6 flex items-center justify-between">
-        <div className="luxury-brand-text">MedAI Hub</div>
+        <div className="luxury-brand-text">G&D</div>
         <span className="text-xs text-muted-foreground">
           Step {step + 1} of {STEPS.length}
         </span>

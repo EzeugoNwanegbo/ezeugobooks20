@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "MedAI Hub - quiet intelligence for medical study" },
+      { title: "G&D - quiet intelligence for medical study" },
       {
         name: "description",
         content:
@@ -41,14 +41,8 @@ function Landing() {
 
       <nav className="luxury-nav" aria-label="Primary navigation">
         <Link to="/" className="luxury-logo">
-          MedAI Hub
+          G&D
         </Link>
-        <div className="luxury-nav-links">
-          <a href="#method">Method</a>
-          <a href="#library">Library</a>
-          <a href="#practice">Practice</a>
-          <Link to="/auth">Access</Link>
-        </div>
       </nav>
 
       <section className="luxury-hero" id="method">
