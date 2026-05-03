@@ -3,7 +3,7 @@ services:
     name: medai-hub
     runtime: node
     plan: free
-    buildCommand: npm ci && npm run build:ssr
+    buildCommand: npm ci && npm run build
     startCommand: npm run start
     autoDeploy: true
     envVars:
