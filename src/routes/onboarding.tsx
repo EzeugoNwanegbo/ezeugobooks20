@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import { Loader2, ArrowRight, ArrowLeft } from "lucide-react";
 
@@ -9,18 +9,10 @@ export const Route = createFileRoute("/onboarding")({
   head: () => ({
     meta: [{ title: "Set up your profile — G&D" }],
   }),
-  component: OnboardingRoute,
+  component: OnboardingPage,
 });
 
 const STEPS = ["About you", "Your studies", "Your exams", "Your style"] as const;
-
-function OnboardingRoute() {
-  return (
-    <AuthProvider>
-      <OnboardingPage />
-    </AuthProvider>
-  );
-}
 
 function OnboardingPage() {
   const navigate = useNavigate();
