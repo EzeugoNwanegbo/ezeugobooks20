@@ -1,9 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+
+const AUTH_CONFIG_ERROR =
+  "Authentication is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your hosting environment, then redeploy.";
 
 type AuthSearch = { mode?: "signup" | "signin" };
 const AUTH_ACTION_TIMEOUT_MS = 15_000;
@@ -22,6 +24,16 @@ function withAuthTimeout<T>(promise: PromiseLike<T>, label: string): Promise<T> 
   });
 }
 
+function getAuthErrorMessage(error: unknown, fallback = "Authentication failed") {
+  const message = error instanceof Error ? error.message : fallback;
+
+  if (message.includes("Missing Supabase environment variables")) {
+    return AUTH_CONFIG_ERROR;
+  }
+
+  return message;
+}
+
 export const Route = createFileRoute("/auth")({
   validateSearch: (s: Record<string, unknown>): AuthSearch => ({
     mode: s.mode === "signup" ? "signup" : "signin",
@@ -38,30 +50,15 @@ export const Route = createFileRoute("/auth")({
 function AuthPage() {
   const { mode } = Route.useSearch();
   const navigate = useNavigate();
-  const { user, profile, loading, authError } = useAuth();
   const [isSignup, setIsSignup] = useState(mode === "signup");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (!loading && user) {
-      if (!profile || !profile.onboarded) {
-        navigate({ to: "/onboarding" });
-      } else if (profile?.onboarded) {
-        navigate({ to: "/app/chat" });
-      }
-    }
-  }, [loading, user, profile, navigate]);
-
   const handleEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
-    if (authError) {
-      toast.error(authError);
-      return;
-    }
 
     setSubmitting(true);
     try {
@@ -78,6 +75,7 @@ function AuthPage() {
         );
         if (error) throw error;
         toast.success("Account created! Let's set up your profile.");
+        navigate({ to: "/onboarding" });
       } else {
         const { error } = await withAuthTimeout(
           supabase.auth.signInWithPassword({ email: trimmedEmail, password }),
@@ -85,9 +83,10 @@ function AuthPage() {
         );
         if (error) throw error;
         toast.success("Welcome back!");
+        navigate({ to: "/app/chat" });
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Authentication failed");
+      toast.error(getAuthErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -95,10 +94,6 @@ function AuthPage() {
 
   const handleGoogle = async () => {
     if (googleSubmitting) return;
-    if (authError) {
-      toast.error(authError);
-      return;
-    }
 
     setGoogleSubmitting(true);
     try {
@@ -113,7 +108,7 @@ function AuthPage() {
       );
       if (error) throw error;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Google sign-in failed");
+      toast.error(getAuthErrorMessage(err, "Google sign-in failed"));
       setGoogleSubmitting(false);
     }
   };
@@ -141,16 +136,10 @@ function AuthPage() {
                 : "Sign in to continue your studies."}
             </p>
 
-            {authError && (
-              <div className="mt-4 rounded-lg border border-destructive/35 bg-destructive/10 px-3 py-2 text-xs leading-relaxed text-destructive">
-                {authError}
-              </div>
-            )}
-
             <button
               onClick={handleGoogle}
               type="button"
-              disabled={googleSubmitting || Boolean(authError)}
+              disabled={googleSubmitting}
               className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background/70 hover:bg-surface-elevated transition-colors text-sm font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-60"
             >
               {googleSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
@@ -191,7 +180,7 @@ function AuthPage() {
               </div>
               <button
                 type="submit"
-                disabled={submitting || Boolean(authError)}
+                disabled={submitting}
                 className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {submitting && <Loader2 className="h-4 w-4 animate-spin" />}

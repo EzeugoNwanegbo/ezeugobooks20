@@ -1,11 +1,19 @@
 import { createFileRoute, Outlet, Link, useNavigate, useLocation } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { useAuth } from "@/lib/auth-context";
+import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { MessageSquare, BookOpen, LogOut, Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/app")({
-  component: AppLayout,
+  component: AppRoute,
 });
+
+function AppRoute() {
+  return (
+    <AuthProvider>
+      <AppLayout />
+    </AuthProvider>
+  );
+}
 
 function AppLayout() {
   const { user, profile, loading, signOut } = useAuth();
