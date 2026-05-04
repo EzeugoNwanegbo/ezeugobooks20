@@ -296,6 +296,10 @@ a.bg-gradient-primary > * {
   z-index: 0;
 }
 
+.luxury-auth-page .symbiote-blob {
+  display: none;
+}
+
 .luxury-app-shell > :not(.symbiote-blob),
 .luxury-auth-page > :not(.symbiote-blob) {
   position: relative;

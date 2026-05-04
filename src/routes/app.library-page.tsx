@@ -1,0 +1,707 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/lib/auth-context";
+import { supabase } from "@/integrations/supabase/client";
+import { extractPdfText } from "@/lib/pdf";
+import { chunkDocumentText, documentPreview, type DocumentChunkInput } from "@/lib/document-chunks";
+import { toast } from "sonner";
+import {
+  Upload,
+  FileText,
+  Trash2,
+  Loader2,
+  BookOpen,
+  Folder,
+  FolderPlus,
+  ChevronRight,
+  ChevronDown,
+  MoreVertical,
+  Sparkles,
+  X,
+} from "lucide-react";
+
+type FolderRow = {
+  id: string;
+  name: string;
+  color: string | null;
+};
+
+type DocRow = {
+  id: string;
+  file_name: string;
+  file_type: string | null;
+  file_size: number | null;
+  page_count: number | null;
+  folder_id: string | null;
+  suggested_subject: string | null;
+  created_at: string;
+};
+
+const SUGGEST_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-folder`;
+const SUGGEST_FOLDER_TIMEOUT_MS = 8_000;
+
+async function suggestFolder(
+  fileName: string,
+  excerpt: string,
+  existingFolders: string[],
+): Promise<{ folder: string; isNew: boolean } | null> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), SUGGEST_FOLDER_TIMEOUT_MS);
+
+  try {
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+    if (!token) return null;
+    const r = await fetch(SUGGEST_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        fileName,
+        excerpt: excerpt.slice(0, 6000),
+        existingFolders,
+      }),
+    });
+    if (!r.ok) return null;
+    return (await r.json()) as { folder: string; isNew: boolean };
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+export function LibraryPage() {
+  const { user } = useAuth();
+  const [folders, setFolders] = useState<FolderRow[]>([]);
+  const [docs, setDocs] = useState<DocRow[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<string>("");
+  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
+  const [pendingAssign, setPendingAssign] = useState<{
+    fileName: string;
+    storagePath: string;
+    extracted: string;
+    chunks: DocumentChunkInput[];
+    pageCount: number;
+    fileType: string;
+    fileSize: number;
+    suggestion: { folder: string; isNew: boolean };
+  } | null>(null);
+  const [chosenFolder, setChosenFolder] = useState<string>("");
+  const [newFolderName, setNewFolderName] = useState<string>("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const refresh = async () => {
+    if (!user) return;
+    const [{ data: f }, { data: d }] = await Promise.all([
+      supabase.from("folders").select("id, name, color").eq("user_id", user.id).order("name"),
+      supabase
+        .from("documents")
+        .select(
+          "id, file_name, file_type, file_size, page_count, folder_id, suggested_subject, created_at",
+        )
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false }),
+    ]);
+    setFolders((f as FolderRow[]) ?? []);
+    setDocs((d as DocRow[]) ?? []);
+    // open all folders by default first time
+    setOpenFolders((cur) => {
+      const next = { ...cur };
+      for (const fo of (f as FolderRow[]) ?? []) {
+        if (!(fo.id in next)) next[fo.id] = true;
+      }
+      if (!("__none" in next)) next.__none = true;
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  const grouped = useMemo(() => {
+    const map: Record<string, DocRow[]> = { __none: [] };
+    for (const f of folders) map[f.id] = [];
+    for (const d of docs) {
+      const k = d.folder_id ?? "__none";
+      if (!map[k]) map[k] = [];
+      map[k].push(d);
+    }
+    return map;
+  }, [folders, docs]);
+
+  const onUpload = async (file: File) => {
+    if (!user) return;
+    if (file.size > 300 * 1024 * 1024) {
+      toast.error("File too large (max 300 MB)");
+      return;
+    }
+    setUploading(true);
+    try {
+      setProgress("Extracting text (large PDFs may take a minute)...");
+      let extracted = "";
+      let pageCount = 0;
+      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+        const r = await extractPdfText(file);
+        extracted = r.text;
+        pageCount = r.pageCount;
+      } else if (file.type.startsWith("text/")) {
+        extracted = await file.text();
+      } else {
+        toast.error("Only PDF and text files are supported right now.");
+        setUploading(false);
+        setProgress("");
+        return;
+      }
+
+      setProgress("Preparing searchable chunks...");
+      const chunks = chunkDocumentText(extracted);
+
+      // Text-only mode: we don't upload the original PDF to storage (saves
+      // bandwidth and bypasses the 50 MB Supabase storage default limit for
+      // huge course materials). storage_path is a virtual marker.
+      const path = `text-only/${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+
+      setProgress("Suggesting folder...");
+      const suggestion = await suggestFolder(
+        file.name,
+        extracted,
+        folders.map((f) => f.name),
+      );
+
+      // Open assignment modal — defer DB insert until user confirms
+      setPendingAssign({
+        fileName: file.name,
+        storagePath: path,
+        extracted: documentPreview(extracted),
+        chunks,
+        pageCount: pageCount || 0,
+        fileType: file.type.includes("pdf") ? "pdf" : "text",
+        fileSize: file.size,
+        suggestion: suggestion ?? { folder: "Uncategorised", isNew: true },
+      });
+      // Pre-select: matching existing folder if any
+      const match = folders.find(
+        (f) => f.name.toLowerCase() === (suggestion?.folder || "").toLowerCase(),
+      );
+      if (match) {
+        setChosenFolder(match.id);
+        setNewFolderName("");
+      } else {
+        setChosenFolder("__new");
+        setNewFolderName(suggestion?.folder || "");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      setProgress("");
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const confirmAssign = async () => {
+    if (!user || !pendingAssign) return;
+    let folderId: string | null = null;
+    try {
+      if (chosenFolder === "__new") {
+        const name = newFolderName.trim();
+        if (!name) {
+          toast.error("Give the folder a name");
+          return;
+        }
+        // reuse if exists
+        const existing = folders.find((f) => f.name.toLowerCase() === name.toLowerCase());
+        if (existing) {
+          folderId = existing.id;
+        } else {
+          const { data, error } = await supabase
+            .from("folders")
+            .insert({ user_id: user.id, name })
+            .select("id")
+            .single();
+          if (error) throw error;
+          folderId = data.id;
+        }
+      } else if (chosenFolder === "__none") {
+        folderId = null;
+      } else {
+        folderId = chosenFolder;
+      }
+
+      const { data: doc, error: dbErr } = await supabase
+        .from("documents")
+        .insert({
+          user_id: user.id,
+          file_name: pendingAssign.fileName,
+          storage_path: pendingAssign.storagePath,
+          file_type: pendingAssign.fileType,
+          file_size: pendingAssign.fileSize,
+          page_count: pendingAssign.pageCount || null,
+          extracted_text: pendingAssign.extracted,
+          folder_id: folderId,
+          suggested_subject: pendingAssign.suggestion.folder,
+        })
+        .select("id")
+        .single();
+      if (dbErr) throw dbErr;
+
+      let chunkSaveFailed = false;
+      if (pendingAssign.chunks.length > 0) {
+        const rows = pendingAssign.chunks.map((chunk) => ({
+          document_id: doc.id,
+          user_id: user.id,
+          chunk_index: chunk.chunk_index,
+          page_start: chunk.page_start,
+          page_end: chunk.page_end,
+          content: chunk.content,
+          token_estimate: chunk.token_estimate,
+        }));
+
+        for (let i = 0; i < rows.length; i += 100) {
+          const { error: chunkErr } = await supabase
+            .from("document_chunks")
+            .insert(rows.slice(i, i + 100));
+          if (chunkErr) {
+            console.error("save document chunks", chunkErr);
+            chunkSaveFailed = true;
+            break;
+          }
+        }
+      }
+
+      toast.success(`Added "${pendingAssign.fileName}"`);
+      if (chunkSaveFailed) {
+        toast.warning("Saved file, but searchable chunks need the database migration.");
+      }
+      setPendingAssign(null);
+      setChosenFolder("");
+      setNewFolderName("");
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    }
+  };
+
+  const cancelAssign = async () => {
+    if (pendingAssign && !pendingAssign.storagePath.startsWith("text-only/")) {
+      // clean up the orphaned storage object (only if we actually uploaded one)
+      await supabase.storage.from("documents").remove([pendingAssign.storagePath]);
+    }
+    setPendingAssign(null);
+    setChosenFolder("");
+    setNewFolderName("");
+  };
+
+  const moveDoc = async (docId: string, folderId: string | null) => {
+    const { error } = await supabase
+      .from("documents")
+      .update({ folder_id: folderId })
+      .eq("id", docId);
+    if (error) toast.error(error.message);
+    else {
+      toast.success("Moved");
+      refresh();
+    }
+  };
+
+  const onDelete = async (doc: DocRow) => {
+    if (!user) return;
+    if (!confirm(`Delete "${doc.file_name}"?`)) return;
+    const { data: row } = await supabase
+      .from("documents")
+      .select("storage_path")
+      .eq("id", doc.id)
+      .single();
+    if (row?.storage_path && !row.storage_path.startsWith("text-only/")) {
+      await supabase.storage.from("documents").remove([row.storage_path]);
+    }
+    const { error } = await supabase.from("documents").delete().eq("id", doc.id);
+    if (error) toast.error(error.message);
+    else {
+      toast.success("Document deleted");
+      refresh();
+    }
+  };
+
+  const createFolder = async () => {
+    if (!user) return;
+    const name = prompt("Folder name (e.g. Cardiology, Year 2)")?.trim();
+    if (!name) return;
+    const { error } = await supabase.from("folders").insert({ user_id: user.id, name });
+    if (error) toast.error(error.message);
+    else {
+      toast.success(`Created "${name}"`);
+      refresh();
+    }
+  };
+
+  const renameFolder = async (f: FolderRow) => {
+    const name = prompt("Rename folder", f.name)?.trim();
+    if (!name || name === f.name) return;
+    const { error } = await supabase.from("folders").update({ name }).eq("id", f.id);
+    if (error) toast.error(error.message);
+    else refresh();
+  };
+
+  const deleteFolder = async (f: FolderRow) => {
+    const count = (grouped[f.id] || []).length;
+    if (
+      !confirm(
+        count > 0
+          ? `Delete folder "${f.name}"? Its ${count} document(s) will move to Uncategorised.`
+          : `Delete folder "${f.name}"?`,
+      )
+    )
+      return;
+    // documents folder_id will be set to null by FK on delete
+    const { error } = await supabase.from("folders").delete().eq("id", f.id);
+    if (error) toast.error(error.message);
+    else {
+      toast.success("Folder deleted");
+      refresh();
+    }
+  };
+
+  const toggleFolder = (id: string) => setOpenFolders((cur) => ({ ...cur, [id]: !cur[id] }));
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-4xl mx-auto px-4 md:px-8 py-8">
+        <div className="flex items-start justify-between gap-4 mb-8">
+          <div>
+            <h1 className="font-display text-5xl font-light leading-none">Your library</h1>
+            <p className="text-sm text-muted-foreground mt-1 max-w-lg">
+              Upload notes — G&D suggests a subject folder and you confirm.
+            </p>
+          </div>
+          <button
+            onClick={createFolder}
+            className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded-lg border border-border bg-surface/60 hover:border-primary/40 hover:text-primary transition-colors font-medium"
+          >
+            <FolderPlus className="h-4 w-4" />
+            New folder
+          </button>
+        </div>
+
+        {/* Upload card */}
+        <label
+          htmlFor="file-up"
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.currentTarget.classList.add("border-primary", "bg-primary/5");
+          }}
+          onDragLeave={(e) => {
+            e.currentTarget.classList.remove("border-primary", "bg-primary/5");
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.currentTarget.classList.remove("border-primary", "bg-primary/5");
+            const f = e.dataTransfer.files?.[0];
+            if (f) onUpload(f);
+          }}
+          className={`block cursor-pointer rounded-lg border-2 border-dashed border-border bg-surface/40 p-8 text-center transition-colors hover:border-primary/40 ${
+            uploading ? "pointer-events-none opacity-70" : ""
+          }`}
+        >
+          <input
+            id="file-up"
+            ref={fileRef}
+            type="file"
+            accept="application/pdf,text/plain,.pdf,.txt"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onUpload(f);
+            }}
+          />
+          {uploading ? (
+            <div className="flex flex-col items-center gap-3 text-sm">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              <span className="text-muted-foreground">{progress || "Working..."}</span>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3">
+              <div className="h-12 w-12 rounded-lg bg-primary/10 border border-primary/15 flex items-center justify-center">
+                <Upload className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <div className="font-semibold">Drop a PDF here or click to browse</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  PDF or .txt · up to 300 MB · auto-organised
+                </div>
+              </div>
+            </div>
+          )}
+        </label>
+
+        {/* Folder list */}
+        <div className="mt-8 space-y-4">
+          <div className="flex items-center gap-2 text-xs uppercase font-semibold tracking-wider text-muted-foreground">
+            <BookOpen className="h-3.5 w-3.5" />
+            {docs.length} {docs.length === 1 ? "document" : "documents"} · {folders.length}{" "}
+            {folders.length === 1 ? "folder" : "folders"}
+          </div>
+
+          {docs.length === 0 && folders.length === 0 ? (
+            <div className="text-center py-12 text-sm text-muted-foreground">
+              No documents yet. Upload your first PDF to get started.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {folders.map((f) => (
+                <FolderBlock
+                  key={f.id}
+                  folder={f}
+                  docs={grouped[f.id] || []}
+                  open={!!openFolders[f.id]}
+                  onToggle={() => toggleFolder(f.id)}
+                  onRename={() => renameFolder(f)}
+                  onDelete={() => deleteFolder(f)}
+                  onDeleteDoc={onDelete}
+                  onMoveDoc={moveDoc}
+                  allFolders={folders}
+                />
+              ))}
+              {(grouped.__none || []).length > 0 && (
+                <FolderBlock
+                  folder={{
+                    id: "__none",
+                    name: "Uncategorised",
+                    color: null,
+                  }}
+                  docs={grouped.__none || []}
+                  open={!!openFolders.__none}
+                  onToggle={() => toggleFolder("__none")}
+                  onDeleteDoc={onDelete}
+                  onMoveDoc={moveDoc}
+                  allFolders={folders}
+                  isUncategorised
+                />
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Folder assignment modal */}
+      {pendingAssign && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+          <div className="luxury-panel w-full max-w-md rounded-lg p-6 shadow-elegant">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                </span>
+                <div>
+                  <div className="font-display text-xl font-light">Organise this note</div>
+                  <div className="text-xs text-muted-foreground truncate max-w-[260px]">
+                    {pendingAssign.fileName}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={cancelAssign}
+                className="text-muted-foreground hover:text-foreground p-1"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="text-xs text-muted-foreground mb-2">
+              G&D suggests:{" "}
+              <span className="text-primary font-semibold">{pendingAssign.suggestion.folder}</span>
+              {pendingAssign.suggestion.isNew && <span className="ml-1">(new folder)</span>}
+            </div>
+
+            <label className="block text-xs font-semibold mb-1.5">Folder</label>
+            <select
+              value={chosenFolder}
+              onChange={(e) => setChosenFolder(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="__new">＋ New folder...</option>
+              <option value="__none">Uncategorised</option>
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+
+            {chosenFolder === "__new" && (
+              <input
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                placeholder="Folder name"
+                autoFocus
+                className="mt-2 w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            )}
+
+            <div className="mt-5 flex gap-2 justify-end">
+              <button
+                onClick={cancelAssign}
+                className="px-4 py-2 text-sm rounded-lg border border-border hover:bg-surface-elevated transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmAssign}
+                className="px-4 py-2 text-sm rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FolderBlock({
+  folder,
+  docs,
+  open,
+  onToggle,
+  onRename,
+  onDelete,
+  onDeleteDoc,
+  onMoveDoc,
+  allFolders,
+  isUncategorised,
+}: {
+  folder: FolderRow;
+  docs: DocRow[];
+  open: boolean;
+  onToggle: () => void;
+  onRename?: () => void;
+  onDelete?: () => void;
+  onDeleteDoc: (doc: DocRow) => void;
+  onMoveDoc: (docId: string, folderId: string | null) => void;
+  allFolders: FolderRow[];
+  isUncategorised?: boolean;
+}) {
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  return (
+    <div className="luxury-panel rounded-lg overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <button onClick={onToggle} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+          {open ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          )}
+          <Folder
+            className={`h-4 w-4 ${isUncategorised ? "text-muted-foreground" : "text-primary"}`}
+          />
+          <span className="font-semibold text-sm truncate">{folder.name}</span>
+          <span className="text-xs text-muted-foreground">({docs.length})</span>
+        </button>
+        {!isUncategorised && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onRename}
+              className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-surface-elevated"
+            >
+              Rename
+            </button>
+            <button
+              onClick={onDelete}
+              className="p-1.5 text-muted-foreground hover:text-destructive rounded-md hover:bg-destructive/10"
+              title="Delete folder"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+      {open && (
+        <ul className="border-t border-border divide-y divide-border">
+          {docs.length === 0 ? (
+            <li className="px-4 py-4 text-xs text-muted-foreground italic">Empty</li>
+          ) : (
+            docs.map((d) => (
+              <li
+                key={d.id}
+                className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-elevated/50 transition-colors relative"
+              >
+                <div className="h-9 w-9 rounded-lg border border-primary/15 bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <FileText className="h-4 w-4 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm truncate">{d.file_name}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    {d.page_count ? `${d.page_count} pages · ` : ""}
+                    {d.file_size ? `${(d.file_size / 1024 / 1024).toFixed(2)} MB` : ""}
+                    {" · "}
+                    {new Date(d.created_at).toLocaleDateString()}
+                  </div>
+                </div>
+                <div className="relative">
+                  <button
+                    onClick={() => setMenuFor(menuFor === d.id ? null : d.id)}
+                    className="p-1.5 rounded-md text-muted-foreground hover:bg-surface-elevated"
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </button>
+                  {menuFor === d.id && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setMenuFor(null)} />
+                      <div className="absolute right-0 top-full mt-1 z-20 w-52 rounded-lg border border-border bg-surface shadow-elegant overflow-hidden">
+                        <div className="px-3 py-2 text-[10px] uppercase font-semibold tracking-wider text-muted-foreground border-b border-border">
+                          Move to
+                        </div>
+                        <button
+                          onClick={() => {
+                            onMoveDoc(d.id, null);
+                            setMenuFor(null);
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-surface-elevated flex items-center gap-2"
+                        >
+                          <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+                          Uncategorised
+                        </button>
+                        {allFolders
+                          .filter((f) => f.id !== d.folder_id)
+                          .map((f) => (
+                            <button
+                              key={f.id}
+                              onClick={() => {
+                                onMoveDoc(d.id, f.id);
+                                setMenuFor(null);
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-surface-elevated flex items-center gap-2"
+                            >
+                              <Folder className="h-3.5 w-3.5 text-primary" />
+                              {f.name}
+                            </button>
+                          ))}
+                        <button
+                          onClick={() => {
+                            setMenuFor(null);
+                            onDeleteDoc(d);
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm text-destructive hover:bg-destructive/10 border-t border-border flex items-center gap-2"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Delete
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
