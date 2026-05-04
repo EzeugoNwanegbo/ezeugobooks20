@@ -30,6 +30,15 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const AUTH_REQUEST_TIMEOUT_MS = 12_000;
 const AUTH_CONFIG_ERROR =
   "Authentication is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your hosting environment, then redeploy.";
+const guestAuthContext: AuthContextValue = {
+  user: null,
+  session: null,
+  profile: null,
+  loading: false,
+  authError: null,
+  refreshProfile: async () => {},
+  signOut: async () => {},
+};
 
 function withTimeout<T>(promise: PromiseLike<T>, label: string): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -104,7 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let unsubscribe: (() => void) | undefined;
 
     const failAuth = (error: unknown) => {
-      console.error("auth init", error);
+      console.error("[AuthProvider] Auth initialization failed:", error);
       if (!active) return;
       setAuthError(getAuthErrorMessage(error));
       setSession(null);
@@ -114,8 +123,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     try {
+      console.log("[AuthProvider] Setting up auth listener...");
       // Set up auth listener FIRST
       const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+        console.log("[AuthProvider] Auth state changed:", { event: _event, session: !!sess });
         if (!active) return;
 
         setAuthError(null);
@@ -139,8 +150,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsubscribe = () => sub.subscription.unsubscribe();
 
       // Then fetch existing session
+      console.log("[AuthProvider] Fetching existing session...");
       void withTimeout(supabase.auth.getSession(), "Checking your sign-in session")
         .then(async ({ data }) => {
+          console.log("[AuthProvider] Got existing session:", !!data.session);
           if (!active) return;
           setAuthError(null);
           setSession(data.session);
@@ -152,7 +165,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         })
         .catch((error) => {
-          console.error("get session", error);
+          console.error("[AuthProvider] Failed to get session:", error);
           if (!active) return;
           setAuthError(getAuthErrorMessage(error));
           setSession(null);
@@ -198,6 +211,5 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
-  return ctx;
+  return ctx ?? guestAuthContext;
 }

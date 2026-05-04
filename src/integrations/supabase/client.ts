@@ -12,9 +12,23 @@ function createSupabaseClient() {
     );
   }
 
+  // Safely check localStorage availability
+  let storage: Storage | undefined;
+  if (typeof window !== "undefined") {
+    try {
+      const testKey = "__test__";
+      localStorage.setItem(testKey, "1");
+      localStorage.removeItem(testKey);
+      storage = localStorage;
+    } catch (e) {
+      console.warn("localStorage not available, auth will not persist across page reloads", e);
+      storage = undefined;
+    }
+  }
+
   return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     auth: {
-      storage: typeof window !== "undefined" ? localStorage : undefined,
+      storage,
       persistSession: true,
       autoRefreshToken: true,
     },

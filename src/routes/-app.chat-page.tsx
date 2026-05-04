@@ -1,7 +1,7 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { useAuth } from "@/lib/auth-context";
+import { useAuth, type Profile } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { streamChat, type ChatMessage, type DocumentCtx, type WebSource } from "@/lib/chat-client";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -112,6 +112,20 @@ const STOP_WORDS = new Set([
   "would",
   "your",
 ]);
+
+const GUEST_PROFILE: Profile = {
+  id: "guest",
+  name: "Student",
+  university: null,
+  year: null,
+  course: null,
+  curriculum: "Use broad course-level exam priorities as the study guide.",
+  exam_format: "MCQ",
+  preferred_mode: "Simplified",
+  weak_areas: null,
+  recent_topics: null,
+  onboarded: true,
+};
 
 function queryTerms(text: string): string[] {
   const seen = new Set<string>();
@@ -340,19 +354,21 @@ function studyMaterialMissMessage(scope: "selected" | "library"): string {
 }
 
 export function ChatPage() {
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile: savedProfile, refreshProfile } = useAuth();
+  const profile = savedProfile ?? GUEST_PROFILE;
   const navigate = useNavigate();
   const search = useSearch({ from: "/app/chat" }) as ChatSearch;
   const conversationId = search.c;
+  const isGuest = !user;
 
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [loadingConvo, setLoadingConvo] = useState(false);
   const [mode, setMode] = useState<"Simplified" | "Detailed" | "Storytelling">(
-    (profile?.preferred_mode as "Simplified" | "Detailed") || "Simplified",
+    (profile.preferred_mode as "Simplified" | "Detailed") || "Simplified",
   );
-  const [useLibrary, setUseLibrary] = useState(true);
+  const [useLibrary, setUseLibrary] = useState(() => Boolean(user));
   const [webSearch, setWebSearch] = useState(false);
   const [interlink, setInterlink] = useState(false);
   const [docs, setDocs] = useState<DocumentCtx[]>([]);
@@ -387,6 +403,15 @@ export function ChatPage() {
         })),
       );
     })();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setUseLibrary(false);
+      setDocs([]);
+      setSelectedDocIds([]);
+      setConvos([]);
+    }
   }, [user]);
 
   useEffect(() => {
@@ -531,7 +556,7 @@ export function ChatPage() {
   };
 
   const ensureConversation = async (firstUserContent: string): Promise<string | null> => {
-    if (!user) return null;
+    if (!user) return "guest";
     if (conversationId) return conversationId;
     const title = firstUserContent.slice(0, 60).trim() || "New conversation";
     const { data, error } = await supabase
@@ -628,7 +653,7 @@ export function ChatPage() {
 
   const send = async (text?: string) => {
     const content = (text ?? input).trim();
-    if (!content || !profile || !user || streaming) return;
+    if (!content || streaming) return;
     const requestStartedAt = performance.now();
     const logTiming = (label: string, extra: Record<string, unknown> = {}) => {
       console.info(`[G&D timing] ${label}`, {
@@ -651,11 +676,11 @@ export function ChatPage() {
       profileForRequest.curriculum = "Use broad course-level exam priorities as the study guide.";
     }
 
-    if (curriculumPreference) {
+    if (user && savedProfile && curriculumPreference) {
       supabase
         .from("user_profiles")
         .update({ curriculum: curriculumPreference })
-        .eq("id", profile.id)
+        .eq("id", savedProfile.id)
         .then(async ({ error }) => {
           if (error) console.warn("save curriculum preference", error);
           else await refreshProfile();
@@ -722,19 +747,20 @@ export function ChatPage() {
 
     setLibraryNotice(null);
 
-    // Persist user message
-    supabase
-      .from("messages")
-      .insert({
-        conversation_id: cid,
-        user_id: user.id,
-        role: "user",
-        content,
-        mode,
-      })
-      .then(({ error }) => {
-        if (error) console.error("save user msg", error);
-      });
+    if (user) {
+      supabase
+        .from("messages")
+        .insert({
+          conversation_id: cid,
+          user_id: user.id,
+          role: "user",
+          content,
+          mode,
+        })
+        .then(({ error }) => {
+          if (error) console.error("save user msg", error);
+        });
+    }
 
     if (contextResult.noLibraryMatch && contextResult.noMatchScope) {
       const noMatchText = studyMaterialMissMessage(contextResult.noMatchScope);
@@ -749,28 +775,30 @@ export function ChatPage() {
       ]);
       setStreaming(false);
       if (chatAbortRef.current === requestController) chatAbortRef.current = null;
-      supabase
-        .from("messages")
-        .insert({
-          conversation_id: cid,
-          user_id: user.id,
-          role: "assistant",
-          content: noMatchText,
-          model_used: "library-search",
-          source_type: "library",
-          mode,
-        })
-        .then(({ error }) => {
-          if (error) console.error("save assistant miss", error);
-        });
-      supabase
-        .from("conversations")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", cid)
-        .then(({ error }) => {
-          if (error) console.error("update conversation after miss", error);
-          else refreshConvos();
-        });
+      if (user) {
+        supabase
+          .from("messages")
+          .insert({
+            conversation_id: cid,
+            user_id: user.id,
+            role: "assistant",
+            content: noMatchText,
+            model_used: "library-search",
+            source_type: "library",
+            mode,
+          })
+          .then(({ error }) => {
+            if (error) console.error("save assistant miss", error);
+          });
+        supabase
+          .from("conversations")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", cid)
+          .then(({ error }) => {
+            if (error) console.error("update conversation after miss", error);
+            else refreshConvos();
+          });
+      }
       return;
     }
 
@@ -927,8 +955,7 @@ export function ChatPage() {
           await waitForReveal();
           if (cancelled || requestController.signal.aborted) return;
           logTiming("ai stream done", { chars: assistant.length });
-          // Persist assistant message + bump conversation timestamp
-          if (assistant) {
+          if (assistant && user) {
             await supabase.from("messages").insert({
               conversation_id: cid,
               user_id: user.id,
@@ -945,13 +972,12 @@ export function ChatPage() {
               .eq("id", cid);
             refreshConvos();
           }
-          // Best-effort: log to recent_topics
-          if (profile && content.length < 300) {
-            const recent = [content, ...(profile.recent_topics || [])].slice(0, 20);
+          if (user && savedProfile && content.length < 300) {
+            const recent = [content, ...(savedProfile.recent_topics || [])].slice(0, 20);
             supabase
               .from("user_profiles")
               .update({ recent_topics: recent })
-              .eq("id", profile.id)
+              .eq("id", savedProfile.id)
               .then();
           }
         },
@@ -1019,7 +1045,7 @@ export function ChatPage() {
           <div className="min-h-0 flex-1 overflow-y-auto p-2 space-y-4">
             {convos.length === 0 ? (
               <div className="text-xs text-muted-foreground px-3 py-6 text-center">
-                Your past chats will appear here.
+                {isGuest ? "Guest chats are not saved." : "Your past chats will appear here."}
               </div>
             ) : (
               <>
@@ -1162,7 +1188,7 @@ export function ChatPage() {
               </div>
             ) : messages.length === 0 ? (
               <EmptyState
-                name={profile?.name || "there"}
+                name={profile.name || "there"}
                 onPick={(s) => send(s)}
                 hasDocs={docs.length > 0 && useLibrary}
               />

@@ -1,7 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Profile } from "@/lib/auth-context";
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
 const CHAT_START_TIMEOUT_MS = 45_000;
 const CHAT_STREAM_IDLE_TIMEOUT_MS = 45_000;
 
@@ -90,11 +92,17 @@ export async function streamChat({
   onCancel?: () => void;
   signal?: AbortSignal;
 }) {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
-  if (!token) {
-    onError("Not authenticated");
+  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+    onError("Chat is not configured. Add the Supabase environment variables in hosting.");
     return;
+  }
+
+  let token = SUPABASE_PUBLISHABLE_KEY;
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    token = sessionData.session?.access_token ?? SUPABASE_PUBLISHABLE_KEY;
+  } catch {
+    token = SUPABASE_PUBLISHABLE_KEY;
   }
 
   const controller = new AbortController();
@@ -116,6 +124,7 @@ export async function streamChat({
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        apikey: SUPABASE_PUBLISHABLE_KEY,
         Authorization: `Bearer ${token}`,
       },
       signal: controller.signal,
