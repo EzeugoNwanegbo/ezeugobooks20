@@ -5,7 +5,7 @@ import { lazy, Suspense } from "react";
 type ChatSearch = { c?: string };
 
 const ChatPage = lazy(() =>
-  import("./app.chat-page").then((module) => ({ default: module.ChatPage })),
+  import("./-app.chat-page").then((module) => ({ default: module.ChatPage })),
 );
 
 export const Route = createFileRoute("/app/chat")({

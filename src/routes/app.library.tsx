@@ -3,7 +3,7 @@ import { Loader2 } from "lucide-react";
 import { lazy, Suspense } from "react";
 
 const LibraryPage = lazy(() =>
-  import("./app.library-page").then((module) => ({ default: module.LibraryPage })),
+  import("./-app.library-page").then((module) => ({ default: module.LibraryPage })),
 );
 
 export const Route = createFileRoute("/app/library")({
