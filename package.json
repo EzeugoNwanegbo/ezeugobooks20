@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "node scripts/clean-dist.mjs && vite build",
+    "build": "node scripts/clean-dist.mjs && vite build && vite build --config vite.static.config.ts --outDir dist-static && node scripts/merge-static-dist.mjs",
     "build:ssr": "node scripts/clean-dist.mjs && vite build",
     "build:static": "node scripts/clean-dist.mjs && vite build --config vite.static.config.ts && node scripts/prepare-static-dist.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
+    "preview:static": "vite preview --config vite.static.config.ts",
     "start": "node server.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."

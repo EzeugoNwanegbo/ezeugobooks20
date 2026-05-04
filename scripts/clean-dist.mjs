@@ -2,14 +2,16 @@ import { existsSync, rmSync } from "node:fs";
 import { basename, resolve } from "node:path";
 
 const projectRoot = process.cwd();
-const distDir = resolve(projectRoot, "dist");
+const outputDirs = [resolve(projectRoot, "dist"), resolve(projectRoot, "dist-static")];
 
-if (basename(distDir) !== "dist" || !distDir.startsWith(projectRoot)) {
-  throw new Error(`Refusing to clean unexpected output directory: ${distDir}`);
-}
+for (const outputDir of outputDirs) {
+  if (!["dist", "dist-static"].includes(basename(outputDir)) || !outputDir.startsWith(projectRoot)) {
+    throw new Error(`Refusing to clean unexpected output directory: ${outputDir}`);
+  }
 
-if (existsSync(distDir)) {
-  rmSync(distDir, { recursive: true, force: true });
+  if (existsSync(outputDir)) {
+    rmSync(outputDir, { recursive: true, force: true });
+  }
 }
 
 console.log("Cleaned generated dist output.");
