@@ -38,7 +38,7 @@ export const Route = createFileRoute("/auth")({
 function AuthPage() {
   const { mode } = Route.useSearch();
   const navigate = useNavigate();
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, authError } = useAuth();
   const [isSignup, setIsSignup] = useState(mode === "signup");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -58,6 +58,10 @@ function AuthPage() {
   const handleEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
+    if (authError) {
+      toast.error(authError);
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -91,6 +95,10 @@ function AuthPage() {
 
   const handleGoogle = async () => {
     if (googleSubmitting) return;
+    if (authError) {
+      toast.error(authError);
+      return;
+    }
 
     setGoogleSubmitting(true);
     try {
@@ -133,10 +141,16 @@ function AuthPage() {
                 : "Sign in to continue your studies."}
             </p>
 
+            {authError && (
+              <div className="mt-4 rounded-lg border border-destructive/35 bg-destructive/10 px-3 py-2 text-xs leading-relaxed text-destructive">
+                {authError}
+              </div>
+            )}
+
             <button
               onClick={handleGoogle}
               type="button"
-              disabled={googleSubmitting}
+              disabled={googleSubmitting || Boolean(authError)}
               className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background/70 hover:bg-surface-elevated transition-colors text-sm font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-60"
             >
               {googleSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
@@ -177,8 +191,8 @@ function AuthPage() {
               </div>
               <button
                 type="submit"
-                disabled={submitting}
-                className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow hover:opacity-90 transition-opacity disabled:opacity-50"
+                disabled={submitting || Boolean(authError)}
+                className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
                 {submitting
