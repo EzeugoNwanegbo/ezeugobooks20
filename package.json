@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
-    "build:ssr": "vite build",
-    "build:static": "vite build --config vite.static.config.ts && node scripts/prepare-static-dist.mjs",
+    "build": "node scripts/clean-dist.mjs && vite build",
+    "build:ssr": "node scripts/clean-dist.mjs && vite build",
+    "build:static": "node scripts/clean-dist.mjs && vite build --config vite.static.config.ts && node scripts/prepare-static-dist.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "start": "node server.mjs",
