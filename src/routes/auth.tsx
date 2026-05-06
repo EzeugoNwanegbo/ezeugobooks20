@@ -1,7 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { AuthProvider, useAuth } from "@/lib/auth-context";
 
 type AuthSearch = { mode?: "signup" | "signin" };
 const AUTH_ACTION_TIMEOUT_MS = 15_000;
@@ -51,13 +52,37 @@ export const Route = createFileRoute("/auth")({
 });
 
 function AuthPage() {
+  return (
+    <AuthProvider>
+      <AuthFlow />
+    </AuthProvider>
+  );
+}
+
+function AuthFlow() {
   const { mode } = Route.useSearch();
   const navigate = useNavigate();
+  const { user, profile, loading } = useAuth();
   const [isSignup, setIsSignup] = useState(mode === "signup");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (loading || !user) return;
+    navigate({ to: profile?.onboarded ? "/app/chat" : "/onboarding", replace: true });
+  }, [loading, user, profile, navigate]);
+
+  if (loading || user) {
+    return (
+      <div className="luxury-auth-page min-h-screen flex items-center justify-center bg-background">
+        <div className="symbiote-blob auth-blob-one" />
+        <div className="symbiote-blob auth-blob-two" />
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   const handleEmail = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,21 +166,29 @@ function AuthPage() {
                 : "Sign in to continue your studies."}
             </p>
 
-            <button
-              onClick={handleGoogle}
-              type="button"
-              disabled={googleSubmitting}
-              className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background/70 hover:bg-surface-elevated transition-colors text-sm font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {googleSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
-              {googleSubmitting ? "Opening Google..." : "Continue with Google"}
-            </button>
+            {!isSignup && (
+              <>
+                <button
+                  onClick={handleGoogle}
+                  type="button"
+                  disabled={googleSubmitting}
+                  className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background/70 hover:bg-surface-elevated transition-colors text-sm font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {googleSubmitting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <GoogleIcon />
+                  )}
+                  {googleSubmitting ? "Opening Google..." : "Sign in with Google"}
+                </button>
 
-            <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
-              <div className="h-px flex-1 bg-border" />
-              or
-              <div className="h-px flex-1 bg-border" />
-            </div>
+                <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
+                  <div className="h-px flex-1 bg-border" />
+                  or
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+              </>
+            )}
 
             <form onSubmit={handleEmail} className="space-y-3">
               <div>
