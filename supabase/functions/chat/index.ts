@@ -636,12 +636,25 @@ function sourceMetadataSse(sources: WebSource[]): string {
 
 function textToSse(text: string, sources: WebSource[] = []): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
+  const chunks = text.match(/.{1,24}(?:\s+|$)/gs) ?? [text];
+  let index = 0;
+
   return new ReadableStream({
-    start(controller) {
-      controller.enqueue(
-        encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`),
-      );
-      if (sources.length > 0) controller.enqueue(encoder.encode(sourceMetadataSse(sources)));
+    async pull(controller) {
+      if (index < chunks.length) {
+        const content = chunks[index++];
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`,
+          ),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 12));
+        return;
+      }
+
+      if (sources.length > 0) {
+        controller.enqueue(encoder.encode(sourceMetadataSse(sources)));
+      }
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
     },

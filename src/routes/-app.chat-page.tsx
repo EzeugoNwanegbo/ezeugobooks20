@@ -568,6 +568,7 @@ export function ChatPage() {
       toast.error(error.message);
       return null;
     }
+    activeSendConversationRef.current = data.id;
     navigate({
       to: "/app/chat",
       search: { c: data.id },
@@ -687,22 +688,29 @@ export function ChatPage() {
         });
     }
 
+    const next: DisplayMessage[] = [...messages, { role: "user", content }];
+    setMessages([...next, { role: "assistant", content: "" }]);
+    setStreaming(true);
+    const requestController = new AbortController();
+    chatAbortRef.current = requestController;
+
     const cid = await ensureConversation(content);
-    if (!cid) return;
+    if (!cid || requestController.signal.aborted) {
+      if (requestController.signal.aborted) logTiming("response cancelled");
+      setMessages(next);
+      setStreaming(false);
+      if (chatAbortRef.current === requestController) chatAbortRef.current = null;
+      return;
+    }
     activeSendConversationRef.current = cid;
     logTiming("conversation ready", { conversationId: cid });
 
-    const next: DisplayMessage[] = [...messages, { role: "user", content }];
     const requestMessages = shouldFetchWebCurriculum
       ? next
       : next.map((message) => ({
           ...message,
           content: suppressWebCurriculumForSpeed(message.content),
         }));
-    setMessages([...next, { role: "assistant", content: "" }]);
-    setStreaming(true);
-    const requestController = new AbortController();
-    chatAbortRef.current = requestController;
 
     const manuallySelected = selectedDocs.length > 0;
     let contextResult: ContextDocsResult;
@@ -929,8 +937,7 @@ export function ChatPage() {
             logTiming("first ai token", { model: metaModel, source: metaSource });
           }
           assistant += chunk;
-          visibleAssistant = assistant;
-          setAssistantMessage(assistant);
+          startReveal();
         },
         onSources: (sources) => {
           webSources = sources;
