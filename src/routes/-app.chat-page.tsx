@@ -3,7 +3,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useAuth, type Profile } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
-import { streamChat, type ChatMessage, type DocumentCtx, type WebSource } from "@/lib/chat-client";
+import {
+  streamChat,
+  type ChatMessage,
+  type ChatMode,
+  type DocumentCtx,
+  type WebSource,
+} from "@/lib/chat-client";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -74,6 +80,25 @@ type ContextDocsResult = {
   noMatchScope: "selected" | "library" | null;
 };
 
+type LibraryNotice = {
+  mode: "selected" | "smart";
+  names: string[];
+} | null;
+
+type PersistedChatSession = {
+  version: 1;
+  conversationId: string | null;
+  input: string;
+  interlink: boolean;
+  libraryNotice: LibraryNotice;
+  messages: DisplayMessage[];
+  mode: ChatMode;
+  selectedDocIds: string[];
+  updatedAt: number;
+  useLibrary: boolean;
+  webSearch: boolean;
+};
+
 const SUGGESTIONS = [
   "Explain this topic in simple terms",
   "Turn my notes into exam questions",
@@ -87,6 +112,9 @@ const MAX_SNIPPETS_PER_DOC = 3;
 const CHUNK_SEARCH_TIMEOUT_MS = 8_000;
 const FALLBACK_DOC_TEXT_TIMEOUT_MS = 8_000;
 const CHAT_CANCELLED = "chat-cancelled";
+const CHAT_SESSION_STORAGE_PREFIX = "gd-chat-session";
+const CHAT_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const CHAT_SESSION_MAX_MESSAGE_CHARS = 300_000;
 const STOP_WORDS = new Set([
   "about",
   "after",
@@ -126,6 +154,90 @@ const GUEST_PROFILE: Profile = {
   recent_topics: null,
   onboarded: true,
 };
+
+function chatSessionStorageKey(ownerId: string) {
+  return `${CHAT_SESSION_STORAGE_PREFIX}:${ownerId}`;
+}
+
+function compactMessagesForStorage(messages: DisplayMessage[]): DisplayMessage[] {
+  let usedChars = 0;
+  const compacted: DisplayMessage[] = [];
+
+  for (const message of [...messages].reverse()) {
+    const contentLength = message.content.length;
+    if (compacted.length > 0 && usedChars + contentLength > CHAT_SESSION_MAX_MESSAGE_CHARS) {
+      break;
+    }
+
+    if (contentLength > CHAT_SESSION_MAX_MESSAGE_CHARS) {
+      compacted.unshift({
+        ...message,
+        content: message.content.slice(-CHAT_SESSION_MAX_MESSAGE_CHARS),
+      });
+      break;
+    }
+
+    compacted.unshift(message);
+    usedChars += contentLength;
+  }
+
+  return compacted;
+}
+
+function readChatSession(ownerId: string): PersistedChatSession | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(chatSessionStorageKey(ownerId));
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as Partial<PersistedChatSession>;
+    if (parsed.version !== 1 || typeof parsed.updatedAt !== "number") return null;
+    if (Date.now() - parsed.updatedAt > CHAT_SESSION_MAX_AGE_MS) return null;
+
+    return {
+      version: 1,
+      conversationId: typeof parsed.conversationId === "string" ? parsed.conversationId : null,
+      input: typeof parsed.input === "string" ? parsed.input : "",
+      interlink: Boolean(parsed.interlink),
+      libraryNotice: parsed.libraryNotice ?? null,
+      messages: Array.isArray(parsed.messages)
+        ? parsed.messages.filter(
+            (message): message is DisplayMessage =>
+              message?.role === "user" || message?.role === "assistant",
+          )
+        : [],
+      mode:
+        parsed.mode === "Detailed" || parsed.mode === "Storytelling" ? parsed.mode : "Simplified",
+      selectedDocIds: Array.isArray(parsed.selectedDocIds)
+        ? parsed.selectedDocIds.filter((id): id is string => typeof id === "string")
+        : [],
+      updatedAt: parsed.updatedAt,
+      useLibrary: parsed.useLibrary ?? true,
+      webSearch: Boolean(parsed.webSearch),
+    };
+  } catch (error) {
+    console.warn("restore chat session", error);
+    return null;
+  }
+}
+
+function writeChatSession(ownerId: string, session: PersistedChatSession) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      chatSessionStorageKey(ownerId),
+      JSON.stringify({
+        ...session,
+        messages: compactMessagesForStorage(session.messages),
+        updatedAt: Date.now(),
+      }),
+    );
+  } catch (error) {
+    console.warn("save chat session", error);
+  }
+}
 
 function queryTerms(text: string): string[] {
   const seen = new Set<string>();
@@ -365,35 +477,53 @@ export function ChatPage() {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [loadingConvo, setLoadingConvo] = useState(false);
-  const [mode, setMode] = useState<"Simplified" | "Detailed" | "Storytelling">(
+  const [mode, setMode] = useState<ChatMode>(
     (profile.preferred_mode as "Simplified" | "Detailed") || "Simplified",
   );
   const [useLibrary, setUseLibrary] = useState(() => Boolean(user));
   const [webSearch, setWebSearch] = useState(false);
   const [interlink, setInterlink] = useState(false);
   const [docs, setDocs] = useState<DocumentCtx[]>([]);
+  const [docsLoaded, setDocsLoaded] = useState(false);
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const [fileSearch, setFileSearch] = useState("");
-  const [libraryNotice, setLibraryNotice] = useState<{
-    mode: "selected" | "smart";
-    names: string[];
-  } | null>(null);
+  const [libraryNotice, setLibraryNotice] = useState<LibraryNotice>(null);
   const [convos, setConvos] = useState<ConversationRow[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sessionReady, setSessionReady] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
   const activeSendConversationRef = useRef<string | null>(null);
+  const restoredOwnerRef = useRef<string | null>(null);
+  const latestSessionRef = useRef<PersistedChatSession | null>(null);
+  const persistTimerRef = useRef<number | null>(null);
+  const previousPersistConversationRef = useRef<string | null>(conversationId ?? null);
 
   // Load library docs (with folder names)
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setDocsLoaded(false);
+      return;
+    }
+
+    let active = true;
+    setDocsLoaded(false);
+
     (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("documents")
         .select("id, file_name, folder_id, folders(name)")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
+
+      if (!active) return;
+      if (error) {
+        console.warn("load library docs", error);
+        toast.error("Couldn't load your study files");
+        return;
+      }
+
       setDocs(
         ((data as LibraryDocumentRow[] | null) ?? []).map((d) => ({
           id: d.id,
@@ -402,21 +532,27 @@ export function ChatPage() {
           excerpt: "",
         })),
       );
+      setDocsLoaded(true);
     })();
+
+    return () => {
+      active = false;
+    };
   }, [user]);
 
   useEffect(() => {
     if (!user) {
+      setSessionReady(false);
       setUseLibrary(false);
       setDocs([]);
-      setSelectedDocIds([]);
       setConvos([]);
     }
   }, [user]);
 
   useEffect(() => {
+    if (!docsLoaded) return;
     setSelectedDocIds((current) => current.filter((id) => docs.some((doc) => doc.id === id)));
-  }, [docs]);
+  }, [docs, docsLoaded]);
 
   const selectedDocs = useMemo(
     () => docs.filter((doc) => selectedDocIds.includes(doc.id)),
@@ -432,6 +568,116 @@ export function ChatPage() {
   useEffect(() => {
     if (!useLibrary) setLibraryNotice(null);
   }, [useLibrary]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (restoredOwnerRef.current === user.id) {
+      setSessionReady(true);
+      return;
+    }
+
+    const session = readChatSession(user.id);
+    restoredOwnerRef.current = user.id;
+    previousPersistConversationRef.current = conversationId ?? null;
+
+    if (session) {
+      latestSessionRef.current = session;
+      setInput(session.input);
+      setInterlink(session.interlink);
+      setLibraryNotice(session.libraryNotice);
+      setMode(session.mode);
+      setSelectedDocIds(session.selectedDocIds);
+      setUseLibrary(session.useLibrary);
+      setWebSearch(session.webSearch);
+
+      if (!conversationId || session.conversationId === conversationId) {
+        setMessages(session.messages);
+      }
+
+      if (!conversationId && session.conversationId) {
+        navigate({
+          to: "/app/chat",
+          search: { c: session.conversationId },
+          replace: true,
+        });
+      }
+    }
+
+    setSessionReady(true);
+  }, [conversationId, navigate, user]);
+
+  useEffect(() => {
+    if (!user || !sessionReady) return;
+
+    const currentConversationId = conversationId ?? null;
+    if (previousPersistConversationRef.current !== currentConversationId) {
+      previousPersistConversationRef.current = currentConversationId;
+      return;
+    }
+
+    const session: PersistedChatSession = {
+      version: 1,
+      conversationId: currentConversationId,
+      input,
+      interlink,
+      libraryNotice,
+      messages,
+      mode,
+      selectedDocIds,
+      updatedAt: Date.now(),
+      useLibrary,
+      webSearch,
+    };
+    latestSessionRef.current = session;
+
+    if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = window.setTimeout(
+      () => {
+        writeChatSession(user.id, session);
+        persistTimerRef.current = null;
+      },
+      streaming ? 500 : 80,
+    );
+
+    return () => {
+      if (persistTimerRef.current) {
+        window.clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
+    };
+  }, [
+    conversationId,
+    input,
+    interlink,
+    libraryNotice,
+    messages,
+    mode,
+    selectedDocIds,
+    sessionReady,
+    streaming,
+    useLibrary,
+    user,
+    webSearch,
+  ]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const saveLatestSession = () => {
+      if (latestSessionRef.current) writeChatSession(user.id, latestSessionRef.current);
+    };
+    const saveWhenHidden = () => {
+      if (document.visibilityState === "hidden") saveLatestSession();
+    };
+
+    window.addEventListener("pagehide", saveLatestSession);
+    document.addEventListener("visibilitychange", saveWhenHidden);
+
+    return () => {
+      window.removeEventListener("pagehide", saveLatestSession);
+      document.removeEventListener("visibilitychange", saveWhenHidden);
+    };
+  }, [user]);
 
   const fetchDocumentExcerpts = async (
     ids: string[],
@@ -459,23 +705,20 @@ export function ChatPage() {
         return [];
       }
 
-      const byId = new Map(
-        ((data as LibraryDocumentTextRow[] | null) ?? [])
-          .filter((doc) => Boolean(doc.extracted_text))
-          .map((doc) => [
-            doc.id,
-            {
-              id: doc.id,
-              file_name: doc.file_name,
-              folder: doc.folders?.name ?? null,
-              excerpt: doc.extracted_text as string,
-            },
-          ]),
-      );
+      const byId = new Map<string, DocumentCtx>();
+      for (const doc of (data as LibraryDocumentTextRow[] | null) ?? []) {
+        if (!doc.extracted_text) continue;
+        byId.set(doc.id, {
+          id: doc.id,
+          file_name: doc.file_name,
+          folder: doc.folders?.name ?? null,
+          excerpt: doc.extracted_text,
+        });
+      }
 
       return uniqueIds
         .map((id) => byId.get(id))
-        .filter((doc): doc is DocumentCtx => Boolean(doc))
+        .filter((doc): doc is DocumentCtx => doc !== undefined)
         .map((doc) => ({
           ...doc,
           excerpt: relevantExcerpt(doc, content, messages),
@@ -510,10 +753,11 @@ export function ChatPage() {
   useEffect(() => {
     if (!user) return;
     if (!conversationId) {
-      setMessages([]);
+      if (sessionReady && !latestSessionRef.current?.messages.length) setMessages([]);
       return;
     }
     if (activeSendConversationRef.current === conversationId) return;
+    let active = true;
     (async () => {
       setLoadingConvo(true);
       const { data, error } = await supabase
@@ -521,6 +765,7 @@ export function ChatPage() {
         .select("role, content, source_type, model_used, source_refs")
         .eq("conversation_id", conversationId)
         .order("created_at");
+      if (!active) return;
       setLoadingConvo(false);
       if (error) {
         toast.error("Couldn't load that chat");
@@ -536,7 +781,10 @@ export function ChatPage() {
         })),
       );
     })();
-  }, [conversationId, user]);
+    return () => {
+      active = false;
+    };
+  }, [conversationId, sessionReady, user]);
 
   useEffect(() => {
     scrollerRef.current?.scrollTo({
@@ -818,13 +1066,13 @@ export function ChatPage() {
     let streamFinished = false;
     let firstDeltaSeen = false;
     let cancelled = false;
-    let revealTimer: ReturnType<typeof window.setInterval> | null = null;
+    let revealTimer: number | null = null;
     let revealDone: (() => void) | null = null;
 
     const setAssistantMessage = (contentToShow: string) => {
       setMessages((prev) => {
         const copy = [...prev];
-        const assistantMessage = {
+        const assistantMessage: DisplayMessage = {
           role: "assistant",
           content: contentToShow,
           source: metaSource,
@@ -1000,7 +1248,28 @@ export function ChatPage() {
   const newChat = () => {
     chatAbortRef.current?.abort();
     activeSendConversationRef.current = null;
+    const emptySession: PersistedChatSession = {
+      version: 1,
+      conversationId: null,
+      input: "",
+      interlink,
+      libraryNotice: null,
+      messages: [],
+      mode,
+      selectedDocIds,
+      updatedAt: Date.now(),
+      useLibrary,
+      webSearch,
+    };
+    latestSessionRef.current = emptySession;
+    if (persistTimerRef.current) {
+      window.clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+    }
+    if (user) writeChatSession(user.id, emptySession);
     navigate({ to: "/app/chat", search: {} });
+    setInput("");
+    setLibraryNotice(null);
     setMessages([]);
   };
 
@@ -1189,7 +1458,7 @@ export function ChatPage() {
         {/* Messages */}
         <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto">
           <div className="max-w-3xl mx-auto px-4 md:px-8 pt-8 pb-44">
-            {loadingConvo ? (
+            {loadingConvo && messages.length === 0 ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
               </div>
@@ -1272,8 +1541,8 @@ export function ChatPage() {
                   )}
                 </div>
                 {libraryNotice && (
-                  <p className="mt-2 flex max-w-full items-center gap-1.5 overflow-hidden text-[11px] text-[#C8C2B4]">
-                    <BookOpen className="h-3 w-3 shrink-0 text-[#8A8680]" />
+                  <p className="mt-2 flex max-w-full items-center gap-1.5 overflow-hidden text-[11px] text-primary-glow">
+                    <BookOpen className="h-3 w-3 shrink-0 text-muted-foreground" />
                     <span className="truncate">
                       {libraryNotice.mode === "smart" ? "Smart Library: " : "Using: "}
                       {libraryNotice.names.slice(0, 2).join(", ")}
@@ -1321,14 +1590,16 @@ export function ChatPage() {
                 type="button"
                 onClick={() => setWebSearch((v) => !v)}
                 title={webSearch ? "Web search on" : "Use web search"}
+                aria-pressed={webSearch}
                 aria-label={webSearch ? "Turn web search off" : "Turn web search on"}
-                className={`h-[44px] w-[44px] flex items-center justify-center rounded-full border backdrop-blur-[2px] transition-colors ${
+                className={`h-[44px] shrink-0 inline-flex items-center justify-center gap-2 rounded-full border px-3.5 text-xs font-medium backdrop-blur-[2px] transition-colors ${
                   webSearch
-                    ? "border-primary/45 bg-primary/15 text-primary shadow-glow"
-                    : "border-input bg-background/35 text-muted-foreground hover:border-primary/35 hover:text-primary"
+                    ? "border-primary bg-primary text-primary-foreground shadow-glow ring-2 ring-primary/25"
+                    : "border-input bg-background/35 text-muted-foreground hover:border-primary/35 hover:bg-surface-elevated hover:text-foreground"
                 }`}
               >
-                <GoogleGMark />
+                <Search className="h-4 w-4" />
+                <span>{webSearch ? "Web on" : "Web"}</span>
               </button>
               {streaming ? (
                 <button
@@ -1594,14 +1865,6 @@ function AiMark({
       } inline-flex flex-shrink-0 items-center justify-center`}
     >
       <span className={`${dotSize} ai-symbiote-dot`} />
-    </span>
-  );
-}
-
-function GoogleGMark() {
-  return (
-    <span aria-hidden="true" className="google-g-mark">
-      G
     </span>
   );
 }

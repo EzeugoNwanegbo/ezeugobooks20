@@ -3,6 +3,7 @@ import { BookOpen, Loader2, LogOut, MessageSquare } from "lucide-react";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export function AppShell() {
   return (
@@ -71,6 +72,9 @@ function AppLayout() {
               {profile.year} - {profile.university}
             </div>
           </div>
+          <div className="mb-2 px-3">
+            <ThemeToggle className="w-full" />
+          </div>
           <button
             onClick={async () => {
               await signOut();
@@ -89,6 +93,7 @@ function AppLayout() {
           G&D
         </Link>
         <div className="flex gap-1">
+          <ThemeToggle />
           <Link
             to="/app/chat"
             className={`p-2 rounded-md ${

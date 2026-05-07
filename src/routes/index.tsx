@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -43,6 +44,7 @@ function Landing() {
         <Link to="/" className="luxury-logo">
           G&D
         </Link>
+        <ThemeToggle />
       </nav>
 
       <section className="luxury-hero" id="method">
@@ -52,7 +54,8 @@ function Landing() {
         </h1>
         <p className="luxury-copy">
           Upload notes, choose the file in front of you, and let the interface pull the right
-          passage before the AI explains. Quiet, source-led, and built for serious study in any course.
+          passage before the AI explains. Quiet, source-led, and built for serious study in any
+          course.
         </p>
         <div className="luxury-actions">
           <Link to="/auth" search={{ mode: "signup" }} className="luxury-primary">

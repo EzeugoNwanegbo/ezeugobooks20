@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const STEPS = ["About you", "Your studies", "Your exams", "Your style"] as const;
 
@@ -77,9 +78,12 @@ function OnboardingFlow() {
 
       <header className="relative z-10 px-6 py-6 flex items-center justify-between">
         <div className="luxury-brand-text">G&D</div>
-        <span className="text-xs text-muted-foreground">
-          Step {step + 1} of {STEPS.length}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground">
+            Step {step + 1} of {STEPS.length}
+          </span>
+          <ThemeToggle />
+        </div>
       </header>
 
       <main className="relative z-10 flex-1 flex items-center justify-center px-6 pb-12">

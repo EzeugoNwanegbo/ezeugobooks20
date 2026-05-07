@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 type AuthSearch = { mode?: "signup" | "signin" };
 const AUTH_ACTION_TIMEOUT_MS = 15_000;
@@ -16,9 +17,14 @@ async function loadSupabase() {
 
 function getAuthErrorMessage(error: unknown, fallback = "Authentication failed") {
   const message = error instanceof Error ? error.message : fallback;
+  const normalized = message.toLowerCase();
 
   if (message.includes("Missing Supabase environment variables")) {
     return AUTH_CONFIG_ERROR;
+  }
+
+  if (normalized.includes("redirect") || normalized.includes("not allowed")) {
+    return "Supabase blocked the confirmation redirect. Add this domain to Supabase Auth URL settings, then try again.";
   }
 
   return message;
@@ -66,6 +72,7 @@ function AuthFlow() {
   const [isSignup, setIsSignup] = useState(mode === "signup");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
 
@@ -89,12 +96,13 @@ function AuthFlow() {
     if (submitting) return;
 
     setSubmitting(true);
+    setAuthNotice(null);
     try {
       const trimmedEmail = email.trim();
       const supabase = await loadSupabase();
 
       if (isSignup) {
-        const { error } = await withAuthTimeout(
+        const { data, error } = await withAuthTimeout(
           supabase.auth.signUp({
             email: trimmedEmail,
             password,
@@ -103,8 +111,17 @@ function AuthFlow() {
           "Creating your account",
         );
         if (error) throw error;
-        toast.success("Account created! Let's set up your profile.");
-        navigate({ to: "/onboarding" });
+
+        if (data.session) {
+          toast.success("Account created! Let's set up your profile.");
+          navigate({ to: "/onboarding" });
+          return;
+        }
+
+        setPassword("");
+        setIsSignup(false);
+        setAuthNotice("Account created. Check your email to confirm it, then sign in here.");
+        toast.success("Account created. Check your email to confirm it.");
       } else {
         const { error } = await withAuthTimeout(
           supabase.auth.signInWithPassword({ email: trimmedEmail, password }),
@@ -125,6 +142,7 @@ function AuthFlow() {
     if (googleSubmitting) return;
 
     setGoogleSubmitting(true);
+    setAuthNotice(null);
     try {
       const supabase = await loadSupabase();
       const { error } = await withAuthTimeout(
@@ -148,10 +166,11 @@ function AuthFlow() {
       <div className="symbiote-blob auth-blob-one" />
       <div className="symbiote-blob auth-blob-two" />
 
-      <header className="relative z-10 px-6 py-6">
+      <header className="relative z-10 flex items-center justify-between px-6 py-6">
         <Link to="/" className="luxury-brand-text">
           G&D
         </Link>
+        <ThemeToggle />
       </header>
 
       <main className="relative z-10 flex-1 flex items-center justify-center px-6 pb-12">
@@ -165,30 +184,31 @@ function AuthFlow() {
                 ? "Join G&D and start studying smarter."
                 : "Sign in to continue your studies."}
             </p>
-
-            {!isSignup && (
-              <>
-                <button
-                  onClick={handleGoogle}
-                  type="button"
-                  disabled={googleSubmitting}
-                  className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background/70 hover:bg-surface-elevated transition-colors text-sm font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {googleSubmitting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <GoogleIcon />
-                  )}
-                  {googleSubmitting ? "Opening Google..." : "Sign in with Google"}
-                </button>
-
-                <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
-                  <div className="h-px flex-1 bg-border" />
-                  or
-                  <div className="h-px flex-1 bg-border" />
-                </div>
-              </>
+            {authNotice && (
+              <div className="mt-4 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 text-sm text-foreground">
+                {authNotice}
+              </div>
             )}
+
+            <button
+              onClick={handleGoogle}
+              type="button"
+              disabled={googleSubmitting}
+              className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background/70 hover:bg-surface-elevated transition-colors text-sm font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {googleSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
+              {googleSubmitting
+                ? "Opening Google..."
+                : isSignup
+                  ? "Create account with Google"
+                  : "Sign in with Google"}
+            </button>
+
+            <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
+              <div className="h-px flex-1 bg-border" />
+              or use email
+              <div className="h-px flex-1 bg-border" />
+            </div>
 
             <form onSubmit={handleEmail} className="space-y-3">
               <div>
@@ -237,7 +257,10 @@ function AuthFlow() {
               <button
                 type="button"
                 className="text-primary hover:underline font-medium"
-                onClick={() => setIsSignup(!isSignup)}
+                onClick={() => {
+                  setAuthNotice(null);
+                  setIsSignup(!isSignup);
+                }}
               >
                 {isSignup ? "Sign in" : "Create one"}
               </button>
