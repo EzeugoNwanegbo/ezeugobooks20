@@ -9,6 +9,8 @@ type AuthSearch = { mode?: "signup" | "signin" };
 const AUTH_ACTION_TIMEOUT_MS = 15_000;
 const AUTH_CONFIG_ERROR =
   "Authentication is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your hosting environment, then redeploy.";
+const EMAIL_CONFIRM_NOTICE =
+  "Account created. A confirmation email has been sent. Please confirm your email, then come back here to sign in.";
 
 async function loadSupabase() {
   const module = await import("@/integrations/supabase/client");
@@ -113,15 +115,17 @@ function AuthFlow() {
         if (error) throw error;
 
         if (data.session) {
-          toast.success("Account created! Let's set up your profile.");
-          navigate({ to: "/onboarding" });
-          return;
+          const { error: signOutError } = await withAuthTimeout(
+            supabase.auth.signOut(),
+            "Preparing email confirmation",
+          );
+          if (signOutError) throw signOutError;
         }
 
         setPassword("");
         setIsSignup(false);
-        setAuthNotice("Account created. Check your email to confirm it, then sign in here.");
-        toast.success("Account created. Check your email to confirm it.");
+        setAuthNotice(EMAIL_CONFIRM_NOTICE);
+        toast.success("Check your email to confirm your account.");
       } else {
         const { error } = await withAuthTimeout(
           supabase.auth.signInWithPassword({ email: trimmedEmail, password }),
