@@ -56,7 +56,8 @@ const MAX_DOC_CHARS_TOTAL = 120_000;
 const DEEPSEEK_TIMEOUT_MS = 18_000;
 const GPT_STREAM_START_TIMEOUT_MS = 18_000;
 const ROUTER_TIMEOUT_MS = 5_000;
-const WEB_CURRICULUM_TIMEOUT_MS = 10_000;
+const WEB_CURRICULUM_TIMEOUT_MS = 20_000;
+const WEB_ANSWER_TIMEOUT_MS = 75_000;
 const LENGTH_LIMIT_NOTE =
   '\n\n**Note:** The AI hit its response length limit before finishing. Ask "continue" and it can pick up from here.';
 
@@ -608,7 +609,7 @@ RULES:
         ],
       }),
     },
-    WEB_CURRICULUM_TIMEOUT_MS,
+    WEB_ANSWER_TIMEOUT_MS,
   );
 
   if (!resp.ok) {
@@ -822,7 +823,7 @@ Deno.serve(async (req: Request) => {
         console.error("OpenAI web answer failed:", err);
         return new Response(
           textToSse(
-            "I couldn't complete the web search quickly enough. Try again, or turn Web off and I can answer from general knowledge.",
+            "Web search took too long to finish. Try again in a moment, or turn Web off and I can answer from general knowledge.",
           ),
           {
             headers: {

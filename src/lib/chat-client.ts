@@ -5,6 +5,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
 const CHAT_START_TIMEOUT_MS = 45_000;
+const WEB_CHAT_START_TIMEOUT_MS = 95_000;
 const LENGTH_LIMIT_NOTE =
   '\n\n**Note:** The AI hit its response length limit before finishing. Ask "continue" and it can pick up from here.';
 const INCOMPLETE_STREAM_NOTE =
@@ -106,10 +107,11 @@ export async function streamChat({
   const controller = new AbortController();
   const abortFromCaller = () => controller.abort();
   let startTimedOut = false;
+  const startTimeoutMs = forceWebSearch ? WEB_CHAT_START_TIMEOUT_MS : CHAT_START_TIMEOUT_MS;
   const timeout = window.setTimeout(() => {
     startTimedOut = true;
     controller.abort();
-  }, CHAT_START_TIMEOUT_MS);
+  }, startTimeoutMs);
   signal?.addEventListener("abort", abortFromCaller, { once: true });
   let resp: Response;
 
