@@ -1342,7 +1342,7 @@ export function ChatPage() {
     <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-background/50 min-w-0">
       {/* Conversations sidebar */}
       {sidebarOpen && (
-        <aside className="hidden md:flex min-h-0 flex-col w-64 border-r border-border bg-background/55 backdrop-blur">
+        <aside className="hidden lg:flex min-h-0 flex-col w-64 border-r border-border bg-background/55 backdrop-blur">
           <div className="p-3 border-b border-border">
             <button
               onClick={newChat}
@@ -1389,109 +1389,113 @@ export function ChatPage() {
       {/* Main column */}
       <div className="relative flex min-h-0 flex-1 flex-col min-w-0">
         {/* Header */}
-        <div className="shrink-0 border-b border-border px-4 md:px-6 py-3 flex items-center justify-between gap-4 bg-background/70 backdrop-blur">
-          <div className="flex items-center gap-2 min-w-0">
-            <button
-              onClick={() => setSidebarOpen((v) => !v)}
-              className="hidden md:inline-flex p-2 rounded-md text-muted-foreground hover:bg-surface-elevated hover:text-foreground transition-colors"
-              title={sidebarOpen ? "Hide chats" : "Show chats"}
-            >
-              {sidebarOpen ? (
-                <PanelLeftClose className="h-4 w-4" />
-              ) : (
-                <PanelLeftOpen className="h-4 w-4" />
-              )}
-            </button>
-            <h1 className="font-display text-xl font-light truncate">
-              {conversationId
-                ? convos.find((c) => c.id === conversationId)?.title || "Chat"
-                : "New chat"}
-            </h1>
-            {docs.length > 0 && useLibrary && selectedDocs.length > 0 && (
-              <span
-                className="hidden sm:inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full bg-primary/15 text-primary border border-primary/30 ml-2"
-                title={`${selectedDocs.length} study file${selectedDocs.length === 1 ? "" : "s"}`}
+        <div className="shrink-0 border-b border-border bg-background/70 px-3 py-2.5 backdrop-blur sm:px-4 lg:px-6 lg:py-3">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <button
+                  onClick={() => setSidebarOpen((v) => !v)}
+                  className="hidden rounded-md p-2 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground lg:inline-flex"
+                  title={sidebarOpen ? "Hide chats" : "Show chats"}
+                >
+                  {sidebarOpen ? (
+                    <PanelLeftClose className="h-4 w-4" />
+                  ) : (
+                    <PanelLeftOpen className="h-4 w-4" />
+                  )}
+                </button>
+                <h1 className="truncate font-display text-lg font-light sm:text-xl">
+                  {conversationId
+                    ? convos.find((c) => c.id === conversationId)?.title || "Chat"
+                    : "New chat"}
+                </h1>
+                {docs.length > 0 && useLibrary && selectedDocs.length > 0 && (
+                  <span
+                    className="hidden sm:inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full bg-primary/15 text-primary border border-primary/30 ml-2"
+                    title={`${selectedDocs.length} study file${selectedDocs.length === 1 ? "" : "s"}`}
+                  >
+                    <BookOpen className="h-3 w-3" />
+                    {selectedDocs.length}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={newChat}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:border-primary/40 lg:hidden"
+                title="New chat"
               >
-                <BookOpen className="h-3 w-3" />
-                {selectedDocs.length}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={newChat}
-              className="md:hidden inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-border hover:border-primary/40 font-medium"
-              title="New chat"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              New
-            </button>
-            {docs.length > 0 && (
-              <>
-                <button
-                  onClick={() => setUseLibrary((v) => !v)}
-                  title="Toggle file search"
-                  className={`text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-colors ${
-                    useLibrary
-                      ? "border-primary/40 bg-primary/15 text-primary"
-                      : "border-border text-muted-foreground hover:bg-surface-elevated"
-                  }`}
-                >
-                  Files {useLibrary ? "on" : "off"}
-                </button>
-                <button
-                  onClick={() => setInterlink((v) => !v)}
-                  disabled={!useLibrary}
-                  title="Find connections across subjects/folders"
-                  className={`hidden sm:inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-colors disabled:opacity-40 ${
-                    interlink
-                      ? "border-accent/50 bg-accent/15 text-accent"
-                      : "border-border text-muted-foreground hover:bg-surface-elevated"
-                  }`}
-                >
-                  <Network className="h-3.5 w-3.5" />
-                  Find connections
-                </button>
-                <button
-                  onClick={() => setFilePickerOpen(true)}
-                  disabled={!useLibrary}
-                  title="Choose files to search"
-                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-border text-muted-foreground hover:bg-surface-elevated hover:text-foreground font-medium transition-colors disabled:opacity-40"
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                  Files
-                </button>
-              </>
-            )}
-            <div className="flex rounded-lg border border-border bg-background p-0.5">
-              {(["Simplified", "Detailed", "Storytelling"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  title={
-                    m === "Storytelling"
-                      ? "Explain as a story"
-                      : m === "Detailed"
-                        ? "Concepts + deeper detail"
-                        : "Plain English with an analogy"
-                  }
-                  className={`text-xs px-2.5 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1 ${
-                    mode === m
-                      ? "bg-gradient-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {m === "Storytelling" && <BookText className="h-3 w-3" />}
-                  {m}
-                </button>
-              ))}
+                <Plus className="h-3.5 w-3.5" />
+                New
+              </button>
+            </div>
+            <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5 lg:mx-0 lg:gap-2 lg:overflow-visible lg:px-0 lg:pb-0">
+              {docs.length > 0 && (
+                <>
+                  <button
+                    onClick={() => setUseLibrary((v) => !v)}
+                    title="Toggle file search"
+                    className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                      useLibrary
+                        ? "border-primary/40 bg-primary/15 text-primary"
+                        : "border-border text-muted-foreground hover:bg-surface-elevated"
+                    }`}
+                  >
+                    Files {useLibrary ? "on" : "off"}
+                  </button>
+                  <button
+                    onClick={() => setInterlink((v) => !v)}
+                    disabled={!useLibrary}
+                    title="Find connections across subjects/folders"
+                    className={`hidden shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 sm:inline-flex ${
+                      interlink
+                        ? "border-accent/50 bg-accent/15 text-accent"
+                        : "border-border text-muted-foreground hover:bg-surface-elevated"
+                    }`}
+                  >
+                    <Network className="h-3.5 w-3.5" />
+                    Find connections
+                  </button>
+                  <button
+                    onClick={() => setFilePickerOpen(true)}
+                    disabled={!useLibrary}
+                    title="Choose files to search"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground disabled:opacity-40"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Files
+                  </button>
+                </>
+              )}
+              <div className="flex shrink-0 rounded-lg border border-border bg-background p-0.5">
+                {(["Simplified", "Detailed", "Storytelling"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setMode(m)}
+                    title={
+                      m === "Storytelling"
+                        ? "Explain as a story"
+                        : m === "Detailed"
+                          ? "Concepts + deeper detail"
+                          : "Plain English with an analogy"
+                    }
+                    className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                      mode === m
+                        ? "bg-gradient-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {m === "Storytelling" && <BookText className="h-3 w-3" />}
+                    {m}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
 
         {/* Messages */}
         <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-4 md:px-8 pt-8 pb-44">
+          <div className="mx-auto max-w-3xl px-3 pb-52 pt-6 sm:px-4 sm:pb-48 md:px-8 md:pt-8">
             {loadingConvo && messages.length === 0 ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
@@ -1518,15 +1522,15 @@ export function ChatPage() {
         </div>
 
         {/* Composer */}
-        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-4 pb-3 pt-8 md:px-8">
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-8 sm:px-4 md:px-8">
           <div className="pointer-events-auto max-w-3xl mx-auto">
             {docs.length > 0 && useLibrary && (
-              <div className="mb-2 rounded-[28px] border border-border bg-background/35 px-3 py-1.5 backdrop-blur-[2px]">
+              <div className="mb-2 rounded-2xl border border-border bg-background/60 px-2.5 py-1.5 backdrop-blur-[2px] sm:rounded-[28px] sm:px-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setFilePickerOpen(true)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/15"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/15 sm:px-3"
                   >
                     <FileText className="h-3.5 w-3.5" />
                     Add files
@@ -1593,7 +1597,7 @@ export function ChatPage() {
                 e.preventDefault();
                 send();
               }}
-              className="flex gap-2 items-end"
+              className="flex items-end gap-1.5 sm:gap-2"
             >
               <textarea
                 value={input}
@@ -1612,7 +1616,7 @@ export function ChatPage() {
                       ? "Ask for the exact answer, page, or passage..."
                       : "Ask a question or upload files to search precisely..."
                 }
-                className="flex-1 resize-none rounded-[28px] border border-input bg-background/35 px-5 py-2.5 text-sm min-h-[44px] max-h-[180px] backdrop-blur-[2px] focus:outline-none focus:ring-2 focus:ring-ring"
+                className="min-h-[44px] max-h-[180px] flex-1 resize-none rounded-2xl border border-input bg-background/70 px-4 py-2.5 text-sm backdrop-blur-[2px] focus:outline-none focus:ring-2 focus:ring-ring sm:rounded-[28px] sm:px-5"
                 style={{ height: "auto" }}
                 onInput={(e) => {
                   const t = e.currentTarget;
@@ -1626,7 +1630,7 @@ export function ChatPage() {
                 title={webSearch ? "Web search on" : "Use web search"}
                 aria-pressed={webSearch}
                 aria-label={webSearch ? "Turn web search off" : "Turn web search on"}
-                className={`h-[44px] shrink-0 inline-flex items-center justify-center gap-2 rounded-full border px-3.5 text-xs font-medium backdrop-blur-[2px] transition-colors ${
+                className={`inline-flex h-[44px] shrink-0 items-center justify-center gap-2 rounded-full border px-3 text-xs font-medium backdrop-blur-[2px] transition-colors sm:px-3.5 ${
                   webSearch
                     ? "border-primary bg-primary text-primary-foreground shadow-glow ring-2 ring-primary/25"
                     : "border-input bg-background/35 text-muted-foreground hover:border-primary/35 hover:bg-surface-elevated hover:text-foreground"
@@ -1704,7 +1708,7 @@ function FilePickerDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="luxury-panel flex max-h-[85vh] max-w-2xl flex-col overflow-hidden rounded-lg p-0">
+      <DialogContent className="luxury-panel flex max-h-[88dvh] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg p-0 sm:max-h-[85vh] sm:max-w-2xl">
         <DialogHeader className="shrink-0 border-b border-border px-5 pb-3 pt-5">
           <DialogTitle>Choose files to search</DialogTitle>
           <DialogDescription>
@@ -1857,20 +1861,20 @@ function EmptyState({
   hasDocs: boolean;
 }) {
   return (
-    <div className="text-center py-12">
+    <div className="py-8 text-center sm:py-12">
       <AiMark size="lg" className="mb-5" />
-      <h2 className="font-display text-5xl font-light leading-none">Ready, {name}</h2>
+      <h2 className="font-display text-4xl font-light leading-none sm:text-5xl">Ready, {name}</h2>
       <p className="text-muted-foreground mt-1 text-balance max-w-md mx-auto">
         {hasDocs
           ? "Ask for the exact detail. I will search your files first, show the source, then explain."
           : "Upload files in Library, then ask for the exact answer, page, passage, or comparison you need."}
       </p>
-      <div className="mt-8 grid sm:grid-cols-2 gap-2 max-w-xl mx-auto">
+      <div className="mx-auto mt-6 grid max-w-xl gap-2 sm:mt-8 sm:grid-cols-2">
         {SUGGESTIONS.map((s) => (
           <button
             key={s}
             onClick={() => onPick(s)}
-            className="luxury-panel text-left p-3 rounded-lg hover:border-primary/25 hover:bg-surface transition-colors text-sm"
+            className="luxury-panel rounded-lg p-3 text-left text-sm transition-colors hover:border-primary/25 hover:bg-surface"
           >
             {s}
           </button>
@@ -1950,15 +1954,15 @@ function Message({ msg, streaming }: { msg: DisplayMessage; isLast: boolean; str
   if (msg.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-lg rounded-br-sm bg-gradient-primary text-primary-foreground px-4 py-2.5 text-sm leading-relaxed shadow-elegant">
+        <div className="max-w-[92%] rounded-lg rounded-br-sm bg-gradient-primary px-3.5 py-2.5 text-sm leading-relaxed text-primary-foreground shadow-elegant sm:max-w-[85%] sm:px-4">
           {msg.content}
         </div>
       </div>
     );
   }
   return (
-    <div className="flex gap-3">
-      <AiMark active={streaming} />
+    <div className="flex gap-2 sm:gap-3">
+      <AiMark active={streaming} className="mt-0.5" />
       <div className="flex-1 min-w-0">
         {msg.source && msg.source !== "general" && (
           <div className="mb-1.5 flex items-center gap-2">
@@ -1966,7 +1970,7 @@ function Message({ msg, streaming }: { msg: DisplayMessage; isLast: boolean; str
           </div>
         )}
         <div
-          className={`medai-prose luxury-panel text-sm rounded-lg px-4 py-3 ${
+          className={`medai-prose luxury-panel rounded-lg px-3.5 py-3 text-sm sm:px-4 ${
             streaming ? "streaming-caret" : ""
           }`}
         >

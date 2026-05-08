@@ -564,6 +564,12 @@ a.bg-gradient-primary > * {
   isolation: isolate;
 }
 
+.luxury-page *,
+.luxury-page *::before,
+.luxury-page *::after {
+  box-sizing: border-box;
+}
+
 .symbiote-blob {
   position: absolute;
   z-index: -2;
@@ -677,7 +683,7 @@ a.bg-gradient-primary > * {
   margin: 0;
   color: var(--foreground);
   font-family: "Cormorant Garamond", ui-serif, Georgia, serif;
-  font-size: clamp(56px, 7.6vw, 96px);
+  font-size: 88px;
   font-weight: 300;
   line-height: 0.94;
   letter-spacing: 0;
@@ -762,6 +768,7 @@ a.bg-gradient-primary > * {
 
 .luxury-card-grid {
   width: min(100%, 1180px);
+  box-sizing: border-box;
   margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -818,7 +825,7 @@ a.bg-gradient-primary > * {
   margin: 0;
   color: var(--foreground);
   font-family: "Cormorant Garamond", ui-serif, Georgia, serif;
-  font-size: clamp(32px, 3.6vw, 44px);
+  font-size: 42px;
   font-weight: 300;
   line-height: 1.02;
   letter-spacing: 0;
@@ -903,8 +910,10 @@ a.bg-gradient-primary > * {
 
 @media (max-width: 860px) {
   .luxury-nav {
-    align-items: flex-start;
-    flex-direction: column;
+    min-height: 72px;
+    align-items: center;
+    flex-direction: row;
+    padding: 20px 18px;
   }
 
   .luxury-nav-links {
@@ -913,12 +922,48 @@ a.bg-gradient-primary > * {
     gap: 14px;
   }
 
+  .luxury-hero {
+    padding: 52px 18px 44px;
+  }
+
+  .luxury-eyebrow {
+    margin-bottom: 16px;
+    font-size: 11px;
+  }
+
+  .luxury-hero h1 {
+    max-width: 680px;
+    font-size: 64px;
+    line-height: 0.98;
+  }
+
+  .luxury-copy {
+    margin-top: 22px;
+    font-size: 16px;
+    line-height: 1.65;
+  }
+
+  .luxury-actions {
+    gap: 14px;
+    margin-top: 28px;
+  }
+
   .luxury-card-grid {
     grid-template-columns: 1fr;
+    padding: 0 18px 56px;
   }
 
   .luxury-card {
-    min-height: 230px;
+    min-height: 0;
+    padding: 22px;
+  }
+
+  .luxury-card p {
+    margin-bottom: 28px;
+  }
+
+  .luxury-card h2 {
+    font-size: 36px;
   }
 
   .luxury-footer {
@@ -926,6 +971,69 @@ a.bg-gradient-primary > * {
     gap: 12px;
     padding-top: 18px;
     padding-bottom: 18px;
+  }
+}
+
+@media (max-width: 520px) {
+  .luxury-hero {
+    width: auto;
+    margin: 0 16px;
+    padding: 34px 0 38px;
+  }
+
+  .luxury-hero h1 {
+    max-width: 340px;
+    font-size: 44px;
+    line-height: 1;
+  }
+
+  .luxury-copy {
+    max-width: 340px;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  .luxury-actions {
+    align-items: stretch;
+    flex-direction: column;
+    width: calc(100vw - 48px);
+    max-width: 100%;
+  }
+
+  .luxury-primary,
+  .luxury-ghost {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .luxury-card-grid {
+    width: calc(100vw - 48px);
+    max-width: calc(100vw - 48px);
+    margin: 0 16px;
+    padding-right: 0;
+    padding-left: 0;
+    gap: 12px;
+  }
+
+  .luxury-card {
+    width: 100%;
+    max-width: 100%;
+    padding: 18px;
+  }
+
+  .luxury-card h2 {
+    font-size: 30px;
+  }
+
+  .luxury-card span {
+    margin-top: 16px;
+    font-size: 13px;
+    line-height: 1.65;
+    overflow-wrap: break-word;
+  }
+
+  .luxury-status {
+    justify-content: center;
   }
 }
 

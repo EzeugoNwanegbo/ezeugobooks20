@@ -63,7 +63,7 @@ function OnboardingFlow() {
 
   if (loading || !user) {
     return (
-      <div className="luxury-auth-page min-h-screen flex items-center justify-center">
+      <div className="luxury-auth-page flex min-h-dvh items-center justify-center">
         <div className="symbiote-blob auth-blob-one" />
         <div className="symbiote-blob auth-blob-two" />
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -72,23 +72,23 @@ function OnboardingFlow() {
   }
 
   return (
-    <div className="luxury-auth-page min-h-screen bg-background relative overflow-hidden flex flex-col">
+    <div className="luxury-auth-page relative flex min-h-dvh flex-col overflow-hidden bg-background">
       <div className="symbiote-blob auth-blob-one" />
       <div className="symbiote-blob auth-blob-two" />
 
-      <header className="relative z-10 px-6 py-6 flex items-center justify-between">
+      <header className="relative z-10 flex items-center justify-between gap-3 px-4 py-4 sm:px-6 sm:py-6">
         <div className="luxury-brand-text">G&D</div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <span className="truncate text-xs text-muted-foreground">
             Step {step + 1} of {STEPS.length}
           </span>
           <ThemeToggle />
         </div>
       </header>
 
-      <main className="relative z-10 flex-1 flex items-center justify-center px-6 pb-12">
+      <main className="relative z-10 flex flex-1 items-center justify-center px-4 pb-8 sm:px-6 sm:pb-12">
         <div className="w-full max-w-lg">
-          <div className="flex gap-1 mb-6">
+          <div className="mb-4 flex gap-1 sm:mb-6">
             {STEPS.map((_, i) => (
               <div
                 key={i}
@@ -99,14 +99,14 @@ function OnboardingFlow() {
             ))}
           </div>
 
-          <div className="luxury-panel rounded-lg p-8 shadow-elegant backdrop-blur">
+          <div className="luxury-panel rounded-lg p-5 shadow-elegant backdrop-blur sm:p-8">
             <h2 className="text-xs font-medium uppercase tracking-wider text-primary-glow">
               {STEPS[step]}
             </h2>
 
             {step === 0 && (
               <>
-                <h1 className="font-display text-4xl font-light leading-none mt-3">
+                <h1 className="mt-3 font-display text-3xl font-light leading-none sm:text-4xl">
                   What's your name?
                 </h1>
                 <p className="text-sm text-muted-foreground mt-1">
@@ -124,7 +124,7 @@ function OnboardingFlow() {
 
             {step === 1 && (
               <>
-                <h1 className="font-display text-4xl font-light leading-none mt-3">
+                <h1 className="mt-3 font-display text-3xl font-light leading-none sm:text-4xl">
                   Where are you studying?
                 </h1>
                 <p className="text-sm text-muted-foreground mt-1">
@@ -141,13 +141,13 @@ function OnboardingFlow() {
                     <label className="text-xs font-medium text-muted-foreground">
                       Current year/level
                     </label>
-                    <div className="mt-2 grid grid-cols-3 gap-2">
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
                       {["Year 1", "Year 2", "Year 3", "Year 4", "Year 5", "Other"].map((item) => (
                         <button
                           key={item}
                           type="button"
                           onClick={() => setYear(item)}
-                          className={`py-2 rounded-lg border text-sm font-medium transition-colors ${
+                          className={`rounded-lg border px-2 py-2 text-sm font-medium transition-colors ${
                             year === item
                               ? "border-primary bg-primary/15 text-primary"
                               : "border-border bg-background hover:bg-surface-elevated"
@@ -164,7 +164,7 @@ function OnboardingFlow() {
 
             {step === 2 && (
               <>
-                <h1 className="font-display text-4xl font-light leading-none mt-3">
+                <h1 className="mt-3 font-display text-3xl font-light leading-none sm:text-4xl">
                   Your exam format?
                 </h1>
                 <p className="text-sm text-muted-foreground mt-1">
@@ -196,7 +196,7 @@ function OnboardingFlow() {
 
             {step === 3 && (
               <>
-                <h1 className="font-display text-4xl font-light leading-none mt-3">
+                <h1 className="mt-3 font-display text-3xl font-light leading-none sm:text-4xl">
                   How should we explain?
                 </h1>
                 <p className="text-sm text-muted-foreground mt-1">
@@ -233,12 +233,12 @@ function OnboardingFlow() {
               </>
             )}
 
-            <div className="mt-8 flex items-center justify-between">
+            <div className="mt-7 flex items-center justify-between gap-3 sm:mt-8">
               <button
                 type="button"
                 onClick={prev}
                 disabled={step === 0}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-30"
+                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-30 sm:px-3"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back
@@ -248,7 +248,7 @@ function OnboardingFlow() {
                   type="button"
                   onClick={next}
                   disabled={(step === 0 && !name.trim()) || (step === 1 && !university.trim())}
-                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow hover:opacity-90 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-primary px-4 py-2.5 font-medium text-primary-foreground shadow-glow hover:opacity-90 disabled:opacity-50 sm:px-5"
                 >
                   Continue
                   <ArrowRight className="h-4 w-4" />
@@ -258,7 +258,7 @@ function OnboardingFlow() {
                   type="button"
                   onClick={finish}
                   disabled={saving}
-                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow hover:opacity-90 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-primary px-4 py-2.5 font-medium text-primary-foreground shadow-glow hover:opacity-90 disabled:opacity-50 sm:px-5"
                 >
                   {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                   Start studying

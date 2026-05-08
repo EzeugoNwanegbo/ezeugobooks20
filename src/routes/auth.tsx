@@ -52,7 +52,7 @@ export const Route = createFileRoute("/auth")({
   }),
   head: () => ({
     meta: [
-      { title: "Sign in — G&D" },
+      { title: "Sign in - G&D" },
       { name: "description", content: "Sign in to G&D to search your study files." },
     ],
   }),
@@ -85,7 +85,7 @@ function AuthFlow() {
 
   if (loading || user) {
     return (
-      <div className="luxury-auth-page min-h-screen flex items-center justify-center bg-background">
+      <div className="luxury-auth-page flex min-h-dvh items-center justify-center bg-background">
         <div className="symbiote-blob auth-blob-one" />
         <div className="symbiote-blob auth-blob-two" />
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -166,21 +166,21 @@ function AuthFlow() {
   };
 
   return (
-    <div className="luxury-auth-page min-h-screen bg-background relative overflow-hidden flex flex-col">
+    <div className="luxury-auth-page relative flex min-h-dvh flex-col overflow-hidden bg-background">
       <div className="symbiote-blob auth-blob-one" />
       <div className="symbiote-blob auth-blob-two" />
 
-      <header className="relative z-10 flex items-center justify-between px-6 py-6">
+      <header className="relative z-10 flex items-center justify-between px-4 py-4 sm:px-6 sm:py-6">
         <Link to="/" className="luxury-brand-text">
           G&D
         </Link>
         <ThemeToggle />
       </header>
 
-      <main className="relative z-10 flex-1 flex items-center justify-center px-6 pb-12">
+      <main className="relative z-10 flex flex-1 items-center justify-center px-4 pb-8 sm:px-6 sm:pb-12">
         <div className="w-full max-w-md">
-          <div className="luxury-panel rounded-lg p-8 shadow-elegant backdrop-blur">
-            <h1 className="font-display text-4xl font-light leading-none">
+          <div className="luxury-panel rounded-lg p-5 shadow-elegant backdrop-blur sm:p-8">
+            <h1 className="font-display text-3xl font-light leading-none sm:text-4xl">
               {isSignup ? "Create your account" : "Welcome back"}
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
@@ -237,7 +237,7 @@ function AuthFlow() {
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete={isSignup ? "new-password" : "current-password"}
                   className="mt-1 w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
-                  placeholder="••••••••"
+                  placeholder="********"
                 />
               </div>
               <button

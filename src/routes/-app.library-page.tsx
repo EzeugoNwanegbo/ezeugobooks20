@@ -372,17 +372,19 @@ export function LibraryPage() {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="max-w-4xl mx-auto px-4 md:px-8 py-8">
-        <div className="flex items-start justify-between gap-4 mb-8">
+      <div className="mx-auto max-w-4xl px-3 py-6 sm:px-4 sm:py-8 md:px-8">
+        <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="font-display text-5xl font-light leading-none">Your library</h1>
-            <p className="text-sm text-muted-foreground mt-1 max-w-lg">
+            <h1 className="font-display text-4xl font-light leading-none sm:text-5xl">
+              Your library
+            </h1>
+            <p className="mt-2 max-w-lg text-sm text-muted-foreground sm:mt-1">
               Upload large files so G&D can search them and point answers back to the source.
             </p>
           </div>
           <button
             onClick={createFolder}
-            className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded-lg border border-border bg-surface/60 hover:border-primary/40 hover:text-primary transition-colors font-medium"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-surface/60 px-3 py-2 text-sm font-medium transition-colors hover:border-primary/40 hover:text-primary sm:w-auto"
           >
             <FolderPlus className="h-4 w-4" />
             New folder
@@ -405,7 +407,7 @@ export function LibraryPage() {
             const f = e.dataTransfer.files?.[0];
             if (f) onUpload(f);
           }}
-          className={`block cursor-pointer rounded-lg border-2 border-dashed border-border bg-surface/40 p-8 text-center transition-colors hover:border-primary/40 ${
+          className={`block cursor-pointer rounded-lg border-2 border-dashed border-border bg-surface/40 p-5 text-center transition-colors hover:border-primary/40 sm:p-8 ${
             uploading ? "pointer-events-none opacity-70" : ""
           }`}
         >
@@ -427,7 +429,7 @@ export function LibraryPage() {
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3">
-              <div className="h-12 w-12 rounded-lg bg-primary/10 border border-primary/15 flex items-center justify-center">
+              <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-primary/15 bg-primary/10 sm:h-12 sm:w-12">
                 <Upload className="h-5 w-5 text-primary" />
               </div>
               <div>
@@ -442,14 +444,14 @@ export function LibraryPage() {
 
         {/* Folder list */}
         <div className="mt-8 space-y-4">
-          <div className="flex items-center gap-2 text-xs uppercase font-semibold tracking-wider text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             <BookOpen className="h-3.5 w-3.5" />
             {docs.length} {docs.length === 1 ? "document" : "documents"} · {folders.length}{" "}
             {folders.length === 1 ? "folder" : "folders"}
           </div>
 
           {docs.length === 0 && folders.length === 0 ? (
-            <div className="text-center py-12 text-sm text-muted-foreground">
+            <div className="py-10 text-center text-sm text-muted-foreground sm:py-12">
               No documents yet. Upload your first file to start asking precise questions.
             </div>
           ) : (
@@ -605,10 +607,10 @@ function FolderBlock({
           <span className="text-xs text-muted-foreground">({docs.length})</span>
         </button>
         {!isUncategorised && (
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             <button
               onClick={onRename}
-              className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-surface-elevated"
+              className="hidden rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-surface-elevated hover:text-foreground sm:inline-flex"
             >
               Rename
             </button>
@@ -630,9 +632,9 @@ function FolderBlock({
             docs.map((d) => (
               <li
                 key={d.id}
-                className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-elevated/50 transition-colors relative"
+                className="relative flex items-center gap-2.5 px-3 py-2.5 transition-colors hover:bg-surface-elevated/50 sm:gap-3"
               >
-                <div className="h-9 w-9 rounded-lg border border-primary/15 bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
                   <FileText className="h-4 w-4 text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">

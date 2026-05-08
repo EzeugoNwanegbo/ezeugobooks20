@@ -26,7 +26,7 @@ function AppLayout() {
 
   if (loading || !user || !profile?.onboarded) {
     return (
-      <div className="luxury-app-shell min-h-screen flex items-center justify-center bg-background">
+      <div className="luxury-app-shell flex min-h-dvh items-center justify-center bg-background">
         <div className="symbiote-blob app-blob-one" />
         <div className="symbiote-blob app-blob-two" />
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -52,10 +52,10 @@ function AppLayout() {
   };
 
   return (
-    <div className="luxury-app-shell flex h-screen overflow-hidden bg-background">
+    <div className="luxury-app-shell flex h-dvh overflow-hidden bg-background">
       <div className="symbiote-blob app-blob-one" />
       <div className="symbiote-blob app-blob-two" />
-      <aside className="hidden md:flex md:w-64 flex-col border-r border-border bg-background/75 backdrop-blur">
+      <aside className="hidden flex-col border-r border-border bg-background/75 backdrop-blur lg:flex lg:w-64">
         <div className="p-5 border-b border-border">
           <Link to="/app/chat" className="luxury-brand-text">
             G&D
@@ -88,32 +88,45 @@ function AppLayout() {
         </div>
       </aside>
 
-      <div className="md:hidden fixed top-0 inset-x-0 z-20 border-b border-border bg-background/90 backdrop-blur px-4 py-3 flex items-center justify-between">
+      <div className="fixed inset-x-0 top-0 z-20 flex items-center justify-between border-b border-border bg-background/90 px-3 py-2.5 backdrop-blur sm:px-4 lg:hidden">
         <Link to="/app/chat" className="luxury-brand-text small">
           G&D
         </Link>
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1">
           <ThemeToggle />
           <Link
             to="/app/chat"
-            className={`p-2 rounded-md ${
+            className={`rounded-md p-2 ${
               location.pathname.includes("chat") ? "text-primary" : "text-muted-foreground"
             }`}
+            aria-label="Chat"
           >
             <MessageSquare className="h-4 w-4" />
           </Link>
           <Link
             to="/app/library"
-            className={`p-2 rounded-md ${
+            className={`rounded-md p-2 ${
               location.pathname.includes("library") ? "text-primary" : "text-muted-foreground"
             }`}
+            aria-label="Library"
           >
             <BookOpen className="h-4 w-4" />
           </Link>
+          <button
+            onClick={async () => {
+              await signOut();
+              navigate({ to: "/" });
+            }}
+            className="rounded-md p-2 text-muted-foreground hover:text-foreground"
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
       </div>
 
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden pt-14 md:pt-0 min-w-0">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-14 lg:pt-0">
         <Outlet />
       </main>
     </div>
