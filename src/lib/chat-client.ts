@@ -85,7 +85,7 @@ export async function streamChat({
   onDelta: (chunk: string) => void;
   onMeta?: (meta: { model: string; source: string }) => void;
   onSources?: (sources: WebSource[]) => void;
-  onDone: () => void;
+  onDone: () => void | Promise<void>;
   onError: (err: string) => void;
   onCancel?: () => void;
   signal?: AbortSignal;
@@ -269,5 +269,5 @@ export async function streamChat({
     onDelta(INCOMPLETE_STREAM_NOTE);
   }
 
-  onDone();
+  await onDone();
 }

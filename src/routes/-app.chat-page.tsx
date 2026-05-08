@@ -1097,11 +1097,9 @@ export function ChatPage() {
     let metaSource: "library" | "general" | "interlink" = "general";
     let metaModel = "";
     let webSources: WebSource[] = [];
-    let streamFinished = false;
     let firstDeltaSeen = false;
     let cancelled = false;
     let revealTimer: number | null = null;
-    let revealDone: (() => void) | null = null;
 
     const setAssistantMessage = (contentToShow: string) => {
       setMessages((prev) => {
@@ -1140,11 +1138,7 @@ export function ChatPage() {
           return;
         }
 
-        if (streamFinished) {
-          stopReveal();
-          revealDone?.();
-          revealDone = null;
-        }
+        stopReveal();
       }, 12);
     };
 
@@ -1158,28 +1152,6 @@ export function ChatPage() {
       } else {
         setMessages((prev) => prev.slice(0, -1));
       }
-    };
-
-    const waitForReveal = async () => {
-      streamFinished = true;
-      startReveal();
-      if (visibleAssistant.length >= assistant.length) return;
-      if (requestController.signal.aborted) {
-        finishCancelled();
-        return;
-      }
-      let onAbort: (() => void) | null = null;
-      await new Promise<void>((resolve) => {
-        onAbort = resolve;
-        requestController.signal.addEventListener("abort", onAbort, { once: true });
-        revealDone = resolve;
-      });
-      if (onAbort) requestController.signal.removeEventListener("abort", onAbort);
-      if (requestController.signal.aborted) {
-        finishCancelled();
-        return;
-      }
-      setAssistantMessage(assistant);
     };
 
     try {
@@ -1241,8 +1213,10 @@ export function ChatPage() {
         },
         onCancel: finishCancelled,
         onDone: async () => {
-          await waitForReveal();
           if (cancelled || requestController.signal.aborted) return;
+          stopReveal();
+          visibleAssistant = assistant;
+          setAssistantMessage(assistant);
           logTiming("ai stream done", { chars: assistant.length });
           if (assistant && user) {
             await supabase.from("messages").insert({
