@@ -53,7 +53,6 @@ interface ChatBody {
 
 // Keep the research prompt focused so the first streamed token arrives quickly.
 const MAX_DOC_CHARS_TOTAL = 120_000;
-const DEEPSEEK_MAX_TOKENS = 2400;
 const DEEPSEEK_TIMEOUT_MS = 18_000;
 const GPT_STREAM_START_TIMEOUT_MS = 18_000;
 const ROUTER_TIMEOUT_MS = 5_000;
@@ -379,7 +378,6 @@ async function callDeepSeekSync(
       body: JSON.stringify({
         model: "deepseek-chat",
         stream: false,
-        max_tokens: DEEPSEEK_MAX_TOKENS,
         temperature: 0.2, // Low temp — we want accurate facts, not creative flair
         messages: [{ role: "system", content: systemPrompt }, ...messages],
       }),
@@ -402,7 +400,6 @@ async function callGPTStream(
   apiKey: string,
   systemPrompt: string,
   messages: ChatBody["messages"],
-  maxTokens: number,
 ): Promise<Response> {
   return fetchWithTimeout(
     "https://api.openai.com/v1/chat/completions",
@@ -415,19 +412,12 @@ async function callGPTStream(
       body: JSON.stringify({
         model: "gpt-4o-mini",
         stream: true,
-        max_tokens: maxTokens,
         temperature: 0.75, // Slightly higher — we want GPT's natural warmth
         messages: [{ role: "system", content: systemPrompt }, ...messages],
       }),
     },
     GPT_STREAM_START_TIMEOUT_MS,
   );
-}
-
-function gptMaxTokens(mode: Mode, hasDocs: boolean): number {
-  if (mode === "Detailed") return hasDocs ? 2600 : 1800;
-  if (mode === "Storytelling") return hasDocs ? 1800 : 1400;
-  return hasDocs ? 1600 : 1100;
 }
 
 function normalizeRouteDecision(value: unknown, hasDocs: boolean): RouteDecision {
@@ -461,7 +451,6 @@ async function callOpenAIRouteDecision(
       body: JSON.stringify({
         model: "gpt-4o-mini",
         temperature: 0,
-        max_tokens: 80,
         response_format: { type: "json_object" },
         messages: [
           {
@@ -525,7 +514,6 @@ async function callOpenAIWebCurriculumSync(
       body: JSON.stringify({
         model: "gpt-4o-mini-search-preview",
         web_search_options: {},
-        max_tokens: 700,
         messages: [
           {
             role: "system",
@@ -591,7 +579,6 @@ async function callOpenAIWebAnswerSync(
       body: JSON.stringify({
         model: "gpt-4o-mini-search-preview",
         web_search_options: {},
-        max_tokens: gptMaxTokens(mode, false),
         messages: [
           {
             role: "system",
@@ -896,12 +883,7 @@ Answer the student's question using the style instructions in your system prompt
     }
 
     // Stream GPT's response to the client
-    const gptResp = await callGPTStream(
-      OPENAI_API_KEY,
-      gptSystemPrompt,
-      gptMessages,
-      gptMaxTokens(body.mode, hasDocs),
-    );
+    const gptResp = await callGPTStream(OPENAI_API_KEY, gptSystemPrompt, gptMessages);
 
     if (gptResp.status === 429 && DEEPSEEK_API_KEY) {
       console.warn("OpenAI rate limited; falling back to DeepSeek.");

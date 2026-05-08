@@ -5,7 +5,6 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
 const CHAT_START_TIMEOUT_MS = 45_000;
-const CHAT_STREAM_IDLE_TIMEOUT_MS = 45_000;
 const LENGTH_LIMIT_NOTE =
   '\n\n**Note:** The AI hit its response length limit before finishing. Ask "continue" and it can pick up from here.';
 const INCOMPLETE_STREAM_NOTE =
@@ -28,7 +27,7 @@ export type WebSource = {
   url: string;
 };
 
-function readWithTimeout(
+function readWithAbort(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   signal?: AbortSignal,
 ): Promise<ReadableStreamReadResult<Uint8Array>> {
@@ -39,17 +38,12 @@ function readWithTimeout(
     }
 
     const cleanup = () => {
-      window.clearTimeout(timeout);
       signal?.removeEventListener("abort", onAbort);
     };
     const onAbort = () => {
       cleanup();
       reject(new DOMException("Aborted", "AbortError"));
     };
-    const timeout = window.setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      reject(new Error("stream-idle-timeout"));
-    }, CHAT_STREAM_IDLE_TIMEOUT_MS);
 
     signal?.addEventListener("abort", onAbort, { once: true });
     reader.read().then(
@@ -186,7 +180,7 @@ export async function streamChat({
   while (!done) {
     let chunk: ReadableStreamReadResult<Uint8Array>;
     try {
-      chunk = await readWithTimeout(reader, signal);
+      chunk = await readWithAbort(reader, signal);
     } catch (err) {
       await reader.cancel().catch(() => {});
       if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) {
@@ -194,7 +188,7 @@ export async function streamChat({
         return;
       }
       onError(
-        "The AI stream paused for too long. Try again; if this repeats, check the Edge Function provider logs.",
+        "The AI stream ended unexpectedly. Try again; if this repeats, check the Edge Function provider logs.",
       );
       return;
     }
