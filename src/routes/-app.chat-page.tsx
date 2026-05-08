@@ -1917,10 +1917,19 @@ function WebSourceIcons({ sources }: { sources?: WebSource[] }) {
           aria-label={`Open web source ${index + 1}: ${source.title || source.url}`}
           className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border bg-background/45 text-muted-foreground backdrop-blur-[2px] transition-colors hover:border-primary/35 hover:text-primary"
         >
-          <ExternalLink className="h-3.5 w-3.5" />
+          <span className="text-[11px] font-semibold leading-none">{index + 1}</span>
         </a>
       ))}
     </div>
+  );
+}
+
+function WebSourceBadge({ count }: { count: number }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30">
+      <ExternalLink className="h-2.5 w-2.5" />
+      Web sources · {count}
+    </span>
   );
 }
 
@@ -1938,9 +1947,10 @@ function Message({ msg, streaming }: { msg: DisplayMessage; isLast: boolean; str
     <div className="flex gap-2 sm:gap-3">
       <AiMark active={streaming} className="mt-0.5" />
       <div className="flex-1 min-w-0">
-        {msg.source && msg.source !== "general" && (
+        {((msg.source && msg.source !== "general") || msg.webSources?.length) && (
           <div className="mb-1.5 flex items-center gap-2">
-            <SourceBadge source={msg.source} />
+            {msg.source && msg.source !== "general" && <SourceBadge source={msg.source} />}
+            {msg.webSources?.length ? <WebSourceBadge count={msg.webSources.length} /> : null}
           </div>
         )}
         <div

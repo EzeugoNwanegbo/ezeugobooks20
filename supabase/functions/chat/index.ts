@@ -37,6 +37,16 @@ interface WebSource {
   url: string;
 }
 
+interface WebAnnotation {
+  type?: string;
+  url_citation?: {
+    end_index?: number;
+    start_index?: number;
+    title?: string;
+    url?: string;
+  };
+}
+
 type Mode = "Simplified" | "Detailed" | "Storytelling";
 type DocumentMode = "none" | "smart" | "selected";
 type RouteDecision = "direct" | "library" | "web_search" | "web_curriculum";
@@ -104,6 +114,52 @@ function uniqueSources(sources: WebSource[]): WebSource[] {
       return true;
     })
     .slice(0, 6);
+}
+
+function webSourcesFromAnnotations(annotations: WebAnnotation[]): WebSource[] {
+  return uniqueSources(
+    annotations
+      .map((annotation) => ({
+        title: annotation.url_citation?.title || "Web source",
+        url: annotation.url_citation?.url || "",
+      }))
+      .filter((source) => source.url),
+  );
+}
+
+function cleanWebAnswerText(text: string, annotations: WebAnnotation[]): string {
+  let cleaned = text;
+
+  const ranges = annotations
+    .map((annotation) => ({
+      end: annotation.url_citation?.end_index,
+      start: annotation.url_citation?.start_index,
+    }))
+    .filter(
+      (range): range is { end: number; start: number } =>
+        typeof range.start === "number" &&
+        typeof range.end === "number" &&
+        Number.isInteger(range.start) &&
+        Number.isInteger(range.end) &&
+        range.start >= 0 &&
+        range.end > range.start &&
+        range.end <= text.length,
+    )
+    .sort((a, b) => b.start - a.start);
+
+  for (const range of ranges) {
+    cleaned = `${cleaned.slice(0, range.start).trimEnd()}${cleaned.slice(range.end)}`;
+  }
+
+  return cleaned
+    .replace(/\[([^\]]+)\]\(https?:\/\/[^)\s]+(?:\)[)]*)?/g, "$1")
+    .replace(/\(?https?:\/\/[^\s)]+(?:\)[)]*)?/g, "")
+    .replace(/\?utm_source=openai\)+/g, "")
+    .replace(/\(\s*\)/g, "")
+    .replace(/[ \t]+([,.;:!?])/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function explicitCurriculum(p: Profile): string {
@@ -553,18 +609,13 @@ Keep it short enough to paste into another answer prompt.`,
 
   const json = await resp.json();
   const message = json.choices?.[0]?.message;
-  const annotations = Array.isArray(message?.annotations) ? message.annotations : [];
-  const sources = uniqueSources(
-    annotations
-      .map((annotation: { url_citation?: { title?: string; url?: string } }) => ({
-        title: annotation.url_citation?.title || "Web source",
-        url: annotation.url_citation?.url || "",
-      }))
-      .filter((source: WebSource) => source.url),
-  );
+  const annotations = (
+    Array.isArray(message?.annotations) ? message.annotations : []
+  ) as WebAnnotation[];
+  const sources = webSourcesFromAnnotations(annotations);
 
   return {
-    text: message?.content ?? "",
+    text: cleanWebAnswerText(message?.content ?? "", annotations),
     sources,
   };
 }
@@ -620,18 +671,16 @@ RULES:
   const json = await resp.json();
   const choice = json.choices?.[0];
   const message = choice?.message;
-  const annotations = Array.isArray(message?.annotations) ? message.annotations : [];
-  const sources = uniqueSources(
-    annotations
-      .map((annotation: { url_citation?: { title?: string; url?: string } }) => ({
-        title: annotation.url_citation?.title || "Web source",
-        url: annotation.url_citation?.url || "",
-      }))
-      .filter((source: WebSource) => source.url),
-  );
+  const annotations = (
+    Array.isArray(message?.annotations) ? message.annotations : []
+  ) as WebAnnotation[];
+  const sources = webSourcesFromAnnotations(annotations);
 
   return {
-    text: withLengthLimitNote(message?.content ?? "", choice?.finish_reason),
+    text: withLengthLimitNote(
+      cleanWebAnswerText(message?.content ?? "", annotations),
+      choice?.finish_reason,
+    ),
     sources,
   };
 }
