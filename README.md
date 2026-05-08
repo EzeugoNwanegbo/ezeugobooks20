@@ -1,9 +1,11 @@
 # G&D
 
-A personalized study assistant for students in any course.
+A precision document-answering app for students.
 Upload notes/course materials → AI organizes them into folders → ask questions in
 **Simplified**, **Detailed**, or **Storytelling** mode → use **Find connections**
-to interlink concepts across subjects.
+to interlink concepts across subjects. The core promise is pinpoint retrieval:
+ask a precise question about large files and get the exact answer, source trail,
+and explanation.
 
 Built with **TanStack Start (React 19) + Vite 7 + Tailwind v4 + Supabase**.
 
@@ -11,15 +13,15 @@ Built with **TanStack Start (React 19) + Vite 7 + Tailwind v4 + Supabase**.
 
 ## Stack at a glance
 
-| Piece                   | What it is                                   |
-| ----------------------- | -------------------------------------------- |
-| Frontend                | React 19 + TanStack Start + Tailwind v4      |
-| Auth + DB + Storage     | Supabase (Postgres + Auth + Storage)         |
-| Chat AI (general)       | OpenAI `gpt-4o-mini`                         |
-| Library Q&A AI          | DeepSeek `deepseek-chat` (128K context)      |
-| Folder suggestion       | OpenAI `gpt-4o-mini`                         |
-| Edge runtime            | Supabase Edge Functions (Deno)               |
-| Deploy target (default) | Cloudflare Workers (via Vite plugin)         |
+| Piece                   | What it is                               |
+| ----------------------- | ---------------------------------------- |
+| Frontend                | React 19 + TanStack Start + Tailwind v4  |
+| Auth + DB + Storage     | Supabase (Postgres + Auth + Storage)     |
+| Chat AI (general)       | OpenAI `gpt-4o-mini`                     |
+| File answer AI          | OpenAI `gpt-4o-mini` + DeepSeek fallback |
+| Folder suggestion       | OpenAI `gpt-4o-mini`                     |
+| Edge runtime            | Supabase Edge Functions (Deno)           |
+| Deploy target (default) | Cloudflare Workers (via Vite plugin)     |
 
 ---
 
@@ -32,6 +34,7 @@ The app was originally built on Lovable Cloud, which provided built-in Supabase 
 ## Self-hosting setup
 
 You only need two API keys:
+
 - `OPENAI_API_KEY` (for chat responses and folder suggestion)
 - `DEEPSEEK_API_KEY` (for document analysis)
 
@@ -67,9 +70,9 @@ bun install   # or npm install / pnpm install
 
 You need exactly two API keys:
 
-| Provider | Where                                  | What it powers                |
-| -------- | -------------------------------------- | ----------------------------- |
-| OpenAI   | https://platform.openai.com/api-keys   | Chat responses + folder suggestion |
+| Provider | Where                                  | What it powers                        |
+| -------- | -------------------------------------- | ------------------------------------- |
+| OpenAI   | https://platform.openai.com/api-keys   | Chat responses + folder suggestion    |
 | DeepSeek | https://platform.deepseek.com/api_keys | Document analysis (with 128K context) |
 
 ### 4. Set environment variables
@@ -125,12 +128,9 @@ Once you have your final domain:
 
 ### DeepSeek context limit (128K tokens ≈ 400K chars)
 
-Even for 300 MB course-material PDFs we extract text only and **truncate to ~280K
-chars per request**, split evenly across the documents the user has open.
-For a true full-book Q&A on enormous libraries you'd want to add **RAG**
-(chunk + embed + retrieve only relevant chunks). Not built in yet — the
-current setup is "send the most we can fit, get a great answer, mention the
-truncation in the system prompt."
+Large course-material PDFs are extracted as text and split into searchable
+chunks. Chat uses the most relevant chunks first, then falls back to targeted
+document previews when chunk search is unavailable.
 
 ### 300 MB uploads
 
@@ -145,14 +145,18 @@ storage cleanup on those.
 
 ### Routing logic in `supabase/functions/chat/index.ts`
 
-**Two-stage AI pipeline** (with documents):
-1. **DeepSeek** reads all uploaded documents → extracts raw facts (temperature 0.2 for accuracy)
-2. **OpenAI** takes DeepSeek's response → rewrites in the student's chosen style
+**File-answer pipeline** (with documents):
+
+1. Search indexed chunks from selected files or the whole library.
+2. **OpenAI** answers from the retrieved excerpts with source/page labels first.
+3. **DeepSeek** remains available as a fallback for document analysis.
 
 **Plain chat** (no documents):
+
 - **OpenAI** handles everything directly
 
 **Folder suggestion** (when uploading new documents):
+
 - **OpenAI** analyzes the document excerpt → suggests a folder name
 
 Both `chat` and `suggest-folder` edge functions use the OpenAI-compatible chat completions API schema.

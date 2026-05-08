@@ -377,7 +377,7 @@ export function LibraryPage() {
           <div>
             <h1 className="font-display text-5xl font-light leading-none">Your library</h1>
             <p className="text-sm text-muted-foreground mt-1 max-w-lg">
-              Upload notes — G&D suggests a subject folder and you confirm.
+              Upload large files so G&D can search them and point answers back to the source.
             </p>
           </div>
           <button
@@ -431,9 +431,9 @@ export function LibraryPage() {
                 <Upload className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <div className="font-semibold">Drop a PDF here or click to browse</div>
+                <div className="font-semibold">Drop a PDF or text file to make it searchable</div>
                 <div className="text-xs text-muted-foreground mt-1">
-                  PDF or .txt · up to 300 MB · auto-organised
+                  PDF or .txt · up to 300 MB · indexed for pinpoint answers
                 </div>
               </div>
             </div>
@@ -450,7 +450,7 @@ export function LibraryPage() {
 
           {docs.length === 0 && folders.length === 0 ? (
             <div className="text-center py-12 text-sm text-muted-foreground">
-              No documents yet. Upload your first PDF to get started.
+              No documents yet. Upload your first file to start asking precise questions.
             </div>
           ) : (
             <div className="space-y-3">

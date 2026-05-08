@@ -100,17 +100,17 @@ type PersistedChatSession = {
 };
 
 const SUGGESTIONS = [
-  "Explain this topic in simple terms",
-  "Turn my notes into exam questions",
-  "Help me build a study plan for this course",
-  "Summarize the key ideas from my uploaded file",
+  "Find exactly where this topic appears",
+  "Answer using only my uploaded files",
+  "Compare what my PDFs say about this",
+  "Extract every relevant point with sources",
 ];
 
-const SMART_DOC_LIMIT = 3;
-const SNIPPET_WINDOW_CHARS = 2600;
-const MAX_SNIPPETS_PER_DOC = 3;
-const CHUNK_SEARCH_TIMEOUT_MS = 8_000;
-const FALLBACK_DOC_TEXT_TIMEOUT_MS = 8_000;
+const SMART_DOC_LIMIT = 5;
+const SNIPPET_WINDOW_CHARS = 3200;
+const MAX_SNIPPETS_PER_DOC = 5;
+const CHUNK_SEARCH_TIMEOUT_MS = 12_000;
+const FALLBACK_DOC_TEXT_TIMEOUT_MS = 12_000;
 const CHAT_CANCELLED = "chat-cancelled";
 const CHAT_SESSION_STORAGE_PREFIX = "gd-chat-session";
 const CHAT_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -147,7 +147,7 @@ const GUEST_PROFILE: Profile = {
   university: null,
   year: null,
   course: null,
-  curriculum: "Use broad course-level exam priorities as the study guide.",
+  curriculum: "Use broad course-level exam priorities as the reference frame.",
   exam_format: "MCQ",
   preferred_mode: "Simplified",
   weak_areas: null,
@@ -285,9 +285,9 @@ function pickSmartDocs(
     .sort((a, b) => b.score - a.score || a.index - b.index);
 
   const matches = ranked.filter((item) => item.score > 0).slice(0, SMART_DOC_LIMIT);
-  return (matches.length > 0 ? matches : ranked.slice(0, Math.min(3, ranked.length))).map(
-    (item) => item.doc,
-  );
+  return (
+    matches.length > 0 ? matches : ranked.slice(0, Math.min(SMART_DOC_LIMIT, ranked.length))
+  ).map((item) => item.doc);
 }
 
 function relevantExcerpt(doc: DocumentCtx, content: string, messages: DisplayMessage[]): string {
@@ -492,7 +492,7 @@ function explicitlyNeedsLibrary(content: string): boolean {
 
 function studyMaterialMissMessage(scope: "selected" | "library"): string {
   const target = scope === "selected" ? "the selected file(s)" : "your library";
-  return `I couldn't find that in ${target} from the indexed study material. Try a more exact phrase, select the specific PDF/page, or ask me to answer from general knowledge.`;
+  return `I couldn't find an exact hit in ${target}. Try a more exact phrase, select the specific PDF/page, or ask me to answer from general knowledge.`;
 }
 
 export function ChatPage() {
@@ -889,7 +889,7 @@ export function ChatPage() {
         .rpc("search_document_chunks", {
           query_terms: terms,
           match_document_ids: documentIds,
-          match_count: manuallySelected ? 12 : 6,
+          match_count: manuallySelected ? 24 : 12,
         })
         .abortSignal(controller.signal);
 
@@ -955,7 +955,8 @@ export function ChatPage() {
     };
 
     if (!shouldFetchWebCurriculum && isWebCurriculumPreference(profileForRequest.curriculum)) {
-      profileForRequest.curriculum = "Use broad course-level exam priorities as the study guide.";
+      profileForRequest.curriculum =
+        "Use broad course-level exam priorities as the reference frame.";
     }
 
     if (user && savedProfile && curriculumPreference) {
@@ -1204,7 +1205,7 @@ export function ChatPage() {
           if (pendingLibraryNotice && metaSource !== "general") {
             setLibraryNotice(pendingLibraryNotice);
             if (pendingLibraryNotice.mode === "smart") {
-              toast("Smart Library picked", {
+              toast("Pinpoint search picked files", {
                 description: pendingLibraryNotice.names.slice(0, 2).join(", "),
               });
             }
@@ -1429,14 +1430,14 @@ export function ChatPage() {
               <>
                 <button
                   onClick={() => setUseLibrary((v) => !v)}
-                  title="Toggle library"
+                  title="Toggle file search"
                   className={`text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-colors ${
                     useLibrary
                       ? "border-primary/40 bg-primary/15 text-primary"
                       : "border-border text-muted-foreground hover:bg-surface-elevated"
                   }`}
                 >
-                  Library {useLibrary ? "on" : "off"}
+                  Files {useLibrary ? "on" : "off"}
                 </button>
                 <button
                   onClick={() => setInterlink((v) => !v)}
@@ -1454,7 +1455,7 @@ export function ChatPage() {
                 <button
                   onClick={() => setFilePickerOpen(true)}
                   disabled={!useLibrary}
-                  title="Choose study files"
+                  title="Choose files to search"
                   className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-border text-muted-foreground hover:bg-surface-elevated hover:text-foreground font-medium transition-colors disabled:opacity-40"
                 >
                   <FileText className="h-3.5 w-3.5" />
@@ -1553,7 +1554,7 @@ export function ChatPage() {
                     ))
                   ) : (
                     <span className="text-xs text-muted-foreground">
-                      Smart library will pick the best files for each question.
+                      Pinpoint search will choose the strongest file matches.
                     </span>
                   )}
 
@@ -1577,7 +1578,7 @@ export function ChatPage() {
                   <p className="mt-2 flex max-w-full items-center gap-1.5 overflow-hidden text-[11px] text-primary-glow">
                     <BookOpen className="h-3 w-3 shrink-0 text-muted-foreground" />
                     <span className="truncate">
-                      {libraryNotice.mode === "smart" ? "Smart Library: " : "Using: "}
+                      {libraryNotice.mode === "smart" ? "Pinpoint search: " : "Using: "}
                       {libraryNotice.names.slice(0, 2).join(", ")}
                       {libraryNotice.names.length > 2
                         ? ` +${libraryNotice.names.length - 2} more`
@@ -1608,8 +1609,8 @@ export function ChatPage() {
                   webSearch
                     ? "Ask with web search..."
                     : docs.length > 0 && useLibrary
-                      ? "Ask anything — your library will be checked first..."
-                      : "Ask a study question..."
+                      ? "Ask for the exact answer, page, or passage..."
+                      : "Ask a question or upload files to search precisely..."
                 }
                 className="flex-1 resize-none rounded-[28px] border border-input bg-background/35 px-5 py-2.5 text-sm min-h-[44px] max-h-[180px] backdrop-blur-[2px] focus:outline-none focus:ring-2 focus:ring-ring"
                 style={{ height: "auto" }}
@@ -1705,9 +1706,10 @@ function FilePickerDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="luxury-panel flex max-h-[85vh] max-w-2xl flex-col overflow-hidden rounded-lg p-0">
         <DialogHeader className="shrink-0 border-b border-border px-5 pb-3 pt-5">
-          <DialogTitle>Choose study files</DialogTitle>
+          <DialogTitle>Choose files to search</DialogTitle>
           <DialogDescription>
-            Pick the PDFs or notes for this chat. Leave this empty to let Smart Library choose.
+            Pick the PDFs or notes for this question. Leave this empty to let pinpoint search
+            choose.
           </DialogDescription>
         </DialogHeader>
 
@@ -1725,7 +1727,7 @@ function FilePickerDialog({
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
               <BookOpen className="h-3.5 w-3.5" />
-              {selectedDocIds.length > 0 ? selectedDocIds.length : "Smart Library"}
+              {selectedDocIds.length > 0 ? selectedDocIds.length : "Pinpoint search"}
             </span>
             {selectedDocIds.length > 0 && (
               <button type="button" onClick={onClear} className="hover:text-foreground">
@@ -1780,7 +1782,7 @@ function FilePickerDialog({
             onClick={() => onOpenChange(false)}
             className="w-full rounded-lg bg-gradient-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-glow sm:w-auto"
           >
-            {selectedDocIds.length > 0 ? "OK, use selected files" : "OK, use Smart Library"}
+            {selectedDocIds.length > 0 ? "OK, search selected files" : "OK, use pinpoint search"}
           </button>
         </DialogFooter>
       </DialogContent>
@@ -1860,8 +1862,8 @@ function EmptyState({
       <h2 className="font-display text-5xl font-light leading-none">Ready, {name}</h2>
       <p className="text-muted-foreground mt-1 text-balance max-w-md mx-auto">
         {hasDocs
-          ? "Ask anything — I'll check your uploaded notes first, then explain."
-          : "Ask a study question, or upload your notes in Library to ground answers in your own materials."}
+          ? "Ask for the exact detail. I will search your files first, show the source, then explain."
+          : "Upload files in Library, then ask for the exact answer, page, passage, or comparison you need."}
       </p>
       <div className="mt-8 grid sm:grid-cols-2 gap-2 max-w-xl mx-auto">
         {SUGGESTIONS.map((s) => (
@@ -1915,7 +1917,7 @@ function SourceBadge({ source }: { source?: "library" | "general" | "interlink" 
     return (
       <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30">
         <BookOpen className="h-2.5 w-2.5" />
-        From your library
+        From your files
       </span>
     );
   }

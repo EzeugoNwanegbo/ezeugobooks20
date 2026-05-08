@@ -42,17 +42,17 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "G&D — your personal study AI" },
+      { title: "G&D - pinpoint answers from your files" },
       {
         name: "description",
         content:
-          "A multi-AI study assistant for any course. Personalized chat, document-aware answers from your uploaded notes, and exam practice.",
+          "Search large study files in seconds and get precise, source-backed answers from your own PDFs and notes.",
       },
       { property: "og:title", content: "G&D" },
       {
         property: "og:description",
         content:
-          "Personalized AI study assistant for every learner — chat with your notes, get exam-ready answers.",
+          "Ask huge PDFs and notes precise questions. Get the exact answer, source, and explanation.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

@@ -4,11 +4,11 @@ import { ThemeToggle } from "@/components/theme-toggle";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "G&D - quiet intelligence for focused study" },
+      { title: "G&D - pinpoint answers from large files" },
       {
         name: "description",
         content:
-          "A restrained, document-aware study interface for reading, questioning, and remembering your own notes.",
+          "Ask huge PDFs and notes precise questions. G&D finds the exact answer, source, and evidence in seconds.",
       },
     ],
   }),
@@ -17,19 +17,19 @@ export const Route = createFileRoute("/")({
 
 const cards = [
   {
-    label: "01 / Library",
-    title: "Your files stay close to the answer.",
-    body: "Choose the exact PDF, note, slide deck, or chapter you want to study. If you do not choose, the library quietly selects the closest source.",
+    label: "01 / Upload",
+    title: "Large files become searchable.",
+    body: "Drop in PDFs, lecture notes, slide decks, or chapters. G&D extracts the text so every question can point back to the right source.",
   },
   {
-    label: "02 / Retrieval",
-    title: "The page matters before the model speaks.",
-    body: "Long documents are split into searchable passages, then only the relevant fragments are sent forward for a calmer, more precise response.",
+    label: "02 / Pinpoint",
+    title: "Ask for the exact thing.",
+    body: "Search across long files in seconds and return the passages, page labels, and file names that actually answer the question.",
   },
   {
-    label: "03 / Tutor",
-    title: "Depth when needed, restraint when not.",
-    body: "Move between simplified explanation, deeper analysis, and story-led memory without losing the source trail beneath the answer.",
+    label: "03 / Answer",
+    title: "Evidence first, explanation next.",
+    body: "Get the direct answer first, then the supporting source trail, then a clear explanation when you want the concept to stick.",
   },
 ];
 
@@ -48,18 +48,16 @@ function Landing() {
       </nav>
 
       <section className="luxury-hero" id="method">
-        <p className="luxury-eyebrow">Document-aware study system</p>
-        <h1>
-          Any subject feels clearer when your notes <em>answer back</em>.
-        </h1>
+        <p className="luxury-eyebrow">Precision search for your study files</p>
+        <h1>Ask huge files one question. Get the exact answer back.</h1>
         <p className="luxury-copy">
-          Upload notes, choose the file in front of you, and let the interface pull the right
-          passage before the AI explains. Quiet, source-led, and built for serious study in any
-          course.
+          Upload notes, PDFs, or slide decks and ask for the detail buried inside. G&D finds the
+          right passage, shows where it came from, and explains only after the evidence is pinned
+          down.
         </p>
         <div className="luxury-actions">
           <Link to="/auth" search={{ mode: "signup" }} className="luxury-primary">
-            Begin studying
+            Search your files
           </Link>
           <Link to="/auth" className="luxury-ghost">
             Enter workspace <span aria-hidden="true">-&gt;</span>
@@ -85,13 +83,13 @@ function Landing() {
         <div className="luxury-ticker" aria-hidden="true">
           <div>
             <span>selected PDFs</span>
-            <span>chunked passages</span>
-            <span>quiet recall</span>
-            <span>source-first answers</span>
+            <span>exact passages</span>
+            <span>page-aware answers</span>
+            <span>source-backed evidence</span>
             <span>selected PDFs</span>
-            <span>chunked passages</span>
-            <span>quiet recall</span>
-            <span>source-first answers</span>
+            <span>exact passages</span>
+            <span>page-aware answers</span>
+            <span>source-backed evidence</span>
           </div>
         </div>
       </footer>

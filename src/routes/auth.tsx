@@ -53,7 +53,7 @@ export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
       { title: "Sign in — G&D" },
-      { name: "description", content: "Sign in to G&D to access your study assistant." },
+      { name: "description", content: "Sign in to G&D to search your study files." },
     ],
   }),
   component: AuthPage,
