@@ -398,6 +398,36 @@ function webSourcesFromJson(value: unknown): WebSource[] | undefined {
   return sources.length > 0 ? sources : undefined;
 }
 
+function totalMessageContentLength(messages: DisplayMessage[]): number {
+  return messages.reduce((total, message) => total + message.content.length, 0);
+}
+
+function remoteMessagesArePrefixOfCached(
+  remoteMessages: DisplayMessage[],
+  cachedMessages: DisplayMessage[],
+): boolean {
+  if (remoteMessages.length > cachedMessages.length) return false;
+
+  return remoteMessages.every((remoteMessage, index) => {
+    const cachedMessage = cachedMessages[index];
+    if (!cachedMessage || remoteMessage.role !== cachedMessage.role) return false;
+    return cachedMessage.content.startsWith(remoteMessage.content);
+  });
+}
+
+function mostCompleteMessages(
+  remoteMessages: DisplayMessage[],
+  cachedMessages?: DisplayMessage[],
+): DisplayMessage[] {
+  if (!cachedMessages?.length) return remoteMessages;
+  if (!remoteMessages.length) return cachedMessages;
+  if (!remoteMessagesArePrefixOfCached(remoteMessages, cachedMessages)) return remoteMessages;
+
+  return totalMessageContentLength(cachedMessages) > totalMessageContentLength(remoteMessages)
+    ? cachedMessages
+    : remoteMessages;
+}
+
 function curriculumPreferenceFromMessage(content: string): string | null {
   const normalized = content.toLowerCase();
 
@@ -630,21 +660,15 @@ export function ChatPage() {
     };
     latestSessionRef.current = session;
 
-    if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current);
-    persistTimerRef.current = window.setTimeout(
-      () => {
-        writeChatSession(user.id, session);
-        persistTimerRef.current = null;
-      },
-      streaming ? 500 : 80,
-    );
-
-    return () => {
-      if (persistTimerRef.current) {
-        window.clearTimeout(persistTimerRef.current);
-        persistTimerRef.current = null;
-      }
-    };
+    if (!persistTimerRef.current) {
+      persistTimerRef.current = window.setTimeout(
+        () => {
+          if (latestSessionRef.current) writeChatSession(user.id, latestSessionRef.current);
+          persistTimerRef.current = null;
+        },
+        streaming ? 500 : 80,
+      );
+    }
   }, [
     conversationId,
     input,
@@ -674,6 +698,11 @@ export function ChatPage() {
     document.addEventListener("visibilitychange", saveWhenHidden);
 
     return () => {
+      saveLatestSession();
+      if (persistTimerRef.current) {
+        window.clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
       window.removeEventListener("pagehide", saveLatestSession);
       document.removeEventListener("visibilitychange", saveWhenHidden);
     };
@@ -771,15 +800,19 @@ export function ChatPage() {
         toast.error("Couldn't load that chat");
         return;
       }
-      setMessages(
-        (data ?? []).map((m) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-          source: (m.source_type as "library" | "general" | null) ?? undefined,
-          model: m.model_used ?? undefined,
-          webSources: webSourcesFromJson(m.source_refs),
-        })),
-      );
+      const remoteMessages = (data ?? []).map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+        source: (m.source_type as "library" | "general" | "interlink" | null) ?? undefined,
+        model: m.model_used ?? undefined,
+        webSources: webSourcesFromJson(m.source_refs),
+      }));
+      const cachedMessages =
+        latestSessionRef.current?.conversationId === conversationId
+          ? latestSessionRef.current.messages
+          : undefined;
+
+      setMessages(mostCompleteMessages(remoteMessages, cachedMessages));
     })();
     return () => {
       active = false;

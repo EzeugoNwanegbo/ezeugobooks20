@@ -6,6 +6,10 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
 const CHAT_START_TIMEOUT_MS = 45_000;
 const CHAT_STREAM_IDLE_TIMEOUT_MS = 45_000;
+const LENGTH_LIMIT_NOTE =
+  '\n\n**Note:** The AI hit its response length limit before finishing. Ask "continue" and it can pick up from here.';
+const INCOMPLETE_STREAM_NOTE =
+  '\n\n**Note:** The connection closed before the AI sent its final completion marker, so this answer may be incomplete. Ask "continue" or retry the question.';
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -175,6 +179,9 @@ export async function streamChat({
   const decoder = new TextDecoder();
   let buffer = "";
   let done = false;
+  let sawDoneMarker = false;
+  let finishReason: string | null = null;
+  let receivedContent = false;
 
   while (!done) {
     let chunk: ReadableStreamReadResult<Uint8Array>;
@@ -186,7 +193,9 @@ export async function streamChat({
         onCancel?.();
         return;
       }
-      onError("The AI stream paused for too long. Try again; if this repeats, check the Edge Function provider logs.");
+      onError(
+        "The AI stream paused for too long. Try again; if this repeats, check the Edge Function provider logs.",
+      );
       return;
     }
 
@@ -203,6 +212,7 @@ export async function streamChat({
       if (!line.startsWith("data: ")) continue;
       const json = line.slice(6).trim();
       if (json === "[DONE]") {
+        sawDoneMarker = true;
         done = true;
         break;
       }
@@ -213,7 +223,12 @@ export async function streamChat({
           continue;
         }
         const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-        if (content) onDelta(content);
+        const parsedFinishReason = parsed.choices?.[0]?.finish_reason as string | null | undefined;
+        if (parsedFinishReason) finishReason = parsedFinishReason;
+        if (content) {
+          receivedContent = true;
+          onDelta(content);
+        }
       } catch {
         buffer = line + "\n" + buffer;
         break;
@@ -227,7 +242,10 @@ export async function streamChat({
       if (raw.endsWith("\r")) raw = raw.slice(0, -1);
       if (!raw.startsWith("data: ")) continue;
       const json = raw.slice(6).trim();
-      if (json === "[DONE]") continue;
+      if (json === "[DONE]") {
+        sawDoneMarker = true;
+        continue;
+      }
       try {
         const parsed = JSON.parse(json);
         if (Array.isArray(parsed.medai_sources)) {
@@ -235,11 +253,26 @@ export async function streamChat({
           continue;
         }
         const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-        if (content) onDelta(content);
+        const parsedFinishReason = parsed.choices?.[0]?.finish_reason as string | null | undefined;
+        if (parsedFinishReason) finishReason = parsedFinishReason;
+        if (content) {
+          receivedContent = true;
+          onDelta(content);
+        }
       } catch {
         /* ignore */
       }
     }
+  }
+
+  if (finishReason === "length") {
+    onDelta(LENGTH_LIMIT_NOTE);
+  } else if (!sawDoneMarker && !finishReason) {
+    if (!receivedContent) {
+      onError("The AI stream ended before any response arrived. Please retry.");
+      return;
+    }
+    onDelta(INCOMPLETE_STREAM_NOTE);
   }
 
   onDone();

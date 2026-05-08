@@ -53,11 +53,13 @@ interface ChatBody {
 
 // Keep the research prompt focused so the first streamed token arrives quickly.
 const MAX_DOC_CHARS_TOTAL = 120_000;
-const DEEPSEEK_MAX_TOKENS = 1200;
+const DEEPSEEK_MAX_TOKENS = 2400;
 const DEEPSEEK_TIMEOUT_MS = 18_000;
 const GPT_STREAM_START_TIMEOUT_MS = 18_000;
 const ROUTER_TIMEOUT_MS = 5_000;
 const WEB_CURRICULUM_TIMEOUT_MS = 10_000;
+const LENGTH_LIMIT_NOTE =
+  '\n\n**Note:** The AI hit its response length limit before finishing. Ask "continue" and it can pick up from here.';
 
 async function fetchWithTimeout(
   input: string,
@@ -76,6 +78,10 @@ async function fetchWithTimeout(
 
 function curriculumText(p: Profile): string {
   return (p.curriculum || "").trim();
+}
+
+function withLengthLimitNote(text: string, finishReason?: string | null): string {
+  return finishReason === "length" ? `${text}${LENGTH_LIMIT_NOTE}` : text;
 }
 
 function isWebCurriculumPreference(value: string): boolean {
@@ -387,7 +393,8 @@ async function callDeepSeekSync(
   }
 
   const json = await resp.json();
-  return json.choices?.[0]?.message?.content ?? "";
+  const choice = json.choices?.[0];
+  return withLengthLimitNote(choice?.message?.content ?? "", choice?.finish_reason);
 }
 
 /** Call GPT-4o-mini with streaming — this is what the student sees. */
@@ -397,26 +404,30 @@ async function callGPTStream(
   messages: ChatBody["messages"],
   maxTokens: number,
 ): Promise<Response> {
-  return fetchWithTimeout("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  return fetchWithTimeout(
+    "https://api.openai.com/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        stream: true,
+        max_tokens: maxTokens,
+        temperature: 0.75, // Slightly higher — we want GPT's natural warmth
+        messages: [{ role: "system", content: systemPrompt }, ...messages],
+      }),
     },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      stream: true,
-      max_tokens: maxTokens,
-      temperature: 0.75, // Slightly higher — we want GPT's natural warmth
-      messages: [{ role: "system", content: systemPrompt }, ...messages],
-    }),
-  }, GPT_STREAM_START_TIMEOUT_MS);
+    GPT_STREAM_START_TIMEOUT_MS,
+  );
 }
 
 function gptMaxTokens(mode: Mode, hasDocs: boolean): number {
-  if (mode === "Detailed") return hasDocs ? 1100 : 900;
-  if (mode === "Storytelling") return 850;
-  return hasDocs ? 800 : 650;
+  if (mode === "Detailed") return hasDocs ? 2600 : 1800;
+  if (mode === "Storytelling") return hasDocs ? 1800 : 1400;
+  return hasDocs ? 1600 : 1100;
 }
 
 function normalizeRouteDecision(value: unknown, hasDocs: boolean): RouteDecision {
@@ -613,7 +624,8 @@ RULES:
   }
 
   const json = await resp.json();
-  const message = json.choices?.[0]?.message;
+  const choice = json.choices?.[0];
+  const message = choice?.message;
   const annotations = Array.isArray(message?.annotations) ? message.annotations : [];
   const sources = uniqueSources(
     annotations
@@ -625,7 +637,7 @@ RULES:
   );
 
   return {
-    text: message?.content ?? "",
+    text: withLengthLimitNote(message?.content ?? "", choice?.finish_reason),
     sources,
   };
 }
@@ -644,9 +656,7 @@ function textToSse(text: string, sources: WebSource[] = []): ReadableStream<Uint
       if (index < chunks.length) {
         const content = chunks[index++];
         controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`,
-          ),
+          encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`),
         );
         await new Promise((resolve) => setTimeout(resolve, 12));
         return;
@@ -842,8 +852,8 @@ Deno.serve(async (req: Request) => {
         interlink,
         useWebCurriculum,
       );
-      const documentExcerpts = body.documents!
-        .map(
+      const documentExcerpts = body
+        .documents!.map(
           (doc) =>
             `=== DOCUMENT: ${doc.file_name}${doc.folder ? ` | folder: ${doc.folder}` : ""} (id:${doc.id}) ===\n${doc.excerpt}`,
         )
