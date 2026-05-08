@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { extractPdfText } from "@/lib/pdf";
+import { extractImageText } from "@/lib/image-ocr";
 import { chunkDocumentText, documentPreview, type DocumentChunkInput } from "@/lib/document-chunks";
 import { toast } from "sonner";
 import {
@@ -146,14 +147,20 @@ export function LibraryPage() {
       setProgress("Extracting text (large PDFs may take a minute)...");
       let extracted = "";
       let pageCount = 0;
-      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+      const lowerName = file.name.toLowerCase();
+      if (file.type === "application/pdf" || lowerName.endsWith(".pdf")) {
         const r = await extractPdfText(file);
+        extracted = r.text;
+        pageCount = r.pageCount;
+      } else if (file.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(file.name)) {
+        setProgress("Extracting text from image with DeepSeek OCR...");
+        const r = await extractImageText(file);
         extracted = r.text;
         pageCount = r.pageCount;
       } else if (file.type.startsWith("text/")) {
         extracted = await file.text();
       } else {
-        toast.error("Only PDF and text files are supported right now.");
+        toast.error("Only PDF, text, and image files are supported right now.");
         setUploading(false);
         setProgress("");
         return;
@@ -181,7 +188,11 @@ export function LibraryPage() {
         extracted: documentPreview(extracted),
         chunks,
         pageCount: pageCount || 0,
-        fileType: file.type.includes("pdf") ? "pdf" : "text",
+        fileType: file.type.includes("pdf")
+          ? "pdf"
+          : file.type.startsWith("image/")
+            ? "image"
+            : "text",
         fileSize: file.size,
         suggestion: suggestion ?? { folder: "Uncategorised", isNew: true },
       });
@@ -415,7 +426,7 @@ export function LibraryPage() {
             id="file-up"
             ref={fileRef}
             type="file"
-            accept="application/pdf,text/plain,.pdf,.txt"
+            accept="application/pdf,text/plain,image/png,image/jpeg,image/webp,.pdf,.txt,.png,.jpg,.jpeg,.webp"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -433,9 +444,14 @@ export function LibraryPage() {
                 <Upload className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <div className="font-semibold">Drop a PDF or text file to make it searchable</div>
+                <div className="font-semibold">
+                  Drop a PDF, text file, or image to make it searchable
+                </div>
                 <div className="text-xs text-muted-foreground mt-1">
-                  PDF or .txt · up to 300 MB · indexed for pinpoint answers
+                  Images are extracted with DeepSeek OCR before indexing.
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  PDF, .txt, PNG, JPG, or WebP indexed for pinpoint answers
                 </div>
               </div>
             </div>

@@ -1,12 +1,11 @@
 // G&D — chat edge function
 //
-// FAST DOCUMENT PIPELINE:
-//   GPT streams directly from selected/smart library excerpts first so the
-//   client gets tokens quickly. DeepSeek is only used as a fallback when GPT is
-//   rate-limited.
-//
-// PLAIN CHAT (no documents):
-//   GPT-4o-mini handles general study questions directly (no DeepSeek needed).
+// Provider boundary:
+// - DeepSeek does the heavy lifting: uploaded-file retrieval, textbook excerpts,
+//   folder classification, and factual drafts.
+// - OpenAI receives DeepSeek's draft/summary and applies the selected final style.
+// - OpenAI is also used for explicit web search because the app needs live
+//   source metadata for reference icons.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -63,9 +62,9 @@ interface ChatBody {
 
 // Keep the research prompt focused so the first streamed token arrives quickly.
 const MAX_DOC_CHARS_TOTAL = 120_000;
-const DEEPSEEK_TIMEOUT_MS = 18_000;
-const GPT_STREAM_START_TIMEOUT_MS = 18_000;
-const ROUTER_TIMEOUT_MS = 5_000;
+const DEEPSEEK_CHAT_TIMEOUT_MS = 75_000;
+const DEEPSEEK_DOCUMENT_TIMEOUT_MS = 95_000;
+const GPT_REWRITE_START_TIMEOUT_MS = 45_000;
 const WEB_CURRICULUM_TIMEOUT_MS = 20_000;
 const WEB_ANSWER_TIMEOUT_MS = 75_000;
 const LENGTH_LIMIT_NOTE =
@@ -274,7 +273,7 @@ The student wants connections drawn ACROSS subjects/folders.
 - List all cross-subject links clearly so the next stage can highlight them.`
     : "";
 
-  return `You are G&D's document retrieval engine. Your job is to search the provided files and extract the exact evidence that answers the student's question.
+  return `You are G&D's DeepSeek document-retrieval engine. Your job is to search the student's uploaded files and extract the exact evidence needed for a final teaching answer.
 
 STUDENT CONTEXT:
 - Level: ${p.year || "Unknown"} at ${p.university || "Unknown"}
@@ -290,18 +289,19 @@ ${docContent}
 ${interlinkBlock}
 
 YOUR TASK:
-1. Find the strongest exact hits in the documents that answer the student's question.
+1. Search the document content first. Uploaded files and textbooks are the priority source.
 2. Start with "Exact answer:" and give the answer in one or two clear sentences.
 3. Then write "Where found:" and list document names plus page/chunk labels wherever available.
 4. Then write "Evidence:" and include the relevant facts. Keep quotes short; prefer paraphrase with source labels.
-5. If the relevant info is not in the documents, clearly say "No exact hit in the provided files" before adding any "[General knowledge]".
-6. DO NOT apply any teaching style. DO NOT simplify or storytell. Just give the source-grounded facts.
-7. If you are uncertain about anything, say so explicitly.`;
+5. If the relevant info is not in the files, clearly say "I could not find an exact hit in your files" before adding any "[General knowledge]".
+6. Do not apply Simplified, Detailed, or Storytelling style. OpenAI will do that final explanation step.
+7. Keep document names and page/chunk labels visible. Never invent citations or page numbers.
+8. If you are uncertain about anything, say so explicitly.`;
 }
 
 /** System prompt for GPT — style rewriter, human touch. */
-function buildDeepSeekDraftSystemPrompt(p: Profile, usingWebCurriculum: boolean): string {
-  return `You are G&D's precise answer engine. Prepare an accurate first draft that answers the student's question.
+function buildDeepSeekDirectSystemPrompt(p: Profile, usingWebCurriculum: boolean): string {
+  return `You are G&D's DeepSeek factual-draft engine. Prepare an accurate source-neutral draft for a final teaching answer.
 
 STUDENT CONTEXT:
 - Level: ${p.year || "Unknown"} at ${p.university || "Unknown"}
@@ -314,7 +314,8 @@ YOUR TASK:
 2. Give the supporting facts and reasoning.
 3. Include exam-relevant points where useful.
 4. If unsure, say what needs verification.
-5. Do not apply a teaching style yet. Keep it factual so the next stage can rewrite it.`;
+5. Never invent citations or page numbers.
+6. Do not apply Simplified, Detailed, or Storytelling style. OpenAI will do that final explanation step.`;
 }
 
 function buildGPTRewriterSystemPrompt(
@@ -331,10 +332,10 @@ INTERLINK STYLE:
   naming every source document used.`
     : "";
 
-  return `You are G&D, a precision document-answering app for students.
+  return `You are G&D, a precision answer app for students.
 
-You will receive a structured factual summary prepared from the student's uploaded files.
-Your job is to give a clear answer that preserves the exact source trail first, then explains the result in the student's chosen style.
+You will receive a structured factual draft prepared by DeepSeek.
+Your job is to match the student's selected mode and turn that DeepSeek draft into the final answer.
 
 STUDENT PROFILE:
 - Name: ${p.name || "Student"}
@@ -350,7 +351,8 @@ ${modeInstruction(mode, p.exam_format || "MCQ")}
 ${interlinkBlock}
 
 RULES:
-- Preserve every fact from the research summary; do not drop or invent information.
+- Use only the DeepSeek draft plus any supplied web-curriculum guidance. Do not invent new facts.
+- Preserve every fact from the research summary; do not drop important evidence.
 - Lead with the direct answer, then the source evidence, then the explanation.
 - Keep source references (document names / page numbers) where they appear in the summary.
 - If the summary says "[General knowledge]", keep that label so the student knows.
@@ -359,76 +361,14 @@ RULES:
 - If the research summary says it is uncertain about something, reflect that uncertainty honestly.`;
 }
 
-function buildGPTDocumentSystemPrompt(
-  p: Profile,
-  mode: Mode,
-  interlink: boolean,
-  usingWebCurriculum: boolean,
-): string {
-  const interlinkBlock = interlink
-    ? `
-INTERLINK STYLE:
-- Explicitly highlight how concepts from different subjects connect.
-- Use a subheading per subject/folder, then a final "**Connections found:**" bullet list
-  naming every source document used.`
-    : "";
-
-  return `You are G&D, a precision document-answering app that searches the student's uploaded document excerpts.
-
-STUDENT PROFILE:
-- Name: ${p.name || "Student"}
-- School: ${p.university || "Unknown"}
-- Level: ${p.year || "Unknown"}
-- Assessment format: ${p.exam_format || "MCQ"}
-- ${curriculumRule(p, usingWebCurriculum)}
-- Weak areas: ${(p.weak_areas || []).join(", ") || "none recorded"}
-- Recent topics: ${(p.recent_topics || []).slice(0, 8).join(", ") || "none yet"}
-
-STYLE INSTRUCTIONS:
-${modeInstruction(mode, p.exam_format || "MCQ")}
-${interlinkBlock}
-
-RULES:
-- Start with the direct answer.
-- Then add a short "**Where I found it:**" section with document names and page/chunk labels wherever available.
-- Then add the explanation in the student's selected style.
-- Use the provided DOCUMENT EXCERPTS first.
-- Keep document names and page/chunk labels visible in the answer.
-- If the excerpts do not contain enough information, say "I could not find an exact hit in your files" before adding general knowledge.
-- Never invent citations or page numbers.
-- Write as if talking directly to ${p.name || "the student"} — warm, clear, encouraging.
-- Use markdown: bold key terms, short paragraphs, bullet lists where helpful.`;
-}
-
-/** System prompt for GPT in plain-chat mode (no documents). */
-function buildGPTDirectSystemPrompt(p: Profile, mode: Mode, usingWebCurriculum: boolean): string {
-  return `You are G&D, a warm precision-answer app for students.
-
-STUDENT PROFILE:
-- Name: ${p.name || "Student"}
-- School: ${p.university || "Unknown"}
-- Level: ${p.year || "Unknown"}
-- Assessment format: ${p.exam_format || "MCQ"}
-- ${curriculumRule(p, usingWebCurriculum)}
-- Weak areas: ${(p.weak_areas || []).join(", ") || "none recorded"}
-- Recent topics: ${(p.recent_topics || []).slice(0, 8).join(", ") || "none yet"}
-
-${modeInstruction(mode, p.exam_format || "MCQ")}
-
-RULES:
-- If unsure, say: "I'm not fully certain - please verify with your teacher, lecturer, or source material."
-- Never invent citations or page numbers.
-- Write as if talking directly to ${p.name || "the student"} — warm, clear, encouraging.
-- Use markdown: bold key terms, short paragraphs, bullet lists where helpful.`;
-}
-
-// ─── AI callers ───────────────────────────────────────────────────────────────
+// AI callers
 
 /** Call DeepSeek without streaming — we need the full text before passing to GPT. */
 async function callDeepSeekSync(
   apiKey: string,
   systemPrompt: string,
   messages: ChatBody["messages"],
+  timeoutMs = DEEPSEEK_CHAT_TIMEOUT_MS,
 ): Promise<string> {
   const resp = await fetchWithTimeout(
     "https://api.deepseek.com/v1/chat/completions",
@@ -439,13 +379,14 @@ async function callDeepSeekSync(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "deepseek-chat",
+        model: Deno.env.get("DEEPSEEK_MODEL") || "deepseek-chat",
         stream: false,
+        max_tokens: 8192,
         temperature: 0.2, // Low temp — we want accurate facts, not creative flair
         messages: [{ role: "system", content: systemPrompt }, ...messages],
       }),
     },
-    DEEPSEEK_TIMEOUT_MS,
+    timeoutMs,
   );
 
   if (!resp.ok) {
@@ -479,86 +420,8 @@ async function callGPTStream(
         messages: [{ role: "system", content: systemPrompt }, ...messages],
       }),
     },
-    GPT_STREAM_START_TIMEOUT_MS,
+    GPT_REWRITE_START_TIMEOUT_MS,
   );
-}
-
-function normalizeRouteDecision(value: unknown, hasDocs: boolean): RouteDecision {
-  if (value === "web_search") return "web_search";
-  if (value === "web_curriculum") return "web_curriculum";
-  if (value === "library" && hasDocs) return "library";
-  return "direct";
-}
-
-async function callOpenAIRouteDecision(
-  apiKey: string,
-  body: ChatBody,
-  hasDocs: boolean,
-  webCurriculumAvailable: boolean,
-): Promise<RouteDecision> {
-  const lastUserMessage = [...body.messages].reverse().find((message) => message.role === "user");
-  const latest = lastUserMessage?.content ?? "";
-  const docNames = (body.documents ?? [])
-    .slice(0, 8)
-    .map((doc) => doc.file_name)
-    .join("; ");
-
-  const resp = await fetchWithTimeout(
-    "https://api.openai.com/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content: `You route a general study chat to the cheapest correct path.
-Return only JSON: {"route":"direct"|"library"|"web_search"|"web_curriculum","reason":"short"}.
-
-Choose "direct" for greetings, wording fixes, or general chat where uploaded files would not help.
-Choose "library" when documents are available and the student asks about a topic, term, sentence, definition, comparison, detail, quote, page, or answer that could be found in uploaded materials.
-Choose "web_search" when the student explicitly asks for current/latest web information or the UI web search button is on.
-Choose "web_curriculum" only when the student asks about syllabus/curriculum/study plan/high-yield topics and web curriculum is available.
-If unsure between direct and library, choose library. If unsure between direct and web_curriculum, choose direct.`,
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              latest_message: latest,
-              document_mode: body.documentMode ?? (hasDocs ? "smart" : "none"),
-              documents_available: hasDocs,
-              document_titles: docNames,
-              interlink_requested: !!body.interlink,
-              force_web_search: !!body.forceWebSearch,
-              web_curriculum_available: webCurriculumAvailable,
-            }),
-          },
-        ],
-      }),
-    },
-    ROUTER_TIMEOUT_MS,
-  );
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`OpenAI route error ${resp.status}: ${text}`);
-  }
-
-  const json = await resp.json();
-  const content = json.choices?.[0]?.message?.content ?? "{}";
-
-  try {
-    const parsed = JSON.parse(content);
-    return normalizeRouteDecision(parsed.route, hasDocs);
-  } catch {
-    return hasDocs ? "library" : "direct";
-  }
 }
 
 async function callOpenAIWebCurriculumSync(
@@ -767,6 +630,48 @@ function streamWithSources(
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
+async function openAIRewriteResponse({
+  apiKey,
+  systemPrompt,
+  messages,
+  model,
+  source,
+  sources,
+}: {
+  apiKey: string;
+  systemPrompt: string;
+  messages: ChatBody["messages"];
+  model: string;
+  source: string;
+  sources: WebSource[];
+}): Promise<Response> {
+  const gptResp = await callGPTStream(apiKey, systemPrompt, messages);
+
+  if (!gptResp.ok) {
+    const text = await gptResp.text();
+    console.error("OpenAI rewrite error:", gptResp.status, text);
+    const msg =
+      gptResp.status === 429
+        ? "OpenAI final explanation is rate limited. Please wait a few seconds and try again."
+        : gptResp.status === 401
+          ? "OpenAI API key rejected. Please check your Supabase Edge Function secrets."
+          : "OpenAI final explanation failed";
+    return new Response(JSON.stringify({ error: msg }), {
+      status: gptResp.status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  return new Response(streamWithSources(gptResp.body, sources), {
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "text/event-stream",
+      "X-Medai-Model": model,
+      "X-Medai-Source": source,
+    },
+  });
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -777,42 +682,19 @@ Deno.serve(async (req: Request) => {
     const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY");
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
-    if (!OPENAI_API_KEY) {
-      return new Response(JSON.stringify({ error: "OpenAI API key not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     const candidateHasDocs = (body.documents?.length ?? 0) > 0;
     const candidateInterlink = !!body.interlink && candidateHasDocs;
     const lastUserMessage = body.messages[body.messages.length - 1];
     const priorMessages = body.messages.slice(0, -1);
     const webCurriculumAvailable = shouldUseWebCurriculumFallback(body.profile, body.messages);
 
-    let route: RouteDecision = body.forceWebSearch
-      ? "web_search"
-      : candidateHasDocs
+    let route: RouteDecision = body.forceWebSearch ? "web_search" : "direct";
+    if (!body.forceWebSearch) {
+      route = candidateHasDocs
         ? "library"
-        : "direct";
-    if (!body.forceWebSearch && (candidateHasDocs || webCurriculumAvailable)) {
-      try {
-        route = await callOpenAIRouteDecision(
-          OPENAI_API_KEY,
-          body,
-          candidateHasDocs,
-          webCurriculumAvailable,
-        );
-      } catch (err) {
-        console.error("OpenAI route decision failed:", err);
-        route =
-          webCurriculumAvailable &&
-          questionNeedsWebCurriculumGuidance(body.messages, candidateHasDocs)
-            ? "web_curriculum"
-            : candidateHasDocs
-              ? "library"
-              : "direct";
-      }
+        : webCurriculumAvailable && questionNeedsWebCurriculumGuidance(body.messages, false)
+          ? "web_curriculum"
+          : "direct";
     }
 
     if (route === "web_curriculum" && !webCurriculumAvailable) route = "direct";
@@ -822,12 +704,16 @@ Deno.serve(async (req: Request) => {
     const useWebSearch = route === "web_search";
     const useWebCurriculum = route === "web_curriculum";
 
-    let gptSystemPrompt: string;
-    let gptMessages: ChatBody["messages"];
-    let deepSeekFallbackText = "";
     const source = hasDocs ? (interlink ? "interlink" : "library") : "general";
 
-    if (hasDocs && !DEEPSEEK_API_KEY) {
+    if (!OPENAI_API_KEY) {
+      return new Response(JSON.stringify({ error: "OpenAI API key not configured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!useWebSearch && !DEEPSEEK_API_KEY) {
       return new Response(JSON.stringify({ error: "DeepSeek API key not configured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -887,22 +773,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (hasDocs) {
-      // Fast library path: stream GPT directly with retrieved document excerpts.
-      // DeepSeek remains available below only as a rate-limit fallback.
-      gptSystemPrompt = buildGPTDocumentSystemPrompt(
-        body.profile,
-        body.mode,
-        interlink,
-        useWebCurriculum,
-      );
-      const documentExcerpts = body
-        .documents!.map(
-          (doc) =>
-            `=== DOCUMENT: ${doc.file_name}${doc.folder ? ` | folder: ${doc.folder}` : ""} (id:${doc.id}) ===\n${doc.excerpt}`,
-        )
-        .join("\n\n---\n\n");
-
-      gptMessages = [
+      const deepSeekMessages = [
         ...priorMessages,
         {
           role: "user" as const,
@@ -910,17 +781,49 @@ Deno.serve(async (req: Request) => {
 
 ---
 ${curriculumGuidance ? `WEB CURRICULUM GUIDANCE:\n${curriculumGuidance}\n\n---\n` : ""}
-DOCUMENT EXCERPTS:
-${documentExcerpts}
----
 
-Answer the student's question by finding the exact relevant evidence in the document excerpts first. Show where it came from, then explain using the style instructions in your system prompt.`,
+Answer the student's question by finding the exact relevant evidence in the uploaded document content first. Show where it came from, then explain using the style instructions in your system prompt.`,
         },
       ];
+
+      const deepSeekText = await callDeepSeekSync(
+        DEEPSEEK_API_KEY!,
+        buildDeepSeekSystemPrompt(body.profile, body.documents!, interlink, useWebCurriculum),
+        deepSeekMessages,
+        DEEPSEEK_DOCUMENT_TIMEOUT_MS,
+      );
+
+      return openAIRewriteResponse({
+        apiKey: OPENAI_API_KEY,
+        systemPrompt: buildGPTRewriterSystemPrompt(
+          body.profile,
+          body.mode,
+          interlink,
+          useWebCurriculum,
+        ),
+        messages: [
+          ...priorMessages,
+          {
+            role: "user" as const,
+            content: `Student question: ${lastUserMessage.content}
+
+DeepSeek document retrieval result:
+"""
+${deepSeekText}
+"""
+
+${curriculumGuidance ? `Web curriculum guidance used by DeepSeek:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer in ${body.mode} mode. Do not add facts that are not in the DeepSeek result. Keep document/page references visible.`,
+          },
+        ],
+        model: useWebCurriculum
+          ? "deepseek-to-openai-library-web-curriculum"
+          : "deepseek-to-openai-library",
+        source,
+        sources: webSources,
+      });
     } else {
-      // ── PLAIN CHAT — GPT handles it directly ───────────────────────────────
-      gptSystemPrompt = buildGPTDirectSystemPrompt(body.profile, body.mode, useWebCurriculum);
-      gptMessages = curriculumGuidance
+      // Plain chat: DeepSeek prepares the factual draft, OpenAI applies the selected mode.
+      const deepSeekMessages = curriculumGuidance
         ? [
             ...priorMessages,
             {
@@ -932,78 +835,45 @@ WEB CURRICULUM GUIDANCE:
 ${curriculumGuidance}
 ---
 
-Answer the student's question using the style instructions in your system prompt.`,
+Prepare the factual draft for a final teaching answer.`,
             },
           ]
         : body.messages;
-    }
 
-    // Stream GPT's response to the client
-    const gptResp = await callGPTStream(OPENAI_API_KEY, gptSystemPrompt, gptMessages);
+      const deepSeekText = await callDeepSeekSync(
+        DEEPSEEK_API_KEY!,
+        buildDeepSeekDirectSystemPrompt(body.profile, useWebCurriculum),
+        deepSeekMessages,
+        DEEPSEEK_CHAT_TIMEOUT_MS,
+      );
 
-    if (gptResp.status === 429 && DEEPSEEK_API_KEY) {
-      console.warn("OpenAI rate limited; falling back to DeepSeek.");
-      try {
-        if (!deepSeekFallbackText) {
-          deepSeekFallbackText = await callDeepSeekSync(
-            DEEPSEEK_API_KEY,
-            hasDocs
-              ? buildDeepSeekSystemPrompt(
-                  body.profile,
-                  body.documents!,
-                  interlink,
-                  useWebCurriculum,
-                )
-              : buildDeepSeekDraftSystemPrompt(body.profile, useWebCurriculum),
-            body.messages,
-          );
-        }
-        return new Response(textToSse(deepSeekFallbackText, webSources), {
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "text/event-stream",
-            "X-Medai-Model": useWebCurriculum
-              ? hasDocs
-                ? "deepseek-web-deepseek-fallback"
-                : "deepseek-web-fallback"
-              : hasDocs
-                ? "deepseek-deepseek-fallback"
-                : "deepseek-fallback",
-            "X-Medai-Source": source,
+      return openAIRewriteResponse({
+        apiKey: OPENAI_API_KEY,
+        systemPrompt: buildGPTRewriterSystemPrompt(
+          body.profile,
+          body.mode,
+          false,
+          useWebCurriculum,
+        ),
+        messages: [
+          ...priorMessages,
+          {
+            role: "user" as const,
+            content: `Student question: ${lastUserMessage.content}
+
+DeepSeek factual draft:
+"""
+${deepSeekText}
+"""
+
+${curriculumGuidance ? `Web curriculum guidance used by DeepSeek:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer in ${body.mode} mode. Do not add facts that are not in the DeepSeek draft.`,
           },
-        });
-      } catch (err) {
-        console.error("DeepSeek fallback failed:", err);
-      }
-    }
-
-    if (!gptResp.ok) {
-      const text = await gptResp.text();
-      console.error("GPT error:", gptResp.status, text);
-      const msg =
-        gptResp.status === 429
-          ? "Rate limit reached. Please wait a few seconds and try again."
-          : gptResp.status === 401
-            ? "OpenAI API key rejected. Please check your API keys in Supabase Edge Function secrets."
-            : "AI provider error";
-      return new Response(JSON.stringify({ error: msg }), {
-        status: gptResp.status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        ],
+        model: useWebCurriculum ? "deepseek-to-openai-web-curriculum" : "deepseek-to-openai",
+        source,
+        sources: webSources,
       });
     }
-
-    return new Response(streamWithSources(gptResp.body, webSources), {
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "text/event-stream",
-        "X-Medai-Model": useWebCurriculum
-          ? "gpt-web-gpt-4o-mini"
-          : hasDocs
-            ? "gpt-library-fast"
-            : "gpt-4o-mini",
-        "X-Medai-Source": source,
-      },
-    });
   } catch (e) {
     console.error("chat error:", e);
     return new Response(
