@@ -108,6 +108,7 @@ npx supabase secrets set DEEPSEEK_OCR_BASE_URL=https://YOUR_DEEPSEEK_OCR_ENDPOIN
 npx supabase functions deploy chat
 npx supabase functions deploy suggest-folder
 npx supabase functions deploy extract-image
+npx supabase functions deploy studybody
 ```
 
 ### 6. Deploy the frontend
@@ -173,6 +174,12 @@ storage cleanup on those.
 - `extract-image` calls your configured **DeepSeek OCR** endpoint.
 - The extracted text is chunked and searched like any other uploaded material.
 
+**StudyBody**:
+
+- **DeepSeek** turns selected files/course outlines into roadmaps and practice questions.
+- **DeepSeek** grades MCQ/essay answers against answer keys and rubrics.
+- **OpenAI** receives DeepSeek's grading summary and writes the final correction/coaching in the user's preferred style.
+
 The edge functions use OpenAI-compatible chat completions where the provider supports it.
 
 ---
@@ -198,6 +205,7 @@ supabase/
     chat/                  AI router (DeepSeek docs / OpenAI chat)
     suggest-folder/        Auto-categorises new uploads
     extract-image/         DeepSeek OCR proxy for image uploads
+    studybody/             Roadmaps, practice generation, grading, coaching
   migrations/              Schema (folders, documents, conversations, messages, profiles)
   config.toml              Edge function config
 ```

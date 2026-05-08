@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
-import { BookOpen, Loader2, LogOut, MessageSquare } from "lucide-react";
+import { BookOpen, Loader2, LogOut, Map, MessageSquare } from "lucide-react";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
@@ -64,6 +64,7 @@ function AppLayout() {
         <nav className="flex-1 p-3 space-y-1">
           {navItem("/app/chat", <MessageSquare className="h-4 w-4" />, "Chat")}
           {navItem("/app/library", <BookOpen className="h-4 w-4" />, "Library")}
+          {navItem("/app/studybody", <Map className="h-4 w-4" />, "StudyBody")}
         </nav>
         <div className="p-3 border-t border-border">
           <div className="px-3 py-2 mb-1">
@@ -111,6 +112,15 @@ function AppLayout() {
             aria-label="Library"
           >
             <BookOpen className="h-4 w-4" />
+          </Link>
+          <Link
+            to="/app/studybody"
+            className={`rounded-md p-2 ${
+              location.pathname.includes("studybody") ? "text-primary" : "text-muted-foreground"
+            }`}
+            aria-label="StudyBody"
+          >
+            <Map className="h-4 w-4" />
           </Link>
           <button
             onClick={async () => {

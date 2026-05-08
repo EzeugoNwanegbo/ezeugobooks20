@@ -13,6 +13,7 @@ import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppStudybodyRouteImport } from './routes/app.studybody'
 import { Route as AppLibraryRouteImport } from './routes/app.library'
 import { Route as AppChatRouteImport } from './routes/app.chat'
 
@@ -36,6 +37,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppStudybodyRoute = AppStudybodyRouteImport.update({
+  id: '/studybody',
+  path: '/studybody',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppLibraryRoute = AppLibraryRouteImport.update({
   id: '/library',
   path: '/library',
@@ -54,6 +60,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/app/chat': typeof AppChatRoute
   '/app/library': typeof AppLibraryRoute
+  '/app/studybody': typeof AppStudybodyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/app/chat': typeof AppChatRoute
   '/app/library': typeof AppLibraryRoute
+  '/app/studybody': typeof AppStudybodyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,6 +79,7 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/app/chat': typeof AppChatRoute
   '/app/library': typeof AppLibraryRoute
+  '/app/studybody': typeof AppStudybodyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,8 +90,16 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/app/chat'
     | '/app/library'
+    | '/app/studybody'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/app' | '/auth' | '/onboarding' | '/app/chat' | '/app/library'
+  to:
+    | '/'
+    | '/app'
+    | '/auth'
+    | '/onboarding'
+    | '/app/chat'
+    | '/app/library'
+    | '/app/studybody'
   id:
     | '__root__'
     | '/'
@@ -91,6 +108,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/app/chat'
     | '/app/library'
+    | '/app/studybody'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -130,6 +148,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app/studybody': {
+      id: '/app/studybody'
+      path: '/studybody'
+      fullPath: '/app/studybody'
+      preLoaderRoute: typeof AppStudybodyRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/library': {
       id: '/app/library'
       path: '/library'
@@ -150,11 +175,13 @@ declare module '@tanstack/react-router' {
 interface AppRouteChildren {
   AppChatRoute: typeof AppChatRoute
   AppLibraryRoute: typeof AppLibraryRoute
+  AppStudybodyRoute: typeof AppStudybodyRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppChatRoute: AppChatRoute,
   AppLibraryRoute: AppLibraryRoute,
+  AppStudybodyRoute: AppStudybodyRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
