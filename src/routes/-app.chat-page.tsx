@@ -36,12 +36,14 @@ import {
   Square,
   X,
   ExternalLink,
+  Sparkles,
 } from "lucide-react";
 
 type ChatSearch = { c?: string };
+type MessageSource = "library" | "general" | "interlink" | "visuals";
 
 type DisplayMessage = ChatMessage & {
-  source?: "library" | "general" | "interlink";
+  source?: MessageSource;
   model?: string;
   webSources?: WebSource[];
 };
@@ -105,6 +107,15 @@ const SUGGESTIONS = [
   "Compare what my PDFs say about this",
   "Extract every relevant point with sources",
 ];
+
+const VISUAL_SUGGESTIONS = [
+  "Visualize how this process works",
+  "Turn this topic into a simple animation",
+  "Make an animated diagram from my files",
+  "Create a visual explainer with scenes",
+];
+
+const CHAT_MODES = ["Simplified", "Detailed", "Storytelling", "Visuals"] as const;
 
 const SMART_DOC_LIMIT = 5;
 const SNIPPET_WINDOW_CHARS = 3200;
@@ -207,8 +218,7 @@ function readChatSession(ownerId: string): PersistedChatSession | null {
               message?.role === "user" || message?.role === "assistant",
           )
         : [],
-      mode:
-        parsed.mode === "Detailed" || parsed.mode === "Storytelling" ? parsed.mode : "Simplified",
+      mode: normalizeChatMode(parsed.mode),
       selectedDocIds: Array.isArray(parsed.selectedDocIds)
         ? parsed.selectedDocIds.filter((id): id is string => typeof id === "string")
         : [],
@@ -398,6 +408,10 @@ function webSourcesFromJson(value: unknown): WebSource[] | undefined {
   return sources.length > 0 ? sources : undefined;
 }
 
+function normalizeChatMode(value: unknown): ChatMode {
+  return CHAT_MODES.includes(value as ChatMode) ? (value as ChatMode) : "Simplified";
+}
+
 function totalMessageContentLength(messages: DisplayMessage[]): number {
   return messages.reduce((total, message) => total + message.content.length, 0);
 }
@@ -507,9 +521,7 @@ export function ChatPage() {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [loadingConvo, setLoadingConvo] = useState(false);
-  const [mode, setMode] = useState<ChatMode>(
-    (profile.preferred_mode as "Simplified" | "Detailed") || "Simplified",
-  );
+  const [mode, setMode] = useState<ChatMode>(normalizeChatMode(profile.preferred_mode));
   const [useLibrary, setUseLibrary] = useState(() => Boolean(user));
   const [webSearch, setWebSearch] = useState(false);
   const [interlink, setInterlink] = useState(false);
@@ -803,7 +815,7 @@ export function ChatPage() {
       const remoteMessages = (data ?? []).map((m) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
-        source: (m.source_type as "library" | "general" | "interlink" | null) ?? undefined,
+        source: (m.source_type as MessageSource | null) ?? undefined,
         model: m.model_used ?? undefined,
         webSources: webSourcesFromJson(m.source_refs),
       }));
@@ -1094,7 +1106,7 @@ export function ChatPage() {
 
     let assistant = "";
     let visibleAssistant = "";
-    let metaSource: "library" | "general" | "interlink" = "general";
+    let metaSource: MessageSource = "general";
     let metaModel = "";
     let webSources: WebSource[] = [];
     let firstDeltaSeen = false;
@@ -1172,7 +1184,7 @@ export function ChatPage() {
         signal: requestController.signal,
         onMeta: (m) => {
           metaModel = m.model;
-          metaSource = (m.source as "library" | "general" | "interlink") || "general";
+          metaSource = (m.source as MessageSource) || "general";
           logTiming("ai response headers", m);
           if (pendingLibraryNotice && metaSource !== "general") {
             setLibraryNotice(pendingLibraryNotice);
@@ -1441,16 +1453,18 @@ export function ChatPage() {
                 </>
               )}
               <div className="flex shrink-0 rounded-lg border border-border bg-background p-0.5">
-                {(["Simplified", "Detailed", "Storytelling"] as const).map((m) => (
+                {CHAT_MODES.map((m) => (
                   <button
                     key={m}
                     onClick={() => setMode(m)}
                     title={
-                      m === "Storytelling"
-                        ? "Explain as a story"
-                        : m === "Detailed"
-                          ? "Concepts + deeper detail"
-                          : "Plain English with an analogy"
+                      m === "Visuals"
+                        ? "Create an animated visual explanation"
+                        : m === "Storytelling"
+                          ? "Explain as a story"
+                          : m === "Detailed"
+                            ? "Concepts + deeper detail"
+                            : "Plain English with an analogy"
                     }
                     className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
                       mode === m
@@ -1459,6 +1473,7 @@ export function ChatPage() {
                     }`}
                   >
                     {m === "Storytelling" && <BookText className="h-3 w-3" />}
+                    {m === "Visuals" && <Sparkles className="h-3 w-3" />}
                     {m}
                   </button>
                 ))}
@@ -1479,6 +1494,7 @@ export function ChatPage() {
                 name={profile.name || "there"}
                 onPick={(s) => send(s)}
                 hasDocs={docs.length > 0 && useLibrary}
+                mode={mode}
               />
             ) : (
               <div className="space-y-6">
@@ -1498,6 +1514,42 @@ export function ChatPage() {
         {/* Composer */}
         <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-8 sm:px-4 md:px-8">
           <div className="pointer-events-auto max-w-3xl mx-auto">
+            {mode === "Visuals" && (
+              <div className="mb-2 rounded-2xl border border-border bg-background/65 px-2.5 py-2 backdrop-blur-[2px] sm:rounded-[28px] sm:px-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span className="inline-flex shrink-0 items-center gap-1.5 font-medium text-primary">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Visuals
+                  </span>
+                  <span className="min-w-[180px] flex-1">
+                    Add a file for exact details, turn Web on for current topics, or send now for an
+                    AI-guided animation.
+                  </span>
+                  {docs.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUseLibrary(true);
+                        setFilePickerOpen(true);
+                      }}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1.5 font-medium text-primary hover:bg-primary/15"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      Choose file
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => navigate({ to: "/app/library" })}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1.5 font-medium text-primary hover:bg-primary/15"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      Upload file
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
             {docs.length > 0 && useLibrary && (
               <div className="mb-2 rounded-2xl border border-border bg-background/60 px-2.5 py-1.5 backdrop-blur-[2px] sm:rounded-[28px] sm:px-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -1584,11 +1636,13 @@ export function ChatPage() {
                 }}
                 rows={1}
                 placeholder={
-                  webSearch
-                    ? "Ask with web search..."
-                    : docs.length > 0 && useLibrary
-                      ? "Ask for the exact answer, page, or passage..."
-                      : "Ask a question or upload files to search precisely..."
+                  mode === "Visuals"
+                    ? "Describe what to visualize or animate..."
+                    : webSearch
+                      ? "Ask with web search..."
+                      : docs.length > 0 && useLibrary
+                        ? "Ask for the exact answer, page, or passage..."
+                        : "Ask a question or upload files to search precisely..."
                 }
                 className="min-h-[44px] max-h-[180px] flex-1 resize-none rounded-2xl border border-input bg-background/70 px-4 py-2.5 text-sm backdrop-blur-[2px] focus:outline-none focus:ring-2 focus:ring-ring sm:rounded-[28px] sm:px-5"
                 style={{ height: "auto" }}
@@ -1829,22 +1883,28 @@ function EmptyState({
   name,
   onPick,
   hasDocs,
+  mode,
 }: {
   name: string;
   onPick: (s: string) => void;
   hasDocs: boolean;
+  mode: ChatMode;
 }) {
+  const suggestions = mode === "Visuals" ? VISUAL_SUGGESTIONS : SUGGESTIONS;
+
   return (
     <div className="py-8 text-center sm:py-12">
       <AiMark size="lg" className="mb-5" />
       <h2 className="font-display text-4xl font-light leading-none sm:text-5xl">Ready, {name}</h2>
       <p className="text-muted-foreground mt-1 text-balance max-w-md mx-auto">
-        {hasDocs
-          ? "Ask for the exact detail. I will search your files first, show the source, then explain."
-          : "Upload files in Library, then ask for the exact answer, page, passage, or comparison you need."}
+        {mode === "Visuals"
+          ? "Describe a topic, choose a file, or turn on Web to build an animated visual explanation."
+          : hasDocs
+            ? "Ask for the exact detail. I will search your files first, show the source, then explain."
+            : "Upload files in Library, then ask for the exact answer, page, passage, or comparison you need."}
       </p>
       <div className="mx-auto mt-6 grid max-w-xl gap-2 sm:mt-8 sm:grid-cols-2">
-        {SUGGESTIONS.map((s) => (
+        {suggestions.map((s) => (
           <button
             key={s}
             onClick={() => onPick(s)}
@@ -1882,7 +1942,15 @@ function AiMark({
   );
 }
 
-function SourceBadge({ source }: { source?: "library" | "general" | "interlink" }) {
+function SourceBadge({ source }: { source?: MessageSource }) {
+  if (source === "visuals") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30">
+        <Sparkles className="h-2.5 w-2.5" />
+        Visuals
+      </span>
+    );
+  }
   if (source === "interlink") {
     return (
       <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
@@ -1933,7 +2001,42 @@ function WebSourceBadge({ count }: { count: number }) {
   );
 }
 
+function isLikelyHtmlAnimation(value: string): boolean {
+  return /<!doctype html|<html[\s>]|<body[\s>]|<style[\s>]|<canvas[\s>]|<svg[\s>]/i.test(value);
+}
+
+function extractHtmlAnimation(content: string): string | null {
+  const candidates = [...content.matchAll(/```(?:html)?[ \t]*\n([\s\S]*?)```/gi)]
+    .map((match) => match[1]?.trim() ?? "")
+    .filter(Boolean);
+  const fenced = candidates.find(isLikelyHtmlAnimation);
+
+  if (fenced) return fenced;
+  return isLikelyHtmlAnimation(content) ? content.trim() : null;
+}
+
+function VisualPreview({ html }: { html: string }) {
+  return (
+    <div className="mt-3 overflow-hidden rounded-lg border border-border bg-background/45">
+      <div className="flex items-center gap-1.5 border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+        <Sparkles className="h-3.5 w-3.5 text-primary" />
+        Animation preview
+      </div>
+      <iframe
+        title="Generated animation preview"
+        sandbox="allow-scripts"
+        referrerPolicy="no-referrer"
+        srcDoc={html}
+        className="h-[360px] w-full bg-white"
+      />
+    </div>
+  );
+}
+
 function Message({ msg, streaming }: { msg: DisplayMessage; isLast: boolean; streaming: boolean }) {
+  const htmlAnimation =
+    msg.source === "visuals" && !streaming ? extractHtmlAnimation(msg.content) : null;
+
   if (msg.role === "user") {
     return (
       <div className="flex justify-end">
@@ -1966,6 +2069,7 @@ function Message({ msg, streaming }: { msg: DisplayMessage; isLast: boolean; str
             </span>
           )}
         </div>
+        {htmlAnimation && <VisualPreview html={htmlAnimation} />}
         <WebSourceIcons sources={msg.webSources} />
       </div>
     </div>

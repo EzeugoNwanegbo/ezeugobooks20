@@ -46,7 +46,7 @@ interface WebAnnotation {
   };
 }
 
-type Mode = "Simplified" | "Detailed" | "Storytelling";
+type Mode = "Simplified" | "Detailed" | "Storytelling" | "Visuals";
 type DocumentMode = "none" | "smart" | "selected";
 type RouteDecision = "direct" | "library" | "web_search" | "web_curriculum";
 
@@ -65,8 +65,11 @@ const MAX_DOC_CHARS_TOTAL = 120_000;
 const DEEPSEEK_CHAT_TIMEOUT_MS = 75_000;
 const DEEPSEEK_DOCUMENT_TIMEOUT_MS = 95_000;
 const GPT_REWRITE_START_TIMEOUT_MS = 45_000;
+const GPT_VISUAL_SCRIPT_TIMEOUT_MS = 60_000;
 const WEB_CURRICULUM_TIMEOUT_MS = 20_000;
 const WEB_ANSWER_TIMEOUT_MS = 75_000;
+const WEB_VISUAL_RESEARCH_TIMEOUT_MS = 75_000;
+const DEEPSEEK_VISUALS_TIMEOUT_MS = 120_000;
 const LENGTH_LIMIT_NOTE =
   '\n\n**Note:** The AI hit its response length limit before finishing. Ask "continue" and it can pick up from here.';
 
@@ -226,6 +229,14 @@ function questionNeedsWebCurriculumGuidance(
 // ─── Prompt builders ──────────────────────────────────────────────────────────
 
 function modeInstruction(mode: Mode, examFormat: string): string {
+  if (mode === "Visuals") {
+    return `Present the answer in VISUALS mode.
+- Turn the topic into a scene-by-scene visual explanation.
+- Include the essential facts, labels, motion beats, and timing.
+- Prefer concrete diagrams, animated processes, and simple visual metaphors over long prose.
+- Keep text short enough to fit inside an animation canvas.
+- End with one exam-relevant takeaway for ${examFormat} assessment.`;
+  }
   if (mode === "Storytelling") {
     return `Present the answer as a SHORT STORY.
 - Use a relatable narrative, classroom moment, real-world scenario, or step-by-step journey through the idea.
@@ -361,6 +372,51 @@ RULES:
 - If the research summary says it is uncertain about something, reflect that uncertainty honestly.`;
 }
 
+function buildGPTVisualScriptSystemPrompt(p: Profile): string {
+  return `You are GPT, G&D's animation director.
+
+You will receive the student's request plus a factual research summary prepared by DeepSeek or web search.
+Create a precise animation production script for DeepSeek to code.
+
+STUDENT PROFILE:
+- Name: ${p.name || "Student"}
+- School: ${p.university || "Unknown"}
+- Level: ${p.year || "Unknown"}
+- Assessment format: ${p.exam_format || "MCQ"}
+- Weak areas: ${(p.weak_areas || []).join(", ") || "none recorded"}
+
+SCRIPT RULES:
+- Preserve the supplied facts and source notes. Do not invent source-specific claims.
+- If facts are incomplete, mark a small "Assumptions" section with safe general assumptions only.
+- Build a concise educational animation: 3-6 scenes, 20-45 seconds total.
+- For every scene include: duration, visual objects, labels, motion, caption text, and the learning point.
+- Keep on-screen text short enough to fit inside a 16:9 animation.
+- Recommend a self-contained HTML/CSS/vanilla JS approach. No external assets, CDNs, libraries, or network calls.
+- End with "Developer handoff:" followed by the exact requirements DeepSeek must implement.
+- Do not write the final HTML code. DeepSeek will do that next.`;
+}
+
+function buildDeepSeekVisualAnimationSystemPrompt(p: Profile): string {
+  return `You are DeepSeek, G&D's animation engineer.
+
+GPT has already produced a storyboard and developer handoff. Your job is to create the working animation.
+
+OUTPUT REQUIREMENTS:
+1. Start with a short "**Visual plan**" summary in 3 bullets or fewer.
+2. Then output one complete fenced code block labelled \`\`\`html.
+3. The HTML must be a full, self-contained document using only HTML, CSS, SVG/canvas, and vanilla JavaScript.
+4. Do not use external assets, CDNs, fonts, libraries, network calls, or framework syntax.
+5. Make the animation responsive in a 16:9 canvas-like stage, with stable labels and no overlapping text.
+6. Include replay/pause controls inside the HTML only if they are simple and reliable.
+7. Use accurate labels from the research summary and storyboard. Do not add unsupported facts.
+8. After the code block, include a brief "**Source notes**" section if source notes were supplied.
+
+Student context:
+- Name: ${p.name || "Student"}
+- Level: ${p.year || "Unknown"}
+- Assessment format: ${p.exam_format || "MCQ"}`;
+}
+
 // AI callers
 
 /** Call DeepSeek without streaming — we need the full text before passing to GPT. */
@@ -422,6 +478,50 @@ async function callGPTStream(
     },
     GPT_REWRITE_START_TIMEOUT_MS,
   );
+}
+
+async function callOpenAISync({
+  apiKey,
+  systemPrompt,
+  messages,
+  maxTokens = 4096,
+  temperature = 0.35,
+  timeoutMs = GPT_VISUAL_SCRIPT_TIMEOUT_MS,
+}: {
+  apiKey: string;
+  systemPrompt: string;
+  messages: ChatBody["messages"];
+  maxTokens?: number;
+  temperature?: number;
+  timeoutMs?: number;
+}): Promise<string> {
+  const resp = await fetchWithTimeout(
+    "https://api.openai.com/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        stream: false,
+        max_tokens: maxTokens,
+        temperature,
+        messages: [{ role: "system", content: systemPrompt }, ...messages],
+      }),
+    },
+    timeoutMs,
+  );
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`OpenAI visual script error ${resp.status}: ${text}`);
+  }
+
+  const json = await resp.json();
+  const choice = json.choices?.[0];
+  return withLengthLimitNote(choice?.message?.content ?? "", choice?.finish_reason);
 }
 
 async function callOpenAIWebCurriculumSync(
@@ -529,6 +629,73 @@ RULES:
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(`OpenAI web search error ${resp.status}: ${text}`);
+  }
+
+  const json = await resp.json();
+  const choice = json.choices?.[0];
+  const message = choice?.message;
+  const annotations = (
+    Array.isArray(message?.annotations) ? message.annotations : []
+  ) as WebAnnotation[];
+  const sources = webSourcesFromAnnotations(annotations);
+
+  return {
+    text: withLengthLimitNote(
+      cleanWebAnswerText(message?.content ?? "", annotations),
+      choice?.finish_reason,
+    ),
+    sources,
+  };
+}
+
+async function callOpenAIWebVisualResearchSync(
+  apiKey: string,
+  p: Profile,
+  studentQuestion: string,
+): Promise<{ text: string; sources: WebSource[] }> {
+  const resp = await fetchWithTimeout(
+    "https://api.openai.com/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini-search-preview",
+        web_search_options: {},
+        messages: [
+          {
+            role: "system",
+            content: `Search the web only for facts needed to create an accurate educational animation.
+
+Return a compact research brief:
+1. verified core facts,
+2. sequence/process steps,
+3. visual objects or entities that should appear,
+4. short labels suitable for an animation,
+5. caveats or uncertainty.
+
+Do not write animation code. Do not list raw URLs in the body; source metadata is handled separately.`,
+          },
+          {
+            role: "user",
+            content: `Student context:
+- School: ${p.university || "Unknown"}
+- Level: ${p.year || "Unknown"}
+- Assessment format: ${p.exam_format || "MCQ"}
+
+Visual request: ${studentQuestion}`,
+          },
+        ],
+      }),
+    },
+    WEB_VISUAL_RESEARCH_TIMEOUT_MS,
+  );
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`OpenAI visual web search error ${resp.status}: ${text}`);
   }
 
   const json = await resp.json();
@@ -672,6 +839,87 @@ async function openAIRewriteResponse({
   });
 }
 
+async function visualAnimationResponse({
+  deepSeekApiKey,
+  openAIApiKey,
+  profile,
+  priorMessages,
+  studentQuestion,
+  researchText,
+  researchSource,
+  sources,
+}: {
+  deepSeekApiKey: string;
+  openAIApiKey: string;
+  profile: Profile;
+  priorMessages: ChatBody["messages"];
+  studentQuestion: string;
+  researchText: string;
+  researchSource: "library" | "web" | "general";
+  sources: WebSource[];
+}): Promise<Response> {
+  const visualScript = await callOpenAISync({
+    apiKey: openAIApiKey,
+    systemPrompt: buildGPTVisualScriptSystemPrompt(profile),
+    messages: [
+      ...priorMessages.slice(-6),
+      {
+        role: "user" as const,
+        content: `Student visual request:
+${studentQuestion}
+
+Research source: ${researchSource}
+
+Factual research summary:
+"""
+${researchText}
+"""
+
+Create the animation production script for DeepSeek.`,
+      },
+    ],
+    maxTokens: 5000,
+    temperature: 0.3,
+    timeoutMs: GPT_VISUAL_SCRIPT_TIMEOUT_MS,
+  });
+
+  const finalAnimation = await callDeepSeekSync(
+    deepSeekApiKey,
+    buildDeepSeekVisualAnimationSystemPrompt(profile),
+    [
+      {
+        role: "user" as const,
+        content: `Student visual request:
+${studentQuestion}
+
+Research source: ${researchSource}
+
+Factual research summary:
+"""
+${researchText}
+"""
+
+GPT animation script:
+"""
+${visualScript}
+"""
+
+Create the final animation package now.`,
+      },
+    ],
+    DEEPSEEK_VISUALS_TIMEOUT_MS,
+  );
+
+  return new Response(textToSse(finalAnimation, sources), {
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "text/event-stream",
+      "X-Medai-Model": "gpt-script-to-deepseek-visuals",
+      "X-Medai-Source": "visuals",
+    },
+  });
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -713,7 +961,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (!useWebSearch && !DEEPSEEK_API_KEY) {
+    if ((!useWebSearch || body.mode === "Visuals") && !DEEPSEEK_API_KEY) {
       return new Response(JSON.stringify({ error: "DeepSeek API key not configured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -735,6 +983,116 @@ Deno.serve(async (req: Request) => {
         console.error("OpenAI web curriculum search failed:", err);
         curriculumGuidance =
           "Web course outline search was requested but unavailable. Use broad course-level priorities, organise the answer by likely learning outcomes, and tell the student this fallback is not their official school syllabus.";
+      }
+    }
+
+    if (body.mode === "Visuals") {
+      try {
+        let researchText = "";
+        let researchSource: "library" | "web" | "general" = "general";
+        let visualSources = webSources;
+
+        if (useWebSearch) {
+          const webResult = await callOpenAIWebVisualResearchSync(
+            OPENAI_API_KEY,
+            body.profile,
+            lastUserMessage.content,
+          );
+          researchText = webResult.text;
+          researchSource = "web";
+          visualSources = webResult.sources;
+        } else if (hasDocs) {
+          const deepSeekMessages = [
+            ...priorMessages,
+            {
+              role: "user" as const,
+              content: `Student visual request: ${lastUserMessage.content}
+
+---
+${curriculumGuidance ? `WEB CURRICULUM GUIDANCE:\n${curriculumGuidance}\n\n---\n` : ""}
+
+Extract the exact evidence needed for an educational animation.
+Include:
+- the direct answer,
+- source locations from uploaded files,
+- the process or sequence,
+- visual objects/entities,
+- short labels that could appear on screen,
+- any uncertainty.
+
+Do not write animation code yet.`,
+            },
+          ];
+
+          researchText = await callDeepSeekSync(
+            DEEPSEEK_API_KEY!,
+            buildDeepSeekSystemPrompt(body.profile, body.documents!, interlink, useWebCurriculum),
+            deepSeekMessages,
+            DEEPSEEK_DOCUMENT_TIMEOUT_MS,
+          );
+          researchSource = "library";
+        } else {
+          const deepSeekMessages = curriculumGuidance
+            ? [
+                ...priorMessages,
+                {
+                  role: "user" as const,
+                  content: `Student visual request: ${lastUserMessage.content}
+
+---
+WEB CURRICULUM GUIDANCE:
+${curriculumGuidance}
+---
+
+Prepare the factual research brief for an educational animation. Include the process or sequence, visual objects/entities, short on-screen labels, and any uncertainty. Do not write animation code yet.`,
+                },
+              ]
+            : [
+                ...priorMessages,
+                {
+                  role: "user" as const,
+                  content: `Student visual request: ${lastUserMessage.content}
+
+Prepare the factual research brief for an educational animation. Include the process or sequence, visual objects/entities, short on-screen labels, and any uncertainty. Do not write animation code yet.`,
+                },
+              ];
+
+          researchText = await callDeepSeekSync(
+            DEEPSEEK_API_KEY!,
+            buildDeepSeekDirectSystemPrompt(body.profile, useWebCurriculum),
+            deepSeekMessages,
+            DEEPSEEK_CHAT_TIMEOUT_MS,
+          );
+        }
+
+        return await visualAnimationResponse({
+          deepSeekApiKey: DEEPSEEK_API_KEY!,
+          openAIApiKey: OPENAI_API_KEY,
+          profile: body.profile,
+          priorMessages,
+          studentQuestion: lastUserMessage.content,
+          researchText:
+            curriculumGuidance && !researchText.includes(curriculumGuidance)
+              ? `${researchText}\n\nWeb curriculum guidance:\n${curriculumGuidance}`
+              : researchText,
+          researchSource,
+          sources: visualSources,
+        });
+      } catch (err) {
+        console.error("visuals pipeline failed:", err);
+        return new Response(
+          textToSse(
+            "Visuals generation took too long to finish. Try again in a moment, turn Web off for a faster draft, or choose a smaller file excerpt.",
+          ),
+          {
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "text/event-stream",
+              "X-Medai-Model": "visuals-timeout",
+              "X-Medai-Source": "visuals",
+            },
+          },
+        );
       }
     }
 

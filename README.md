@@ -2,10 +2,10 @@
 
 A precision document-answering app for students.
 Upload notes/course materials → AI organizes them into folders → ask questions in
-**Simplified**, **Detailed**, or **Storytelling** mode → use **Find connections**
+**Simplified**, **Detailed**, **Storytelling**, or **Visuals** mode → use **Find connections**
 to interlink concepts across subjects. The core promise is pinpoint retrieval:
 ask a precise question about large files and get the exact answer, source trail,
-and explanation.
+explanation, or an animated visual package.
 
 Built with **TanStack Start (React 19) + Vite 7 + Tailwind v4 + Supabase**.
 
@@ -13,16 +13,17 @@ Built with **TanStack Start (React 19) + Vite 7 + Tailwind v4 + Supabase**.
 
 ## Stack at a glance
 
-| Piece                   | What it is                               |
-| ----------------------- | ---------------------------------------- |
-| Frontend                | React 19 + TanStack Start + Tailwind v4  |
-| Auth + DB + Storage     | Supabase (Postgres + Auth + Storage)     |
-| Chat AI (general)       | DeepSeek draft -> OpenAI final style     |
-| File answer AI          | DeepSeek retrieval -> OpenAI final style |
-| Folder suggestion       | DeepSeek                                 |
-| Image OCR               | DeepSeek OCR endpoint                    |
-| Edge runtime            | Supabase Edge Functions (Deno)           |
-| Deploy target (default) | Cloudflare Workers (via Vite plugin)     |
+| Piece                   | What it is                                                |
+| ----------------------- | --------------------------------------------------------- |
+| Frontend                | React 19 + TanStack Start + Tailwind v4                   |
+| Auth + DB + Storage     | Supabase (Postgres + Auth + Storage)                      |
+| Chat AI (general)       | DeepSeek draft -> OpenAI final style                      |
+| File answer AI          | DeepSeek retrieval -> OpenAI final style                  |
+| Visuals mode            | DeepSeek research -> GPT storyboard -> DeepSeek animation |
+| Folder suggestion       | DeepSeek                                                  |
+| Image OCR               | DeepSeek OCR endpoint                                     |
+| Edge runtime            | Supabase Edge Functions (Deno)                            |
+| Deploy target (default) | Cloudflare Workers (via Vite plugin)                      |
 
 ---
 
@@ -158,6 +159,15 @@ storage cleanup on those.
 1. Search indexed chunks from selected files or the whole library.
 2. **DeepSeek** reads the retrieved excerpts and produces the factual/source summary.
 3. **OpenAI** receives only DeepSeek's summary and applies Simplified/Detailed/Storytelling style.
+
+**Visuals mode**:
+
+- If files are selected or pinpoint search finds matching material, **DeepSeek**
+  extracts the source facts and visual cues.
+- If Web is enabled, **OpenAI web search** gathers current source-grounded facts.
+- **GPT** turns the research into a storyboard and developer handoff.
+- **DeepSeek** produces a self-contained HTML/CSS/JS animation package that the
+  chat UI previews in a sandboxed iframe.
 
 **Plain chat** (no documents):
 

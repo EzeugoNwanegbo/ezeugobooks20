@@ -21,7 +21,7 @@ export type DocumentCtx = {
   excerpt: string;
 };
 
-export type ChatMode = "Simplified" | "Detailed" | "Storytelling";
+export type ChatMode = "Simplified" | "Detailed" | "Storytelling" | "Visuals";
 export type DocumentMode = "none" | "smart" | "selected";
 
 export type WebSource = {
