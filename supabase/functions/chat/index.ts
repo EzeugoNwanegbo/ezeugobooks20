@@ -744,6 +744,121 @@ function textToSse(text: string, sources: WebSource[] = []): ReadableStream<Uint
   });
 }
 
+async function enqueueTextAsSse(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+  text: string,
+) {
+  const chunks = text.match(/.{1,24}(?:\s+|$)/gs) ?? [text];
+
+  for (const content of chunks) {
+    controller.enqueue(
+      encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 12));
+  }
+}
+
+function fallbackVisualAnimationText() {
+  return `**Visual plan**
+- The animation request started, but the AI animation builder did not finish in time.
+- This preview keeps the Visuals panel alive instead of leaving the student with a blank result.
+- Try again with Web off, a smaller selected file excerpt, or a shorter process to animate.
+
+\`\`\`html
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f8fafc; color: #0f172a; }
+    .stage { width: min(920px, 96vw); aspect-ratio: 16 / 9; border: 1px solid #cbd5e1; border-radius: 18px; overflow: hidden; position: relative; background: linear-gradient(135deg, #ecfeff 0%, #fefce8 55%, #fff7ed 100%); }
+    .orbit { position: absolute; inset: 16%; border: 2px dashed rgba(15, 23, 42, .22); border-radius: 999px; animation: spin 8s linear infinite; }
+    .node { position: absolute; width: 76px; height: 76px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: #0891b2; color: white; box-shadow: 0 18px 40px rgba(8, 145, 178, .28); }
+    .node.one { left: 14%; top: 38%; animation: pulse 2.2s ease-in-out infinite; }
+    .node.two { right: 14%; top: 38%; background: #f59e0b; animation: pulse 2.2s ease-in-out infinite .6s; }
+    .copy { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(70%, 560px); text-align: center; }
+    h1 { margin: 0 0 10px; font-size: clamp(24px, 4vw, 46px); line-height: 1; }
+    p { margin: 0; font-size: clamp(13px, 1.8vw, 18px); line-height: 1.45; color: #334155; }
+    .bar { position: absolute; left: 18%; right: 18%; bottom: 13%; height: 8px; border-radius: 999px; background: rgba(15, 23, 42, .12); overflow: hidden; }
+    .bar::before { content: ""; display: block; width: 42%; height: 100%; border-radius: inherit; background: #10b981; animation: load 2.8s ease-in-out infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 50% { transform: scale(1.12); } }
+    @keyframes load { 0%, 100% { transform: translateX(-10%); } 50% { transform: translateX(155%); } }
+  </style>
+</head>
+<body>
+  <main class="stage" aria-label="Visual generation fallback">
+    <div class="orbit"></div>
+    <div class="node one">1</div>
+    <div class="node two">2</div>
+    <section class="copy">
+      <h1>Visual builder timed out</h1>
+      <p>The app kept the animation preview alive, but the AI code step did not finish. Retry with a tighter topic or smaller file selection.</p>
+    </section>
+    <div class="bar"></div>
+  </main>
+</body>
+</html>
+\`\`\`
+
+**Source notes:** The visual animation pipeline timed out before source-specific animation code was completed.`;
+}
+
+function visualStreamResponse(
+  run: () => Promise<{ text: string; sources: WebSource[] }>,
+): Response {
+  const encoder = new TextEncoder();
+  let heartbeat: number | undefined;
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(": visuals-start\n\n"));
+      heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(": visuals-working\n\n"));
+        } catch {
+          if (heartbeat !== undefined) clearInterval(heartbeat);
+        }
+      }, 12_000);
+
+      (async () => {
+        let sources: WebSource[] = [];
+        try {
+          const result = await run();
+          sources = result.sources;
+          await enqueueTextAsSse(controller, encoder, result.text);
+        } catch (err) {
+          console.error("visuals pipeline failed:", err);
+          await enqueueTextAsSse(controller, encoder, fallbackVisualAnimationText());
+        } finally {
+          if (heartbeat !== undefined) clearInterval(heartbeat);
+          if (sources.length > 0) {
+            controller.enqueue(encoder.encode(sourceMetadataSse(sources)));
+          }
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        }
+      })();
+    },
+    cancel() {
+      if (heartbeat !== undefined) clearInterval(heartbeat);
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "text/event-stream",
+      "X-Medai-Model": "gpt-script-to-deepseek-visuals",
+      "X-Medai-Source": "visuals",
+    },
+  });
+}
+
 function streamWithSources(
   upstream: ReadableStream<Uint8Array> | null,
   sources: WebSource[],
@@ -839,7 +954,7 @@ async function openAIRewriteResponse({
   });
 }
 
-async function visualAnimationResponse({
+async function createVisualAnimationText({
   deepSeekApiKey,
   openAIApiKey,
   profile,
@@ -847,7 +962,6 @@ async function visualAnimationResponse({
   studentQuestion,
   researchText,
   researchSource,
-  sources,
 }: {
   deepSeekApiKey: string;
   openAIApiKey: string;
@@ -856,8 +970,7 @@ async function visualAnimationResponse({
   studentQuestion: string;
   researchText: string;
   researchSource: "library" | "web" | "general";
-  sources: WebSource[];
-}): Promise<Response> {
+}): Promise<string> {
   const visualScript = await callOpenAISync({
     apiKey: openAIApiKey,
     systemPrompt: buildGPTVisualScriptSystemPrompt(profile),
@@ -910,14 +1023,7 @@ Create the final animation package now.`,
     DEEPSEEK_VISUALS_TIMEOUT_MS,
   );
 
-  return new Response(textToSse(finalAnimation, sources), {
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "text/event-stream",
-      "X-Medai-Model": "gpt-script-to-deepseek-visuals",
-      "X-Medai-Source": "visuals",
-    },
-  });
+  return finalAnimation;
 }
 
 Deno.serve(async (req: Request) => {
@@ -987,7 +1093,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (body.mode === "Visuals") {
-      try {
+      return visualStreamResponse(async () => {
         let researchText = "";
         let researchSource: "library" | "web" | "general" = "general";
         let visualSources = webSources;
@@ -1065,7 +1171,7 @@ Prepare the factual research brief for an educational animation. Include the pro
           );
         }
 
-        return await visualAnimationResponse({
+        const finalAnimation = await createVisualAnimationText({
           deepSeekApiKey: DEEPSEEK_API_KEY!,
           openAIApiKey: OPENAI_API_KEY,
           profile: body.profile,
@@ -1076,24 +1182,10 @@ Prepare the factual research brief for an educational animation. Include the pro
               ? `${researchText}\n\nWeb curriculum guidance:\n${curriculumGuidance}`
               : researchText,
           researchSource,
-          sources: visualSources,
         });
-      } catch (err) {
-        console.error("visuals pipeline failed:", err);
-        return new Response(
-          textToSse(
-            "Visuals generation took too long to finish. Try again in a moment, turn Web off for a faster draft, or choose a smaller file excerpt.",
-          ),
-          {
-            headers: {
-              ...corsHeaders,
-              "Content-Type": "text/event-stream",
-              "X-Medai-Model": "visuals-timeout",
-              "X-Medai-Source": "visuals",
-            },
-          },
-        );
-      }
+
+        return { text: finalAnimation, sources: visualSources };
+      });
     }
 
     if (useWebSearch) {
