@@ -391,7 +391,8 @@ SCRIPT RULES:
 - Build a concise educational animation: 3-6 scenes, 20-45 seconds total.
 - For every scene include: duration, visual objects, labels, motion, caption text, and the learning point.
 - Keep on-screen text short enough to fit inside a 16:9 animation.
-- Recommend a self-contained HTML/CSS/vanilla JS approach. No external assets, CDNs, libraries, or network calls.
+- Recommend a self-contained HTML/CSS/SVG-first approach with only minimal vanilla JS if needed. No external assets, CDNs, libraries, or network calls.
+- Do not request in-animation play, pause, or replay buttons. The G&D app provides the player controls outside the iframe.
 - End with "Developer handoff:" followed by the exact requirements DeepSeek must implement.
 - Do not write the final HTML code. DeepSeek will do that next.`;
 }
@@ -407,9 +408,12 @@ OUTPUT REQUIREMENTS:
 3. The HTML must be a full, self-contained document using only HTML, CSS, SVG/canvas, and vanilla JavaScript.
 4. Do not use external assets, CDNs, fonts, libraries, network calls, or framework syntax.
 5. Make the animation responsive in a 16:9 canvas-like stage, with stable labels and no overlapping text.
-6. Include replay/pause controls inside the HTML only if they are simple and reliable.
+6. Do not include play, pause, replay, reset, or timeline controls inside the HTML. The G&D app provides those controls outside the iframe.
 7. Use accurate labels from the research summary and storyboard. Do not add unsupported facts.
-8. After the code block, include a brief "**Source notes**" section if source notes were supplied.
+8. Prefer CSS keyframes and inline SVG over JavaScript. If JavaScript is necessary, place it at the end of <body>, wrap it in try/catch, and render a visible first frame before any script runs.
+9. The code must run inside a sandboxed iframe with srcDoc and only allow-scripts. Do not use modules, imports, top-level await, localStorage, sessionStorage, fetch, clipboard, alert, prompt, confirm, or external APIs.
+10. Self-check before output: all queried elements exist, all variables are declared, canvas contexts are checked before use, and no runtime errors occur.
+11. After the code block, include a brief "**Source notes**" section if source notes were supplied.
 
 Student context:
 - Name: ${p.name || "Student"}

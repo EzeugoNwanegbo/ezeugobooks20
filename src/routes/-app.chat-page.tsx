@@ -2042,9 +2042,25 @@ const VISUAL_PREVIEW_CONTROLLER = `<script>
     ? window.cancelAnimationFrame.bind(window)
     : window.clearTimeout.bind(window);
   const nativeSetInterval = window.setInterval.bind(window);
+  const nativeSetTimeout = window.setTimeout.bind(window);
   let paused = false;
   let rafId = 0;
   const pendingRafs = new Map();
+
+  function runCallback(callback, args) {
+    if (typeof callback === "function") {
+      callback(...args);
+      return;
+    }
+
+    if (typeof callback === "string") {
+      try {
+        new Function(callback)();
+      } catch (err) {
+        reportVisualError(err);
+      }
+    }
+  }
 
   window.requestAnimationFrame = (callback) => {
     const id = ++rafId;
@@ -2066,11 +2082,45 @@ const VISUAL_PREVIEW_CONTROLLER = `<script>
 
   window.setInterval = (callback, delay, ...args) =>
     nativeSetInterval(() => {
-      if (!paused) callback(...args);
+      if (!paused) runCallback(callback, args);
+    }, delay);
+
+  window.setTimeout = (callback, delay, ...args) =>
+    nativeSetTimeout(() => {
+      if (!paused) runCallback(callback, args);
     }, delay);
 
   const pauseStyle = document.createElement("style");
   pauseStyle.textContent = "*{animation-play-state:paused!important;}";
+
+  function reportVisualError(error) {
+    const message =
+      error?.message ||
+      error?.reason?.message ||
+      (typeof error === "string" ? error : "The generated code threw a runtime error.");
+    window.parent?.postMessage({ type: "gd-visual-error", message }, "*");
+
+    nativeSetTimeout(() => {
+      if (document.getElementById("gd-visual-error")) return;
+      const box = document.createElement("div");
+      box.id = "gd-visual-error";
+      box.innerHTML =
+        '<strong>Animation code error</strong><span>' +
+        String(message).replace(/[&<>"']/g, (char) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[char]) +
+        '</span>';
+      box.style.cssText =
+        "position:fixed;inset:16px;z-index:2147483647;display:grid;place-items:center;gap:8px;text-align:center;border:1px solid #fed7aa;border-radius:16px;background:linear-gradient(135deg,#fff7ed,#ffffff);color:#9a3412;padding:18px;font:14px system-ui,sans-serif;box-shadow:0 18px 50px rgba(15,23,42,.16);";
+      const span = box.querySelector("span");
+      if (span) span.style.cssText = "display:block;max-width:720px;color:#7c2d12;font-size:12px;line-height:1.45;";
+      document.body?.appendChild(box);
+    }, 0);
+  }
 
   function resumeRafs() {
     for (const [id, callback] of Array.from(pendingRafs.entries())) {
@@ -2105,17 +2155,8 @@ const VISUAL_PREVIEW_CONTROLLER = `<script>
     if (data.action === "resume") setPaused(false);
   });
 
-  window.addEventListener("error", () => {
-    window.setTimeout(() => {
-      if (document.getElementById("gd-visual-error")) return;
-      const box = document.createElement("div");
-      box.id = "gd-visual-error";
-      box.textContent = "The generated animation script hit an error. Try Replay or generate it again.";
-      box.style.cssText =
-        "position:fixed;left:12px;right:12px;bottom:12px;z-index:2147483647;border:1px solid #fed7aa;border-radius:10px;background:#fff7ed;color:#9a3412;padding:10px 12px;font:13px system-ui,sans-serif;";
-      document.body.appendChild(box);
-    }, 0);
-  });
+  window.addEventListener("error", (event) => reportVisualError(event.error || event.message));
+  window.addEventListener("unhandledrejection", (event) => reportVisualError(event.reason));
 })();
 </script>`;
 
@@ -2146,13 +2187,26 @@ function VisualPreview({ html }: { html: string }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [playerKey, setPlayerKey] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const previewDocument = useMemo(() => buildVisualPreviewDocument(html), [html]);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; message?: string } | null;
+      if (data?.type !== "gd-visual-error") return;
+      setRuntimeError(data.message || "The generated animation code failed.");
+    };
+
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
   const sendControl = (action: "pause" | "resume") => {
     iframeRef.current?.contentWindow?.postMessage({ type: "gd-visual-control", action }, "*");
   };
 
   const replay = () => {
+    setRuntimeError(null);
     setPaused(false);
     setPlayerKey((key) => key + 1);
   };
@@ -2189,6 +2243,12 @@ function VisualPreview({ html }: { html: string }) {
           </button>
         </span>
       </div>
+      {runtimeError && (
+        <div className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+          The generated animation code failed before it could run: {runtimeError}. Generate it again
+          for a fresh version.
+        </div>
+      )}
       <iframe
         key={playerKey}
         ref={iframeRef}
