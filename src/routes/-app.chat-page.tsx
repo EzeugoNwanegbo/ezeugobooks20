@@ -37,6 +37,9 @@ import {
   X,
   ExternalLink,
   Sparkles,
+  Pause,
+  Play,
+  RotateCcw,
 } from "lucide-react";
 
 type ChatSearch = { c?: string };
@@ -2005,37 +2008,212 @@ function isLikelyHtmlAnimation(value: string): boolean {
   return /<!doctype html|<html[\s>]|<body[\s>]|<style[\s>]|<canvas[\s>]|<svg[\s>]/i.test(value);
 }
 
-function extractHtmlAnimation(content: string): string | null {
-  const candidates = [...content.matchAll(/```(?:html)?[ \t]*\n([\s\S]*?)```/gi)]
-    .map((match) => match[1]?.trim() ?? "")
-    .filter(Boolean);
-  const fenced = candidates.find(isLikelyHtmlAnimation);
+function splitVisualMessage(content: string): { html: string | null; markdown: string } {
+  let html: string | null = null;
+  const markdown = content
+    .replace(/```(?:html)?[ \t]*\n([\s\S]*?)```/gi, (block, candidate: string) => {
+      const trimmed = candidate.trim();
+      if (!isLikelyHtmlAnimation(trimmed)) return block;
+      html ??= trimmed;
+      return "";
+    })
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 
-  if (fenced) return fenced;
-  return isLikelyHtmlAnimation(content) ? content.trim() : null;
+  if (!html && isLikelyHtmlAnimation(content)) {
+    return { html: content.trim(), markdown: "" };
+  }
+
+  return { html, markdown };
+}
+
+const VISUAL_PREVIEW_BASE_STYLE = `<style id="gd-visual-base-style">
+  :root { color-scheme: light; }
+  html, body { min-width: 100%; min-height: 100%; background: #ffffff; }
+  canvas, svg { max-width: 100%; }
+</style>`;
+
+const VISUAL_PREVIEW_CONTROLLER = `<script>
+(() => {
+  const nativeRaf = window.requestAnimationFrame
+    ? window.requestAnimationFrame.bind(window)
+    : (callback) => window.setTimeout(() => callback(Date.now()), 16);
+  const nativeCancelRaf = window.cancelAnimationFrame
+    ? window.cancelAnimationFrame.bind(window)
+    : window.clearTimeout.bind(window);
+  const nativeSetInterval = window.setInterval.bind(window);
+  let paused = false;
+  let rafId = 0;
+  const pendingRafs = new Map();
+
+  window.requestAnimationFrame = (callback) => {
+    const id = ++rafId;
+    pendingRafs.set(id, callback);
+    nativeRaf((time) => {
+      const saved = pendingRafs.get(id);
+      if (!saved) return;
+      if (paused) return;
+      pendingRafs.delete(id);
+      saved(time);
+    });
+    return id;
+  };
+
+  window.cancelAnimationFrame = (id) => {
+    pendingRafs.delete(id);
+    try { nativeCancelRaf(id); } catch (_) {}
+  };
+
+  window.setInterval = (callback, delay, ...args) =>
+    nativeSetInterval(() => {
+      if (!paused) callback(...args);
+    }, delay);
+
+  const pauseStyle = document.createElement("style");
+  pauseStyle.textContent = "*{animation-play-state:paused!important;}";
+
+  function resumeRafs() {
+    for (const [id, callback] of Array.from(pendingRafs.entries())) {
+      nativeRaf((time) => {
+        const saved = pendingRafs.get(id);
+        if (!saved || paused) return;
+        pendingRafs.delete(id);
+        callback(time);
+      });
+    }
+  }
+
+  function setPaused(value) {
+    paused = value;
+    if (paused) {
+      document.documentElement.dataset.gdVisualPaused = "true";
+      if (!pauseStyle.isConnected) document.head.appendChild(pauseStyle);
+      document.querySelectorAll("video,audio").forEach((el) => el.pause?.());
+      return;
+    }
+
+    delete document.documentElement.dataset.gdVisualPaused;
+    pauseStyle.remove();
+    document.querySelectorAll("video,audio").forEach((el) => el.play?.().catch?.(() => {}));
+    resumeRafs();
+  }
+
+  window.addEventListener("message", (event) => {
+    const data = event.data || {};
+    if (data.type !== "gd-visual-control") return;
+    if (data.action === "pause") setPaused(true);
+    if (data.action === "resume") setPaused(false);
+  });
+
+  window.addEventListener("error", () => {
+    window.setTimeout(() => {
+      if (document.getElementById("gd-visual-error")) return;
+      const box = document.createElement("div");
+      box.id = "gd-visual-error";
+      box.textContent = "The generated animation script hit an error. Try Replay or generate it again.";
+      box.style.cssText =
+        "position:fixed;left:12px;right:12px;bottom:12px;z-index:2147483647;border:1px solid #fed7aa;border-radius:10px;background:#fff7ed;color:#9a3412;padding:10px 12px;font:13px system-ui,sans-serif;";
+      document.body.appendChild(box);
+    }, 0);
+  });
+})();
+</script>`;
+
+function buildVisualPreviewDocument(html: string): string {
+  const controls = `${VISUAL_PREVIEW_BASE_STYLE}\n${VISUAL_PREVIEW_CONTROLLER}`;
+  const trimmed = html.trim();
+
+  if (/<head[\s>]/i.test(trimmed)) {
+    return trimmed.replace(/<head([\s\S]*?)>/i, (match) => `${match}\n${controls}`);
+  }
+
+  if (/<html[\s>]/i.test(trimmed)) {
+    return trimmed.replace(/<html([\s\S]*?)>/i, (match) => `${match}\n<head>${controls}</head>`);
+  }
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+${controls}
+</head>
+<body>
+${trimmed}
+</body>
+</html>`;
 }
 
 function VisualPreview({ html }: { html: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [playerKey, setPlayerKey] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const previewDocument = useMemo(() => buildVisualPreviewDocument(html), [html]);
+
+  const sendControl = (action: "pause" | "resume") => {
+    iframeRef.current?.contentWindow?.postMessage({ type: "gd-visual-control", action }, "*");
+  };
+
+  const replay = () => {
+    setPaused(false);
+    setPlayerKey((key) => key + 1);
+  };
+
+  const togglePaused = () => {
+    const nextPaused = !paused;
+    setPaused(nextPaused);
+    sendControl(nextPaused ? "pause" : "resume");
+  };
+
   return (
     <div className="mt-3 overflow-hidden rounded-lg border border-border bg-background/45">
-      <div className="flex items-center gap-1.5 border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
-        <Sparkles className="h-3.5 w-3.5 text-primary" />
-        Animation preview
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <Sparkles className="h-3.5 w-3.5 text-primary" />
+          Animation preview
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <button
+            type="button"
+            onClick={replay}
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background/55 px-2 text-[11px] text-foreground transition-colors hover:border-primary/35 hover:text-primary"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Replay
+          </button>
+          <button
+            type="button"
+            onClick={togglePaused}
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background/55 px-2 text-[11px] text-foreground transition-colors hover:border-primary/35 hover:text-primary"
+          >
+            {paused ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
+            {paused ? "Resume" : "Pause"}
+          </button>
+        </span>
       </div>
       <iframe
+        key={playerKey}
+        ref={iframeRef}
         title="Generated animation preview"
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
-        srcDoc={html}
-        className="h-[360px] w-full bg-white"
+        srcDoc={previewDocument}
+        onLoad={() => {
+          if (paused) sendControl("pause");
+        }}
+        className="h-[360px] w-full bg-white sm:h-[420px]"
       />
     </div>
   );
 }
 
 function Message({ msg, streaming }: { msg: DisplayMessage; isLast: boolean; streaming: boolean }) {
-  const htmlAnimation =
-    msg.source === "visuals" && !streaming ? extractHtmlAnimation(msg.content) : null;
+  const visualParts = msg.source === "visuals" ? splitVisualMessage(msg.content) : null;
+  const htmlAnimation = !streaming ? visualParts?.html : null;
+  const displayContent =
+    msg.source === "visuals" && streaming
+      ? "Building your animation preview..."
+      : visualParts
+        ? visualParts.markdown || "Animation preview ready."
+        : msg.content;
 
   if (msg.role === "user") {
     return (
@@ -2061,8 +2239,8 @@ function Message({ msg, streaming }: { msg: DisplayMessage; isLast: boolean; str
             streaming ? "streaming-caret" : ""
           }`}
         >
-          {msg.content ? (
-            <ReactMarkdown>{msg.content}</ReactMarkdown>
+          {displayContent ? (
+            <ReactMarkdown>{displayContent}</ReactMarkdown>
           ) : (
             <span className="text-muted-foreground inline-flex items-center gap-2">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> thinking...
