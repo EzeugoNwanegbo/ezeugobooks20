@@ -653,14 +653,14 @@ export function StudyBodyPage() {
                       <button
                         key={doc.id}
                         onClick={() => toggleDoc(doc.id)}
-                        className={`flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                        className={`flex min-w-0 w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
                           selectedDocIds.includes(doc.id)
                             ? "border-primary/40 bg-primary/10"
                             : "border-border bg-surface/30 hover:border-primary/30"
                         }`}
                       >
                         <FileText className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                        <span className="min-w-0">
+                        <span className="min-w-0 flex-1">
                           <span className="block truncate font-medium">{doc.file_name}</span>
                           <span className="block truncate text-xs text-muted-foreground">
                             {folderName(doc) || "Uncategorised"}
@@ -700,7 +700,7 @@ export function StudyBodyPage() {
                     <button
                       key={plan.id}
                       onClick={() => setSelectedPlanId(plan.id)}
-                      className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                      className={`min-w-0 w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
                         selectedPlanId === plan.id
                           ? "border-primary/40 bg-primary/10"
                           : "border-border bg-surface/30 hover:border-primary/30"
@@ -744,15 +744,15 @@ export function StudyBodyPage() {
                     <button
                       key={topic.id}
                       onClick={() => setSelectedTopicId(topic.id)}
-                      className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                      className={`w-full min-w-0 rounded-lg border p-3 text-left transition-colors ${
                         selectedTopicId === topic.id
                           ? "border-primary/50 bg-primary/10"
                           : "border-border bg-surface/25 hover:border-primary/30"
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 text-sm font-semibold">
+                      <div className="flex items-start justify-between gap-3 min-w-0">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
                             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-xs">
                               {index + 1}
                             </span>
