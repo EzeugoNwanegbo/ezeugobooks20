@@ -32,7 +32,7 @@ type AnyDb = {
 
 type DbResult = {
   data: unknown;
-  error: { message: string } | null;
+  error: { code?: string; message: string } | null;
 };
 
 type DbQuery = PromiseLike<DbResult> & {
@@ -170,6 +170,7 @@ export function StudyBodyPage() {
   const [loading, setLoading] = useState(false);
   const [practiceLoading, setPracticeLoading] = useState(false);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [schemaMissing, setSchemaMissing] = useState(false);
   const [activeSession, setActiveSession] = useState<SessionRow | null>(null);
   const [questions, setQuestions] = useState<QuestionRow[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -210,7 +211,15 @@ export function StudyBodyPage() {
       ]);
 
     if (docErr) toast.error(docErr.message);
-    if (planErr) toast.error(planErr.message);
+    if (planErr) {
+      if (planErr.code === "PGRST205" || planErr.message.includes("study_plans")) {
+        setSchemaMissing(true);
+      } else {
+        toast.error(planErr.message);
+      }
+    } else {
+      setSchemaMissing(false);
+    }
 
     setDocs((docRows as DocRow[]) ?? []);
     const nextPlans = (planRows as PlanRow[]) ?? [];
@@ -232,6 +241,9 @@ export function StudyBodyPage() {
       .eq("plan_id", planId)
       .order("position", { ascending: true });
     if (error) {
+      if (error.code === "PGRST205" || error.message.includes("study_topics")) {
+        setSchemaMissing(true);
+      }
       toast.error(error.message);
       return;
     }
@@ -316,6 +328,10 @@ export function StudyBodyPage() {
 
   const createPlan = async () => {
     if (!user || !profile) return;
+    if (schemaMissing) {
+      toast.error("StudyBody tables are missing in Supabase. Apply the StudyBody migration first.");
+      return;
+    }
     if (!selectedDocIds.length && !courseOutline.trim()) {
       toast.error("Pick files or paste a course outline first.");
       return;
@@ -382,6 +398,10 @@ export function StudyBodyPage() {
 
   const startPractice = async () => {
     if (!user || !profile || !activePlan || !activeTopic) return;
+    if (schemaMissing) {
+      toast.error("StudyBody tables are missing in Supabase. Apply the StudyBody migration first.");
+      return;
+    }
     const ids = activePlan.source_document_ids?.length
       ? activePlan.source_document_ids
       : selectedDocIds;
@@ -558,7 +578,7 @@ export function StudyBodyPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto px-4 py-5 sm:px-6 lg:px-8">
+    <div className="h-full overflow-y-auto px-3 py-5 sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -573,12 +593,28 @@ export function StudyBodyPage() {
               DeepSeek reads the study material. OpenAI shapes the final coaching.
             </p>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-center sm:min-w-72">
+          <div className="grid w-full grid-cols-3 gap-2 text-center sm:w-auto sm:min-w-72">
             <Metric label="Plans" value={plans.length.toString()} />
             <Metric label="Topics" value={topics.length.toString()} />
             <Metric label="Mastery" value={`${averageMastery}%`} />
           </div>
         </header>
+
+        {schemaMissing && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm">
+            <div className="font-semibold text-destructive">
+              StudyBody database tables are missing
+            </div>
+            <p className="mt-1 text-muted-foreground">
+              Apply the migration{" "}
+              <span className="font-mono">
+                supabase/migrations/20260508000100_add_studybody.sql
+              </span>{" "}
+              in Supabase, then refresh this page. Roadmap generation is paused so AI credits are
+              not wasted before the tables exist.
+            </p>
+          </div>
+        )}
 
         <section className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
           <div className="space-y-4">
@@ -679,7 +715,7 @@ export function StudyBodyPage() {
             </div>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
             <div className="luxury-panel rounded-lg p-4">
               <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -744,7 +780,7 @@ export function StudyBodyPage() {
               </div>
             </div>
 
-            <aside className="luxury-panel rounded-lg p-4">
+            <aside className="luxury-panel min-w-0 rounded-lg p-4">
               <div className="mb-4 flex items-center gap-2">
                 <Brain className="h-4 w-4 text-primary" />
                 <h2 className="font-semibold">Practice</h2>
@@ -757,12 +793,12 @@ export function StudyBodyPage() {
                     <p className="mt-1 text-sm text-muted-foreground">{activeTopic.summary}</p>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-3 gap-2">
+                  <div className="mt-4 grid grid-cols-3 gap-1.5 sm:gap-2">
                     {(["mcq", "essay", "mixed"] as StudyQuestionType[]).map((type) => (
                       <button
                         key={type}
                         onClick={() => setQuestionType(type)}
-                        className={`rounded-lg border px-3 py-2 text-sm font-medium capitalize ${
+                        className={`rounded-lg border px-2 py-2 text-sm font-medium capitalize sm:px-3 ${
                           questionType === type
                             ? "border-primary/40 bg-primary/10 text-primary"
                             : "border-border hover:border-primary/30"
@@ -772,12 +808,12 @@ export function StudyBodyPage() {
                       </button>
                     ))}
                   </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2">
+                  <div className="mt-3 grid grid-cols-3 gap-1.5 sm:gap-2">
                     {QUESTION_COUNTS.map((count) => (
                       <button
                         key={count}
                         onClick={() => setQuestionCount(count)}
-                        className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+                        className={`rounded-lg border px-2 py-2 text-sm font-medium sm:px-3 ${
                           questionCount === count
                             ? "border-primary/40 bg-primary/10 text-primary"
                             : "border-border hover:border-primary/30"
