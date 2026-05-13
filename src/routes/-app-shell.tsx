@@ -91,10 +91,10 @@ function AppLayout() {
   };
 
   return (
-    <div className="luxury-app-shell flex h-dvh min-h-dvh overflow-hidden bg-background">
+    <div className="luxury-app-shell flex h-dvh min-h-dvh flex-col overflow-x-hidden bg-background md:flex-row md:overflow-hidden">
       <div className="symbiote-blob app-blob-one" />
       <div className="symbiote-blob app-blob-two" />
-      <aside className="hidden flex-col border-r border-border bg-background/75 backdrop-blur md:flex md:w-56 xl:w-64">
+      <aside className="hidden flex-col border-r border-border bg-background/75 backdrop-blur md:flex md:w-56 md:shrink-0 xl:w-64">
         <div className="p-5 border-b border-border">
           <Link to="/app/chat" className="luxury-brand-text">
             G&D
@@ -128,7 +128,7 @@ function AppLayout() {
         </div>
       </aside>
 
-      <div className="fixed inset-x-0 top-0 z-20 flex items-center justify-between border-b border-border bg-background/95 px-4 py-3 backdrop-blur md:hidden">
+      <div className="fixed inset-x-0 top-0 z-20 flex items-center justify-between border-b border-border bg-background/95 px-4 py-3 backdrop-blur md:hidden" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
         <Link to="/app/chat" className="luxury-brand-text small">
           G&D
         </Link>
@@ -148,11 +148,11 @@ function AppLayout() {
         </div>
       </div>
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-[calc(4.75rem+env(safe-area-inset-bottom))] pt-16 md:pb-0 md:pt-0">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-[calc(4.75rem+env(safe-area-inset-bottom))] pt-[calc(3.25rem+env(safe-area-inset-top))] md:pb-0 md:pt-0">
         <Outlet />
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background/95 px-3 pb-[max(0.65rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur md:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background/95 px-3 pb-[max(0.65rem,env(safe-area-inset-bottom))] pt-1.5 backdrop-blur md:hidden">
         <div className="mx-auto grid max-w-md grid-cols-3 gap-1">
           <MobileNavItem
             to="/app/chat"
@@ -192,7 +192,7 @@ function MobileNavItem({
   return (
     <Link
       to={to}
-      className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-medium transition-colors ${
+      className={`flex min-h-[3.25rem] flex-col items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-medium transition-colors ${
         active
           ? "border border-primary/15 bg-primary/10 text-primary"
           : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground"

@@ -578,22 +578,22 @@ export function StudyBodyPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto px-3 py-5 sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
+    <div className="h-full overflow-y-auto overflow-x-hidden px-3 py-5 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 overflow-x-hidden">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="flex items-center gap-2 text-sm font-medium text-primary">
               <Map className="h-4 w-4" />
               StudyBody
             </div>
-            <h1 className="font-display text-3xl font-light tracking-normal sm:text-4xl">
+            <h1 className="font-display text-2xl font-light tracking-normal sm:text-3xl md:text-4xl">
               Build a roadmap, practice, and improve.
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
               DeepSeek reads the study material. OpenAI shapes the final coaching.
             </p>
           </div>
-          <div className="grid w-full grid-cols-3 gap-2 text-center sm:w-auto sm:min-w-72">
+          <div className="grid w-full max-w-full grid-cols-3 gap-1.5 text-center sm:w-auto sm:min-w-72 sm:gap-2">
             <Metric label="Plans" value={plans.length.toString()} />
             <Metric label="Topics" value={topics.length.toString()} />
             <Metric label="Mastery" value={`${averageMastery}%`} />
@@ -616,7 +616,7 @@ export function StudyBodyPage() {
           </div>
         )}
 
-        <section className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <section className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)]">
           <div className="space-y-4">
             <div className="luxury-panel rounded-lg p-4">
               <div className="mb-3 flex items-center gap-2">
@@ -715,7 +715,7 @@ export function StudyBodyPage() {
             </div>
           </div>
 
-          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_420px]">
             <div className="luxury-panel rounded-lg p-4">
               <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>

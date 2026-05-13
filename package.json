@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "node scripts/clean-dist.mjs && vite build && vite build --config vite.static.config.ts --outDir dist-static && node scripts/merge-static-dist.mjs",
+    "build": "vite build --config vite.static.config.ts",
     "build:ssr": "node scripts/clean-dist.mjs && vite build",
     "build:static": "node scripts/clean-dist.mjs && vite build --config vite.static.config.ts && node scripts/prepare-static-dist.mjs",
     "build:dev": "vite build --mode development",

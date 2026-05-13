@@ -1417,7 +1417,7 @@ export function ChatPage() {
                 New
               </button>
             </div>
-            <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] xl:mx-0 xl:gap-2 xl:overflow-visible xl:px-0 xl:pb-0 [&::-webkit-scrollbar]:hidden">
+            <div className="chat-header-controls -mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] xl:mx-0 xl:gap-2 xl:overflow-visible xl:px-0 xl:pb-0 [&::-webkit-scrollbar]:hidden">
               {docs.length > 0 && (
                 <>
                   <button
@@ -1455,7 +1455,7 @@ export function ChatPage() {
                   </button>
                 </>
               )}
-              <div className="flex shrink-0 rounded-lg border border-border bg-background p-0.5">
+              <div className="chat-mode-selector flex shrink-0 rounded-lg border border-border bg-background p-0.5">
                 {CHAT_MODES.map((m) => (
                   <button
                     key={m}
@@ -1487,7 +1487,7 @@ export function ChatPage() {
 
         {/* Messages */}
         <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-3 pb-60 pt-5 sm:px-4 sm:pb-52 md:px-8 md:pt-8 lg:pb-48">
+          <div className="mx-auto max-w-3xl px-3 pb-44 pt-5 sm:px-4 sm:pb-40 md:px-8 md:pt-8 lg:pb-36">
             {loadingConvo && messages.length === 0 ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
@@ -1515,7 +1515,7 @@ export function ChatPage() {
         </div>
 
         {/* Composer */}
-        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-3 pt-8 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-2 pt-6 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <div className="pointer-events-auto max-w-3xl mx-auto">
             {mode === "Visuals" && (
               <div className="mb-2 rounded-2xl border border-border bg-background/65 px-2.5 py-2 backdrop-blur-[2px] sm:rounded-[28px] sm:px-3">
@@ -2278,7 +2278,7 @@ function Message({ msg, streaming }: { msg: DisplayMessage; isLast: boolean; str
   if (msg.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[92%] rounded-lg rounded-br-sm bg-gradient-primary px-3.5 py-2.5 text-sm leading-relaxed text-primary-foreground shadow-elegant sm:max-w-[85%] sm:px-4">
+        <div className="max-w-[88%] rounded-lg rounded-br-sm bg-gradient-primary px-3.5 py-2.5 text-sm leading-relaxed text-primary-foreground shadow-elegant break-words sm:max-w-[85%] sm:px-4">
           {msg.content}
         </div>
       </div>

@@ -6,7 +6,7 @@ import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 type AuthSearch = { mode?: "signup" | "signin" };
-const AUTH_ACTION_TIMEOUT_MS = 15_000;
+const AUTH_ACTION_TIMEOUT_MS = 20_000;
 const AUTH_CONFIG_ERROR =
   "Authentication is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your hosting environment, then redeploy.";
 const EMAIL_CONFIRM_NOTICE =

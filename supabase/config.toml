@@ -5,3 +5,9 @@ verify_jwt = true
 
 [functions.suggest-folder]
 verify_jwt = true
+
+[functions.extract-image]
+verify_jwt = true
+
+[functions.studybody]
+verify_jwt = true

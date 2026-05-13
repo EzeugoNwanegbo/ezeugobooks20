@@ -27,7 +27,7 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const AUTH_REQUEST_TIMEOUT_MS = 12_000;
+const AUTH_REQUEST_TIMEOUT_MS = 20_000;
 const AUTH_CONFIG_ERROR =
   "Authentication is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your hosting environment, then redeploy.";
 const guestAuthContext: AuthContextValue = {
@@ -103,6 +103,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(created as Profile);
     } catch (error) {
       console.error("load profile", error);
+      // On timeout, retry once silently before showing an error
+      const msg = error instanceof Error ? error.message : "";
+      if (msg.includes("timed out")) {
+        try {
+          const { data } = await supabase
+            .from("user_profiles")
+            .select("*")
+            .eq("id", currentUser.id)
+            .maybeSingle();
+          if (data) {
+            setAuthError(null);
+            setProfile(data as Profile);
+            return;
+          }
+        } catch (_) {
+          // fall through to error state
+        }
+      }
       setAuthError(getAuthErrorMessage(error));
       setProfile(null);
     }
