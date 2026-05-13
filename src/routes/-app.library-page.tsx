@@ -383,7 +383,7 @@ export function LibraryPage() {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-4xl px-3 py-6 sm:px-4 sm:py-8 md:px-8">
+      <div className="mx-auto max-w-5xl px-3 py-5 sm:px-4 sm:py-8 md:px-8">
         <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="font-display text-4xl font-light leading-none sm:text-5xl">
@@ -459,7 +459,7 @@ export function LibraryPage() {
         </label>
 
         {/* Folder list */}
-        <div className="mt-8 space-y-4">
+        <div className="mt-6 space-y-4 sm:mt-8">
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             <BookOpen className="h-3.5 w-3.5" />
             {docs.length} {docs.length === 1 ? "document" : "documents"} · {folders.length}{" "}
@@ -509,8 +509,8 @@ export function LibraryPage() {
 
       {/* Folder assignment modal */}
       {pendingAssign && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-          <div className="luxury-panel w-full max-w-md rounded-lg p-6 shadow-elegant">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
+          <div className="luxury-panel max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-lg p-5 shadow-elegant sm:p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div className="flex items-center gap-2.5">
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
@@ -518,7 +518,7 @@ export function LibraryPage() {
                 </span>
                 <div>
                   <div className="font-display text-xl font-light">Organise this note</div>
-                  <div className="text-xs text-muted-foreground truncate max-w-[260px]">
+                  <div className="max-w-[calc(100vw-8rem)] truncate text-xs text-muted-foreground sm:max-w-[260px]">
                     {pendingAssign.fileName}
                   </div>
                 </div>
@@ -543,7 +543,7 @@ export function LibraryPage() {
               onChange={(e) => setChosenFolder(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
-              <option value="__new">＋ New folder...</option>
+              <option value="__new">+ New folder...</option>
               <option value="__none">Uncategorised</option>
               {folders.map((f) => (
                 <option key={f.id} value={f.id}>
@@ -608,8 +608,8 @@ function FolderBlock({
 }) {
   const [menuFor, setMenuFor] = useState<string | null>(null);
   return (
-    <div className="luxury-panel rounded-lg overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2.5">
+    <div className="luxury-panel overflow-visible rounded-lg">
+      <div className="flex items-center gap-2 px-3 py-2.5 sm:px-4">
         <button onClick={onToggle} className="flex items-center gap-2 flex-1 min-w-0 text-left">
           {open ? (
             <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -648,17 +648,17 @@ function FolderBlock({
             docs.map((d) => (
               <li
                 key={d.id}
-                className="relative flex items-center gap-2.5 px-3 py-2.5 transition-colors hover:bg-surface-elevated/50 sm:gap-3"
+                className="relative flex items-center gap-2.5 px-3 py-3 transition-colors hover:bg-surface-elevated/50 sm:gap-3 sm:px-4"
               >
                 <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
                   <FileText className="h-4 w-4 text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm truncate">{d.file_name}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    {d.page_count ? `${d.page_count} pages · ` : ""}
+                  <div className="mt-0.5 flex flex-wrap gap-x-1 text-xs text-muted-foreground">
+                    {d.page_count ? `${d.page_count} pages - ` : ""}
                     {d.file_size ? `${(d.file_size / 1024 / 1024).toFixed(2)} MB` : ""}
-                    {" · "}
+                    {" - "}
                     {new Date(d.created_at).toLocaleDateString()}
                   </div>
                 </div>

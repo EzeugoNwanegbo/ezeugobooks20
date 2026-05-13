@@ -1331,7 +1331,7 @@ export function ChatPage() {
     <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-background/50 min-w-0">
       {/* Conversations sidebar */}
       {sidebarOpen && (
-        <aside className="hidden lg:flex min-h-0 flex-col w-64 border-r border-border bg-background/55 backdrop-blur">
+        <aside className="hidden xl:flex min-h-0 flex-col w-64 border-r border-border bg-background/55 backdrop-blur">
           <div className="p-3 border-b border-border">
             <button
               onClick={newChat}
@@ -1378,13 +1378,13 @@ export function ChatPage() {
       {/* Main column */}
       <div className="relative flex min-h-0 flex-1 flex-col min-w-0">
         {/* Header */}
-        <div className="shrink-0 border-b border-border bg-background/70 px-3 py-2.5 backdrop-blur sm:px-4 lg:px-6 lg:py-3">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
+        <div className="shrink-0 border-b border-border bg-background/70 px-3 py-2 backdrop-blur sm:px-4 sm:py-2.5 lg:px-6 lg:py-3">
+          <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between xl:gap-4">
             <div className="flex min-w-0 items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
                 <button
                   onClick={() => setSidebarOpen((v) => !v)}
-                  className="hidden rounded-md p-2 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground lg:inline-flex"
+                  className="hidden rounded-md p-2 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground xl:inline-flex"
                   title={sidebarOpen ? "Hide chats" : "Show chats"}
                 >
                   {sidebarOpen ? (
@@ -1410,14 +1410,14 @@ export function ChatPage() {
               </div>
               <button
                 onClick={newChat}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:border-primary/40 lg:hidden"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:border-primary/40 xl:hidden"
                 title="New chat"
               >
                 <Plus className="h-3.5 w-3.5" />
                 New
               </button>
             </div>
-            <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5 lg:mx-0 lg:gap-2 lg:overflow-visible lg:px-0 lg:pb-0">
+            <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] xl:mx-0 xl:gap-2 xl:overflow-visible xl:px-0 xl:pb-0 [&::-webkit-scrollbar]:hidden">
               {docs.length > 0 && (
                 <>
                   <button
@@ -1469,7 +1469,7 @@ export function ChatPage() {
                             ? "Concepts + deeper detail"
                             : "Plain English with an analogy"
                     }
-                    className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                    className={`flex min-h-8 items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors sm:px-2.5 ${
                       mode === m
                         ? "bg-gradient-primary text-primary-foreground"
                         : "text-muted-foreground hover:text-foreground"
@@ -1487,7 +1487,7 @@ export function ChatPage() {
 
         {/* Messages */}
         <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-3 pb-52 pt-6 sm:px-4 sm:pb-48 md:px-8 md:pt-8">
+          <div className="mx-auto max-w-3xl px-3 pb-60 pt-5 sm:px-4 sm:pb-52 md:px-8 md:pt-8 lg:pb-48">
             {loadingConvo && messages.length === 0 ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
@@ -1515,7 +1515,7 @@ export function ChatPage() {
         </div>
 
         {/* Composer */}
-        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-8 sm:px-4 md:px-8">
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-3 pt-8 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <div className="pointer-events-auto max-w-3xl mx-auto">
             {mode === "Visuals" && (
               <div className="mb-2 rounded-2xl border border-border bg-background/65 px-2.5 py-2 backdrop-blur-[2px] sm:rounded-[28px] sm:px-3">
@@ -1524,7 +1524,7 @@ export function ChatPage() {
                     <Sparkles className="h-3.5 w-3.5" />
                     Visuals
                   </span>
-                  <span className="min-w-[180px] flex-1">
+                  <span className="min-w-0 flex-1">
                     Add a file for exact details, turn Web on for current topics, or send now for an
                     AI-guided animation.
                   </span>
@@ -1668,7 +1668,7 @@ export function ChatPage() {
                 }`}
               >
                 <Search className="h-4 w-4" />
-                <span>{webSearch ? "Web on" : "Web"}</span>
+                <span className="hidden sm:inline">{webSearch ? "Web on" : "Web"}</span>
               </button>
               {streaming ? (
                 <button

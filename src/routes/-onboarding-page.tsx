@@ -72,7 +72,7 @@ function OnboardingFlow() {
   }
 
   return (
-    <div className="luxury-auth-page relative flex min-h-dvh flex-col overflow-hidden bg-background">
+    <div className="luxury-auth-page relative flex min-h-dvh flex-col overflow-x-hidden overflow-y-auto bg-background">
       <div className="symbiote-blob auth-blob-one" />
       <div className="symbiote-blob auth-blob-two" />
 
@@ -86,7 +86,7 @@ function OnboardingFlow() {
         </div>
       </header>
 
-      <main className="relative z-10 flex flex-1 items-center justify-center px-4 pb-8 sm:px-6 sm:pb-12">
+      <main className="relative z-10 flex min-h-0 flex-1 items-start justify-center px-4 pb-8 pt-6 sm:items-center sm:px-6 sm:pb-12 sm:pt-6">
         <div className="w-full max-w-lg">
           <div className="mb-4 flex gap-1 sm:mb-6">
             {STEPS.map((_, i) => (

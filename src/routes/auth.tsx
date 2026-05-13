@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -70,20 +70,52 @@ function AuthPage() {
 function AuthFlow() {
   const { mode } = Route.useSearch();
   const navigate = useNavigate();
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, authError, refreshProfile, signOut } = useAuth();
   const [isSignup, setIsSignup] = useState(mode === "signup");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
-    if (loading || !user) return;
+    if (loading || !user || !profile) return;
     navigate({ to: profile?.onboarded ? "/app/chat" : "/onboarding", replace: true });
   }, [loading, user, profile, navigate]);
 
   if (loading || user) {
+    if (user && authError && !profile) {
+      return (
+        <div className="luxury-auth-page flex min-h-dvh items-center justify-center bg-background px-4">
+          <div className="symbiote-blob auth-blob-one" />
+          <div className="symbiote-blob auth-blob-two" />
+          <div className="luxury-panel w-full max-w-md rounded-lg p-5 text-center shadow-elegant sm:p-6">
+            <h1 className="font-display text-3xl font-light leading-none">
+              Profile could not load
+            </h1>
+            <p className="mt-2 text-sm text-muted-foreground">{authError}</p>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => void refreshProfile()}
+                className="inline-flex flex-1 items-center justify-center rounded-lg bg-gradient-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-glow"
+              >
+                Try again
+              </button>
+              <button
+                type="button"
+                onClick={() => void signOut()}
+                className="inline-flex flex-1 items-center justify-center rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="luxury-auth-page flex min-h-dvh items-center justify-center bg-background">
         <div className="symbiote-blob auth-blob-one" />
@@ -166,7 +198,7 @@ function AuthFlow() {
   };
 
   return (
-    <div className="luxury-auth-page relative flex min-h-dvh flex-col overflow-hidden bg-background">
+    <div className="luxury-auth-page relative flex min-h-dvh flex-col overflow-x-hidden overflow-y-auto bg-background">
       <div className="symbiote-blob auth-blob-one" />
       <div className="symbiote-blob auth-blob-two" />
 
@@ -177,7 +209,7 @@ function AuthFlow() {
         <ThemeToggle />
       </header>
 
-      <main className="relative z-10 flex flex-1 items-center justify-center px-4 pb-8 sm:px-6 sm:pb-12">
+      <main className="relative z-10 flex min-h-0 flex-1 items-start justify-center px-4 pb-8 pt-8 sm:items-center sm:px-6 sm:pb-12 sm:pt-6">
         <div className="w-full max-w-md">
           <div className="luxury-panel rounded-lg p-5 shadow-elegant backdrop-blur sm:p-8">
             <h1 className="font-display text-3xl font-light leading-none sm:text-4xl">
@@ -229,16 +261,28 @@ function AuthFlow() {
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Password</label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete={isSignup ? "new-password" : "current-password"}
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
-                  placeholder="********"
-                />
+                <div className="relative mt-1">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    minLength={6}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete={isSignup ? "new-password" : "current-password"}
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 pr-24 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-ring"
+                    placeholder="********"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((value) => !value)}
+                    className="absolute inset-y-0 right-0 inline-flex min-w-20 items-center justify-center gap-1 rounded-r-lg px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    <span>{showPassword ? "Hide" : "Show"}</span>
+                  </button>
+                </div>
               </div>
               <button
                 type="submit"
