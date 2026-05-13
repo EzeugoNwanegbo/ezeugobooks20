@@ -5,7 +5,7 @@ import {
   CheckCircle2,
   FileText,
   Loader2,
-  Map,
+  Map as MapIcon,
   Play,
   Sparkles,
   Target,
@@ -583,7 +583,7 @@ export function StudyBodyPage() {
         <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="flex items-center gap-2 text-sm font-medium text-primary">
-              <Map className="h-4 w-4" />
+              <MapIcon className="h-4 w-4" />
               StudyBody
             </div>
             <h1 className="font-display text-2xl font-light tracking-normal sm:text-3xl md:text-4xl">
