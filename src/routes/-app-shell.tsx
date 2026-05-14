@@ -1,6 +1,6 @@
 import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
-import { BookOpen, Loader2, LogOut, Map, MessageSquare } from "lucide-react";
-import { useEffect } from "react";
+import { BookOpen, Loader2, LogOut, Map, MessageSquare, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -17,6 +17,8 @@ function AppLayout() {
   const { user, profile, loading, authError, refreshProfile, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarHidden, setIsSidebarHidden] = useState(false);
 
   useEffect(() => {
     if (loading) return;
@@ -82,10 +84,11 @@ function AppLayout() {
           active
             ? "border border-primary/15 bg-primary/10 text-foreground"
             : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
-        }`}
+        } ${isSidebarCollapsed ? "justify-center" : ""}`}
+        title={isSidebarCollapsed ? label : undefined}
       >
         {icon}
-        {label}
+        {!isSidebarCollapsed && <span>{label}</span>}
       </Link>
     );
   };
@@ -94,36 +97,73 @@ function AppLayout() {
     <div className="luxury-app-shell flex h-dvh min-h-dvh flex-col overflow-x-hidden bg-background md:flex-row md:overflow-hidden">
       <div className="symbiote-blob app-blob-one" />
       <div className="symbiote-blob app-blob-two" />
-      <aside className="hidden flex-col border-r border-border bg-background/75 backdrop-blur md:flex md:w-56 md:shrink-0 xl:w-64">
-        <div className="p-5 border-b border-border">
-          <Link to="/app/chat" className="luxury-brand-text">
-            G&D
-          </Link>
+      
+      {/* Sidebar toggle for desktop when hidden */}
+      {isSidebarHidden && (
+        <button
+          onClick={() => setIsSidebarHidden(false)}
+          className="fixed left-4 top-4 z-50 hidden rounded-md border border-border bg-background/80 p-2 text-muted-foreground backdrop-blur hover:text-foreground md:inline-flex"
+          title="Show navigation"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      )}
+
+      <aside className={`${isSidebarHidden ? "hidden" : "hidden md:flex"} flex-col border-r border-border bg-background/75 backdrop-blur transition-[width] duration-300 md:shrink-0 ${isSidebarCollapsed ? "md:w-20 xl:w-20" : "md:w-56 xl:w-64"}`}>
+        <div className={`flex items-center border-b border-border ${isSidebarCollapsed ? "justify-center p-4" : "justify-between p-5"}`}>
+          {!isSidebarCollapsed && (
+            <Link to="/app/chat" className="luxury-brand-text">
+              G&D
+            </Link>
+          )}
+          <div className="flex items-center gap-1">
+            <button 
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
+              className="p-1.5 rounded-md text-muted-foreground hover:bg-surface-elevated hover:text-foreground transition-colors"
+              title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {isSidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            </button>
+            <button 
+              onClick={() => setIsSidebarHidden(true)} 
+              className="p-1.5 rounded-md text-muted-foreground hover:bg-surface-elevated hover:text-foreground transition-colors"
+              title="Hide sidebar"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
         <nav className="flex-1 p-3 space-y-1">
-          {navItem("/app/chat", <MessageSquare className="h-4 w-4" />, "Chat")}
-          {navItem("/app/library", <BookOpen className="h-4 w-4" />, "Library")}
-          {navItem("/app/studybody", <Map className="h-4 w-4" />, "StudyBody")}
+          {navItem("/app/chat", <MessageSquare className="h-4 w-4 shrink-0" />, "Chat")}
+          {navItem("/app/library", <BookOpen className="h-4 w-4 shrink-0" />, "Library")}
+          {navItem("/app/studybody", <Map className="h-4 w-4 shrink-0" />, "StudyBody")}
         </nav>
-        <div className="p-3 border-t border-border">
-          <div className="px-3 py-2 mb-1">
-            <div className="text-sm font-medium truncate">{profile.name || "Student"}</div>
-            <div className="text-xs text-muted-foreground truncate">
-              {profile.year} - {profile.university}
+        <div className={`border-t border-border ${isSidebarCollapsed ? "p-3 flex flex-col items-center gap-3" : "p-3"}`}>
+          {!isSidebarCollapsed && (
+            <div className="px-3 py-2 mb-1">
+              <div className="text-sm font-medium truncate">{profile.name || "Student"}</div>
+              <div className="text-xs text-muted-foreground truncate">
+                {profile.year} - {profile.university}
+              </div>
             </div>
-          </div>
-          <div className="mb-2 px-3">
-            <ThemeToggle className="w-full" />
+          )}
+          <div className={isSidebarCollapsed ? "" : "mb-2 px-3"}>
+            <ThemeToggle className={isSidebarCollapsed ? "" : "w-full"} />
           </div>
           <button
             onClick={async () => {
               await signOut();
               navigate({ to: "/" });
             }}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-surface-elevated hover:text-foreground transition-colors"
+            className={`flex items-center text-muted-foreground hover:bg-surface-elevated hover:text-foreground transition-colors ${
+              isSidebarCollapsed 
+                ? "justify-center p-2 rounded-lg" 
+                : "w-full gap-3 px-3 py-2 rounded-lg text-sm font-medium"
+            }`}
+            title={isSidebarCollapsed ? "Sign out" : undefined}
           >
-            <LogOut className="h-4 w-4" />
-            Sign out
+            <LogOut className="h-4 w-4 shrink-0" />
+            {!isSidebarCollapsed && <span>Sign out</span>}
           </button>
         </div>
       </aside>

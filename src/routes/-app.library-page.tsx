@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearch } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { extractPdfText } from "@/lib/pdf";
@@ -381,9 +382,22 @@ export function LibraryPage() {
 
   const toggleFolder = (id: string) => setOpenFolders((cur) => ({ ...cur, [id]: !cur[id] }));
 
+  const search = useSearch({ strict: false }) as any;
+  const isOnboarding = search?.onboarding === true;
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-5xl px-3 py-5 sm:px-4 sm:py-8 md:px-8">
+        {isOnboarding && docs.length === 0 && (
+          <div className="mb-8 rounded-lg bg-primary/10 border border-primary/20 p-6 text-center animate-in fade-in slide-in-from-top-4 duration-500">
+            <Sparkles className="h-8 w-8 text-primary mx-auto mb-3" />
+            <h2 className="text-xl font-display font-light mb-2">Welcome to G&D!</h2>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto">
+              Your library is where you store the PDFs and notes you want to study. 
+              Upload your first file below to see how G&D uses them to answer your questions.
+            </p>
+          </div>
+        )}
         <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="font-display text-4xl font-light leading-none sm:text-5xl">
@@ -418,9 +432,9 @@ export function LibraryPage() {
             const f = e.dataTransfer.files?.[0];
             if (f) onUpload(f);
           }}
-          className={`block cursor-pointer rounded-lg border-2 border-dashed border-border bg-surface/40 p-5 text-center transition-colors hover:border-primary/40 sm:p-8 ${
+          className={`block cursor-pointer rounded-lg border-2 border-dashed border-border bg-surface/40 p-5 text-center transition-all hover:border-primary/40 sm:p-8 ${
             uploading ? "pointer-events-none opacity-70" : ""
-          }`}
+          } ${isOnboarding && docs.length === 0 ? "ring-2 ring-primary ring-offset-4 ring-offset-background animate-pulse shadow-glow" : ""}`}
         >
           <input
             id="file-up"
@@ -445,7 +459,7 @@ export function LibraryPage() {
               </div>
               <div>
                 <div className="font-semibold">
-                  Drop a PDF, text file, or image to make it searchable
+                  {isOnboarding && docs.length === 0 ? "Click here to upload your first file" : "Drop a PDF, text file, or image to make it searchable"}
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
                   Images are extracted with DeepSeek OCR before indexing.

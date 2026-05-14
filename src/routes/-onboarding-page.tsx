@@ -30,7 +30,7 @@ function OnboardingFlow() {
 
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/auth" });
-    if (profile?.onboarded) navigate({ to: "/app/chat" });
+    if (profile?.onboarded) navigate({ to: "/app/library" });
     if (profile?.name && !name) setName(profile.name);
   }, [loading, user, profile, navigate, name]);
 
@@ -52,8 +52,8 @@ function OnboardingFlow() {
       });
       if (error) throw error;
       await refreshProfile();
-      toast.success("You're all set!");
-      navigate({ to: "/app/chat" });
+      toast.success("You're all set! Let's add some files to your library.");
+      navigate({ to: "/app/library", search: { onboarding: true } as any });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save profile");
     } finally {

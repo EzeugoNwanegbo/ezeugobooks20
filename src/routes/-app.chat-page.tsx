@@ -1,4 +1,4 @@
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useAuth, type Profile } from "@/lib/auth-context";
@@ -1330,50 +1330,56 @@ export function ChatPage() {
   return (
     <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-background/50 min-w-0">
       {/* Conversations sidebar */}
-      {sidebarOpen && (
-        <aside className="hidden xl:flex min-h-0 flex-col w-64 border-r border-border bg-background/55 backdrop-blur">
-          <div className="p-3 border-b border-border">
-            <button
-              onClick={newChat}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-primary text-primary-foreground text-sm font-medium shadow-glow hover:opacity-95 transition-opacity"
-            >
-              <Plus className="h-4 w-4" />
-              New chat
-            </button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-2 space-y-4">
-            {convos.length === 0 ? (
+      <aside className={`hidden xl:flex min-h-0 flex-col border-r border-border bg-background/55 backdrop-blur transition-[width] duration-300 ${sidebarOpen ? "w-64" : "w-16"}`}>
+        <div className={`p-3 border-b border-border flex justify-center ${sidebarOpen ? "" : "px-2"}`}>
+          <button
+            onClick={newChat}
+            className={`flex items-center gap-2 rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow hover:opacity-95 transition-all ${
+              sidebarOpen ? "w-full px-3 py-2 text-sm" : "h-10 w-10 justify-center p-0"
+            }`}
+            title="New chat"
+          >
+            <Plus className="h-4 w-4" />
+            {sidebarOpen && <span>New chat</span>}
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-2 space-y-4 overflow-x-hidden">
+          {convos.length === 0 ? (
+            sidebarOpen && (
               <div className="text-xs text-muted-foreground px-3 py-6 text-center">
                 {isGuest ? "Guest chats are not saved." : "Your past chats will appear here."}
               </div>
-            ) : (
-              <>
-                <ConvoGroup
-                  title="Today"
-                  items={groupedConvos.today}
-                  activeId={conversationId}
-                  onPick={(id) => navigate({ to: "/app/chat", search: { c: id } })}
-                  onDelete={deleteConversation}
-                />
-                <ConvoGroup
-                  title="Last 7 days"
-                  items={groupedConvos.week}
-                  activeId={conversationId}
-                  onPick={(id) => navigate({ to: "/app/chat", search: { c: id } })}
-                  onDelete={deleteConversation}
-                />
-                <ConvoGroup
-                  title="Older"
-                  items={groupedConvos.older}
-                  activeId={conversationId}
-                  onPick={(id) => navigate({ to: "/app/chat", search: { c: id } })}
-                  onDelete={deleteConversation}
-                />
-              </>
-            )}
-          </div>
-        </aside>
-      )}
+            )
+          ) : (
+            <>
+              <ConvoGroup
+                title={sidebarOpen ? "Today" : ""}
+                items={groupedConvos.today}
+                activeId={conversationId}
+                collapsed={!sidebarOpen}
+                onPick={(id) => navigate({ to: "/app/chat", search: { c: id } })}
+                onDelete={deleteConversation}
+              />
+              <ConvoGroup
+                title={sidebarOpen ? "Last 7 days" : ""}
+                items={groupedConvos.week}
+                activeId={conversationId}
+                collapsed={!sidebarOpen}
+                onPick={(id) => navigate({ to: "/app/chat", search: { c: id } })}
+                onDelete={deleteConversation}
+              />
+              <ConvoGroup
+                title={sidebarOpen ? "Older" : ""}
+                items={groupedConvos.older}
+                activeId={conversationId}
+                collapsed={!sidebarOpen}
+                onPick={(id) => navigate({ to: "/app/chat", search: { c: id } })}
+                onDelete={deleteConversation}
+              />
+            </>
+          )}
+        </div>
+      </aside>
 
       {/* Main column */}
       <div className="relative flex min-h-0 flex-1 flex-col min-w-0">
@@ -1418,7 +1424,6 @@ export function ChatPage() {
               </button>
             </div>
             <div className="chat-header-controls -mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] xl:mx-0 xl:gap-2 xl:overflow-visible xl:px-0 xl:pb-0 [&::-webkit-scrollbar]:hidden">
-              {docs.length > 0 && (
                 <>
                   <button
                     onClick={() => setUseLibrary((v) => !v)}
@@ -1431,21 +1436,35 @@ export function ChatPage() {
                   >
                     Files {useLibrary ? "on" : "off"}
                   </button>
+                  {docs.length > 0 && (
+                    <button
+                      onClick={() => setInterlink((v) => !v)}
+                      disabled={!useLibrary}
+                      title="Find connections across subjects/folders"
+                      className={`hidden shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 sm:inline-flex ${
+                        interlink
+                          ? "border-accent/50 bg-accent/15 text-accent"
+                          : "border-border text-muted-foreground hover:bg-surface-elevated"
+                      }`}
+                    >
+                      <Network className="h-3.5 w-3.5" />
+                      Find connections
+                    </button>
+                  )}
                   <button
-                    onClick={() => setInterlink((v) => !v)}
-                    disabled={!useLibrary}
-                    title="Find connections across subjects/folders"
-                    className={`hidden shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 sm:inline-flex ${
-                      interlink
-                        ? "border-accent/50 bg-accent/15 text-accent"
-                        : "border-border text-muted-foreground hover:bg-surface-elevated"
-                    }`}
-                  >
-                    <Network className="h-3.5 w-3.5" />
-                    Find connections
-                  </button>
-                  <button
-                    onClick={() => setFilePickerOpen(true)}
+                    onClick={() => {
+                      if (docs.length === 0) {
+                        toast("Your library is empty", {
+                          description: "Upload your PDFs or notes to the Library first to study them here.",
+                          action: {
+                            label: "Go to Library",
+                            onClick: () => navigate({ to: "/app/library" }),
+                          },
+                        });
+                        return;
+                      }
+                      setFilePickerOpen(true);
+                    }}
                     disabled={!useLibrary}
                     title="Choose files to search"
                     className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground disabled:opacity-40"
@@ -1454,7 +1473,6 @@ export function ChatPage() {
                     Files
                   </button>
                 </>
-              )}
               <div className="chat-mode-selector flex shrink-0 rounded-lg border border-border bg-background p-0.5">
                 {CHAT_MODES.map((m) => (
                   <button
@@ -1553,7 +1571,7 @@ export function ChatPage() {
                 </div>
               </div>
             )}
-            {docs.length > 0 && useLibrary && (
+            {useLibrary && (
               <div className="mb-2 rounded-2xl border border-border bg-background/60 px-2.5 py-1.5 backdrop-blur-[2px] sm:rounded-[28px] sm:px-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
@@ -1585,6 +1603,10 @@ export function ChatPage() {
                         </button>
                       </span>
                     ))
+                  ) : docs.length === 0 ? (
+                    <span className="text-xs text-muted-foreground">
+                      Your library is empty.
+                    </span>
                   ) : (
                     <span className="text-xs text-muted-foreground">
                       Pinpoint search will choose the strongest file matches.
@@ -1774,7 +1796,19 @@ function FilePickerDialog({
           <div className="min-h-[220px] flex-1 overflow-y-auto rounded-lg border border-border bg-surface/40">
             {docs.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                {totalDocs === 0 ? "No uploaded files yet." : "No files match your search."}
+                {totalDocs === 0 ? (
+                  <div className="flex flex-col items-center justify-center gap-3">
+                    <p>You haven't added any files to your library yet.</p>
+                    <Link
+                      to="/app/library"
+                      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-primary-foreground font-medium transition-opacity hover:opacity-90"
+                    >
+                      Go to Library to add files
+                    </Link>
+                  </div>
+                ) : (
+                  "No files match your search."
+                )}
               </div>
             ) : (
               docs.map((doc) => {
@@ -1829,50 +1863,61 @@ function ConvoGroup({
   title,
   items,
   activeId,
+  collapsed,
   onPick,
   onDelete,
 }: {
   title: string;
   items: ConversationRow[];
   activeId?: string;
+  collapsed?: boolean;
   onPick: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
   if (items.length === 0) return null;
   return (
     <div>
-      <div className="px-3 pb-1 text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">
-        {title}
-      </div>
+      {title && !collapsed && (
+        <div className="px-3 pb-1 text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">
+          {title}
+        </div>
+      )}
       <ul className="space-y-0.5">
         {items.map((c) => {
           const active = c.id === activeId;
           return (
             <li key={c.id}>
               <div
-                className={`group flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer transition-colors ${
+                className={`group flex items-center rounded-lg cursor-pointer transition-colors ${
+                  collapsed ? "justify-center p-2" : "gap-2 px-2.5 py-2"
+                } ${
                   active
                     ? "bg-primary/15 text-primary"
                     : "text-foreground/80 hover:bg-surface-elevated hover:text-foreground"
                 }`}
                 onClick={() => onPick(c.id)}
+                title={collapsed ? c.title || "New conversation" : undefined}
               >
                 <MessageSquare
                   className={`h-3.5 w-3.5 flex-shrink-0 ${
                     active ? "text-primary" : "text-muted-foreground"
                   }`}
                 />
-                <span className="text-sm truncate flex-1">{c.title || "New conversation"}</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(c.id);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive transition-opacity"
-                  title="Delete"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
+                {!collapsed && (
+                  <>
+                    <span className="text-sm truncate flex-1">{c.title || "New conversation"}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(c.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive transition-opacity"
+                      title="Delete"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </>
+                )}
               </div>
             </li>
           );
