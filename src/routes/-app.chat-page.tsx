@@ -916,15 +916,6 @@ export function ChatPage() {
           noLibraryMatch: false,
           noMatchScope: null,
         };
-      } else if (
-        !looksCasualMessage(content) &&
-        (explicitlyNeedsLibrary(content) || manuallySelected)
-      ) {
-        return {
-          docs: [],
-          noLibraryMatch: true,
-          noMatchScope: manuallySelected ? "selected" : "library",
-        };
       }
     } catch (err) {
       if (signal?.aborted) throw new Error(CHAT_CANCELLED);
@@ -940,6 +931,18 @@ export function ChatPage() {
       content,
       signal,
     );
+
+    if (
+      fallbackWithText.length === 0 &&
+      !looksCasualMessage(content) &&
+      (explicitlyNeedsLibrary(content) || manuallySelected)
+    ) {
+      return {
+        docs: [],
+        noLibraryMatch: true,
+        noMatchScope: manuallySelected ? "selected" : "library",
+      };
+    }
 
     return {
       docs: fallbackWithText,
@@ -1330,8 +1333,12 @@ export function ChatPage() {
   return (
     <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-background/50 min-w-0">
       {/* Conversations sidebar */}
-      <aside className={`hidden xl:flex min-h-0 flex-col border-r border-border bg-background/55 backdrop-blur transition-[width] duration-300 ${sidebarOpen ? "w-64" : "w-16"}`}>
-        <div className={`p-3 border-b border-border flex justify-center ${sidebarOpen ? "" : "px-2"}`}>
+      <aside
+        className={`hidden xl:flex min-h-0 flex-col border-r border-border bg-background/55 backdrop-blur transition-[width] duration-300 ${sidebarOpen ? "w-64" : "w-16"}`}
+      >
+        <div
+          className={`p-3 border-b border-border flex justify-center ${sidebarOpen ? "" : "px-2"}`}
+        >
           <button
             onClick={newChat}
             className={`flex items-center gap-2 rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow hover:opacity-95 transition-all ${
@@ -1424,55 +1431,56 @@ export function ChatPage() {
               </button>
             </div>
             <div className="chat-header-controls -mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] xl:mx-0 xl:gap-2 xl:overflow-visible xl:px-0 xl:pb-0 [&::-webkit-scrollbar]:hidden">
-                <>
+              <>
+                <button
+                  onClick={() => setUseLibrary((v) => !v)}
+                  title="Toggle file search"
+                  className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                    useLibrary
+                      ? "border-primary/40 bg-primary/15 text-primary"
+                      : "border-border text-muted-foreground hover:bg-surface-elevated"
+                  }`}
+                >
+                  Files {useLibrary ? "on" : "off"}
+                </button>
+                {docs.length > 0 && (
                   <button
-                    onClick={() => setUseLibrary((v) => !v)}
-                    title="Toggle file search"
-                    className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                      useLibrary
-                        ? "border-primary/40 bg-primary/15 text-primary"
+                    onClick={() => setInterlink((v) => !v)}
+                    disabled={!useLibrary}
+                    title="Find connections across subjects/folders"
+                    className={`hidden shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 sm:inline-flex ${
+                      interlink
+                        ? "border-accent/50 bg-accent/15 text-accent"
                         : "border-border text-muted-foreground hover:bg-surface-elevated"
                     }`}
                   >
-                    Files {useLibrary ? "on" : "off"}
+                    <Network className="h-3.5 w-3.5" />
+                    Find connections
                   </button>
-                  {docs.length > 0 && (
-                    <button
-                      onClick={() => setInterlink((v) => !v)}
-                      disabled={!useLibrary}
-                      title="Find connections across subjects/folders"
-                      className={`hidden shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 sm:inline-flex ${
-                        interlink
-                          ? "border-accent/50 bg-accent/15 text-accent"
-                          : "border-border text-muted-foreground hover:bg-surface-elevated"
-                      }`}
-                    >
-                      <Network className="h-3.5 w-3.5" />
-                      Find connections
-                    </button>
-                  )}
-                  <button
-                    onClick={() => {
-                      if (docs.length === 0) {
-                        toast("Your library is empty", {
-                          description: "Upload your PDFs or notes to the Library first to study them here.",
-                          action: {
-                            label: "Go to Library",
-                            onClick: () => navigate({ to: "/app/library" }),
-                          },
-                        });
-                        return;
-                      }
-                      setFilePickerOpen(true);
-                    }}
-                    disabled={!useLibrary}
-                    title="Choose files to search"
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground disabled:opacity-40"
-                  >
-                    <FileText className="h-3.5 w-3.5" />
-                    Files
-                  </button>
-                </>
+                )}
+                <button
+                  onClick={() => {
+                    if (docs.length === 0) {
+                      toast("Your library is empty", {
+                        description:
+                          "Upload your PDFs or notes to the Library first to study them here.",
+                        action: {
+                          label: "Go to Library",
+                          onClick: () => navigate({ to: "/app/library" }),
+                        },
+                      });
+                      return;
+                    }
+                    setFilePickerOpen(true);
+                  }}
+                  disabled={!useLibrary}
+                  title="Choose files to search"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground disabled:opacity-40"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  Files
+                </button>
+              </>
               <div className="chat-mode-selector flex shrink-0 rounded-lg border border-border bg-background p-0.5">
                 {CHAT_MODES.map((m) => (
                   <button
@@ -1604,9 +1612,7 @@ export function ChatPage() {
                       </span>
                     ))
                   ) : docs.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">
-                      Your library is empty.
-                    </span>
+                    <span className="text-xs text-muted-foreground">Your library is empty.</span>
                   ) : (
                     <span className="text-xs text-muted-foreground">
                       Pinpoint search will choose the strongest file matches.
