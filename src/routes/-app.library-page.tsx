@@ -75,6 +75,22 @@ async function suggestFolder(
   }
 }
 
+function getUploadErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return "Upload failed";
+
+  const message = error.message || "Upload failed";
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes("undefined is not a function") ||
+    normalized.includes("is not a function")
+  ) {
+    return "This browser could not read that file. Try updating the browser, saving the document as a standard PDF, or uploading a text file instead.";
+  }
+
+  return message;
+}
+
 export function LibraryPage() {
   const { user } = useAuth();
   const [folders, setFolders] = useState<FolderRow[]>([]);
@@ -209,7 +225,8 @@ export function LibraryPage() {
         setNewFolderName(suggestion?.folder || "");
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Upload failed");
+      console.error("upload document", err);
+      toast.error(getUploadErrorMessage(err));
     } finally {
       setUploading(false);
       setProgress("");
@@ -382,7 +399,7 @@ export function LibraryPage() {
 
   const toggleFolder = (id: string) => setOpenFolders((cur) => ({ ...cur, [id]: !cur[id] }));
 
-  const search = useSearch({ strict: false }) as any;
+  const search = useSearch({ strict: false }) as { onboarding?: boolean };
   const isOnboarding = search?.onboarding === true;
 
   return (
@@ -393,8 +410,8 @@ export function LibraryPage() {
             <Sparkles className="h-8 w-8 text-primary mx-auto mb-3" />
             <h2 className="text-xl font-display font-light mb-2">Welcome to G&D!</h2>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              Your library is where you store the PDFs and notes you want to study. 
-              Upload your first file below to see how G&D uses them to answer your questions.
+              Your library is where you store the PDFs and notes you want to study. Upload your
+              first file below to see how G&D uses them to answer your questions.
             </p>
           </div>
         )}
@@ -459,7 +476,9 @@ export function LibraryPage() {
               </div>
               <div>
                 <div className="font-semibold">
-                  {isOnboarding && docs.length === 0 ? "Click here to upload your first file" : "Drop a PDF, text file, or image to make it searchable"}
+                  {isOnboarding && docs.length === 0
+                    ? "Click here to upload your first file"
+                    : "Drop a PDF, text file, or image to make it searchable"}
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
                   Images are extracted with DeepSeek OCR before indexing.

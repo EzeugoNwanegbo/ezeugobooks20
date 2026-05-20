@@ -35,7 +35,13 @@ export function chunkDocumentText(text: string): DocumentChunkInput[] {
 
 function parsePageBlocks(text: string): PageBlock[] {
   const marker = /\[Page\s+(\d+)\]\s*/g;
-  const matches = [...text.matchAll(marker)];
+  const matches: RegExpExecArray[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = marker.exec(text)) !== null) {
+    matches.push(match);
+  }
+
   if (matches.length === 0) return [{ page: null, text }];
 
   return matches.map((match, index) => {
