@@ -170,8 +170,10 @@ export function LibraryPage() {
         extracted = r.text;
         pageCount = r.pageCount;
       } else if (file.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(file.name)) {
-        setProgress("Extracting text from image with DeepSeek OCR...");
-        const r = await extractImageText(file);
+        setProgress("Reading image text in your browser...");
+        const r = await extractImageText(file, (status, percent) => {
+          setProgress(percent === undefined ? status : `${status} (${percent}%)`);
+        });
         extracted = r.text;
         pageCount = r.pageCount;
       } else if (file.type.startsWith("text/")) {
@@ -481,7 +483,7 @@ export function LibraryPage() {
                     : "Drop a PDF, text file, or image to make it searchable"}
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
-                  Images are extracted with DeepSeek OCR before indexing.
+                  Images are extracted in your browser with Tesseract OCR before indexing.
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
                   PDF, .txt, PNG, JPG, or WebP indexed for pinpoint answers

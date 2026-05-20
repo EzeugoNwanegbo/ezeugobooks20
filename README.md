@@ -21,7 +21,7 @@ Built with **TanStack Start (React 19) + Vite 7 + Tailwind v4 + Supabase**.
 | File answer AI          | DeepSeek retrieval -> OpenAI final style                  |
 | Visuals mode            | DeepSeek research -> GPT storyboard -> DeepSeek animation |
 | Folder suggestion       | DeepSeek                                                  |
-| Image OCR               | DeepSeek OCR endpoint                                     |
+| Image OCR               | Tesseract.js in the browser                               |
 | Edge runtime            | Supabase Edge Functions (Deno)                            |
 | Deploy target (default) | Cloudflare Workers (via Vite plugin)                      |
 
@@ -35,11 +35,10 @@ The app was originally built on Lovable Cloud, which provided built-in Supabase 
 
 ## Self-hosting setup
 
-You need two API keys for chat, plus an OCR endpoint if you want image uploads:
+You need two API keys for chat. Image uploads are handled in the browser with Tesseract.js:
 
 - `OPENAI_API_KEY` (for final response style and web search sources)
 - `DEEPSEEK_API_KEY` (for document analysis, factual drafts, and folder suggestion)
-- `DEEPSEEK_OCR_BASE_URL` + `DEEPSEEK_OCR_API_KEY` (optional, for image uploads)
 
 ### 1. Clone and install
 
@@ -91,16 +90,12 @@ VITE_SUPABASE_PUBLISHABLE_KEY=eyJhbGci...
 # DO NOT put these in .env — they are server-only.
 #   OPENAI_API_KEY=sk-...
 #   DEEPSEEK_API_KEY=sk-...
-#   DEEPSEEK_OCR_BASE_URL=https://YOUR_DEEPSEEK_OCR_ENDPOINT
-#   DEEPSEEK_OCR_API_KEY=sk-...
 ```
 
 Set the edge-function secrets either via Supabase Dashboard or CLI:
 
 ```bash
 npx supabase secrets set OPENAI_API_KEY=sk-... DEEPSEEK_API_KEY=sk-...
-# Optional image OCR:
-npx supabase secrets set DEEPSEEK_OCR_BASE_URL=https://YOUR_DEEPSEEK_OCR_ENDPOINT DEEPSEEK_OCR_API_KEY=sk-...
 ```
 
 ### 5. Deploy edge functions
@@ -108,7 +103,6 @@ npx supabase secrets set DEEPSEEK_OCR_BASE_URL=https://YOUR_DEEPSEEK_OCR_ENDPOIN
 ```bash
 npx supabase functions deploy chat
 npx supabase functions deploy suggest-folder
-npx supabase functions deploy extract-image
 npx supabase functions deploy studybody
 ```
 
@@ -180,8 +174,8 @@ storage cleanup on those.
 
 **Image upload**:
 
-- Browser sends the image to `extract-image`.
-- `extract-image` calls your configured **DeepSeek OCR** endpoint.
+- The browser runs **Tesseract.js** OCR locally on the user's image.
+- No OCR Edge Function secret is required.
 - The extracted text is chunked and searched like any other uploaded material.
 
 **StudyBody**:
@@ -214,7 +208,7 @@ supabase/
   functions/
     chat/                  AI router (DeepSeek docs / OpenAI chat)
     suggest-folder/        Auto-categorises new uploads
-    extract-image/         DeepSeek OCR proxy for image uploads
+    extract-image/         Legacy OCR proxy, not used by current browser OCR
     studybody/             Roadmaps, practice generation, grading, coaching
   migrations/              Schema (folders, documents, conversations, messages, profiles)
   config.toml              Edge function config

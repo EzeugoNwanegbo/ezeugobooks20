@@ -1,20 +1,63 @@
-import { supabase } from "@/integrations/supabase/client";
+import { createWorker } from "tesseract.js";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const IMAGE_OCR_URL = `${SUPABASE_URL}/functions/v1/extract-image`;
-const IMAGE_OCR_TIMEOUT_MS = 90_000;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_OCR_IMAGE_DIMENSION = 2600;
 
-function fileToDataUrl(file: File): Promise<string> {
+type OcrProgress = (status: string, percent?: number) => void;
+
+function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("Could not read image file"));
-    reader.readAsDataURL(file);
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not read image file."));
+    };
+    image.src = url;
   });
 }
 
-export async function extractImageText(file: File): Promise<{ text: string; pageCount: number }> {
+async function prepareImageForOcr(file: File): Promise<HTMLCanvasElement> {
+  const image = await loadImage(file);
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+
+  if (!width || !height) {
+    throw new Error("Could not read image dimensions.");
+  }
+
+  const scale = Math.min(1, MAX_OCR_IMAGE_DIMENSION / Math.max(width, height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Could not prepare image for OCR.");
+
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  return canvas;
+}
+
+function formatTesseractStatus(status: string): string {
+  if (!status) return "Reading image text";
+  return status
+    .replace(/^loading/i, "Loading")
+    .replace(/^recognizing/i, "Recognizing")
+    .replace(/^initializing/i, "Initializing");
+}
+
+export async function extractImageText(
+  file: File,
+  onProgress?: OcrProgress,
+): Promise<{ text: string; pageCount: number }> {
   if (!file.type.startsWith("image/")) {
     throw new Error("Only image files can use image extraction.");
   }
@@ -23,49 +66,42 @@ export async function extractImageText(file: File): Promise<{ text: string; page
     throw new Error("Image too large for OCR (max 20 MB).");
   }
 
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), IMAGE_OCR_TIMEOUT_MS);
+  onProgress?.("Preparing image for OCR", 5);
+  const image = await prepareImageForOcr(file);
+  const worker = await createWorker("eng", 1, {
+    logger: (message) => {
+      const percent =
+        typeof message.progress === "number"
+          ? Math.max(0, Math.min(100, Math.round(message.progress * 100)))
+          : undefined;
+      onProgress?.(formatTesseractStatus(message.status), percent);
+    },
+  });
 
   try {
-    const dataUrl = await fileToDataUrl(file);
-    const { data: sess } = await supabase.auth.getSession();
-    const token = sess.session?.access_token;
-    if (!token) throw new Error("Sign in again before uploading images.");
-
-    const response = await fetch(IMAGE_OCR_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
-        dataUrl,
-        fileName: file.name,
-        mimeType: file.type,
-      }),
+    await worker.setParameters({
+      preserve_interword_spaces: "1",
+      user_defined_dpi: "300",
     });
 
-    if (!response.ok) {
-      let message = "Image extraction failed";
-      try {
-        const json = await response.json();
-        message = json.error ?? message;
-      } catch {
-        /* ignore */
-      }
-      throw new Error(message);
-    }
+    const result = await worker.recognize(image);
+    const text = (result.data.text || "").trim();
 
-    const json = (await response.json()) as { text?: string };
-    const text = (json.text || "").trim();
-    if (!text) throw new Error("DeepSeek OCR did not find readable text in that image.");
+    if (!text) {
+      throw new Error(
+        "Tesseract could not find readable text in that image. Try a clearer, higher-contrast image.",
+      );
+    }
 
     return {
       text: `\n\n[Page 1]\n${text}`,
       pageCount: 1,
     };
+  } catch (error) {
+    console.error("tesseract image extraction", error);
+    if (error instanceof Error) throw error;
+    throw new Error("Image OCR failed.");
   } finally {
-    window.clearTimeout(timeout);
+    await worker.terminate();
   }
 }
