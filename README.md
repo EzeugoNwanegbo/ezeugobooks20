@@ -24,6 +24,7 @@ Built with **TanStack Start (React 19) + Vite 7 + Tailwind v4 + Supabase**.
 | Image OCR               | Tesseract.js in the browser                               |
 | Edge runtime            | Supabase Edge Functions (Deno)                            |
 | Deploy target (default) | Cloudflare Workers (via Vite plugin)                      |
+| Android wrapper         | Capacitor                                                 |
 
 ---
 
@@ -124,6 +125,29 @@ Once you have your final domain:
 
 - Supabase **Auth → URL Configuration** → add your site URL + redirect URLs.
 - Google Cloud Console → OAuth client → add the same URLs.
+
+---
+
+## Android app
+
+The Android app is a Capacitor wrapper around the same static web build. The
+website remains unchanged; Capacitor copies `dist/` into the native Android
+project.
+
+Local commands:
+
+```bash
+npm run android:sync        # build static web app and sync android/
+npm run android:open        # open android/ in Android Studio
+npm run android:build:debug # build a local debug APK, requires JDK + Android SDK
+```
+
+The GitHub Actions workflow at `.github/workflows/android.yml` builds a debug
+APK artifact on pushes to `main` and can also be run manually from GitHub
+Actions.
+
+Release to Google Play still needs a Play Console account, final package ID,
+app icon/splash assets, privacy policy, and a signed release AAB.
 
 ---
 
