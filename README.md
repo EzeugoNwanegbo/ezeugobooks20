@@ -25,6 +25,7 @@ Built with **TanStack Start (React 19) + Vite 7 + Tailwind v4 + Supabase**.
 | Edge runtime            | Supabase Edge Functions (Deno)                            |
 | Deploy target (default) | Cloudflare Workers (via Vite plugin)                      |
 | Android wrapper         | Capacitor                                                 |
+| Expo mobile project     | `gandd-mobile/`                                           |
 
 ---
 
@@ -148,6 +149,23 @@ Actions.
 
 Release to Google Play still needs a Play Console account, final package ID,
 app icon/splash assets, privacy policy, and a signed release AAB.
+
+---
+
+## Expo mobile project
+
+`gandd-mobile/` is a separate Expo project for testing G&D on iPhone through
+Expo Go and for a later native mobile rebuild.
+
+Current first version: an Expo WebView shell that opens the deployed or local
+G&D website without changing the web app.
+
+```bash
+cd gandd-mobile
+npm run start:lan
+```
+
+See `gandd-mobile/README.md` for iPhone setup.
 
 ---
 

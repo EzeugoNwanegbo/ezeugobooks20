@@ -5,6 +5,11 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), tsconfigPaths()],
+  server: {
+    watch: {
+      ignored: ["**/android/**", "**/gandd-mobile/**"],
+    },
+  },
   resolve: {
     alias: {
       "@": "/src",
