@@ -3,7 +3,6 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
-  Loader2,
   LogOut,
   Map,
   Menu,
@@ -98,7 +97,7 @@ function AppLayout() {
       <div className="luxury-app-shell flex min-h-dvh items-center justify-center bg-background">
         <div className="symbiote-blob app-blob-one" />
         <div className="symbiote-blob app-blob-two" />
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <div className="relative z-10 luxury-brand-text small">G&D</div>
       </div>
     );
   }
@@ -255,13 +254,16 @@ function AppLayout() {
       </aside>
 
       <div
-        className="fixed inset-x-0 top-0 z-30 flex items-center justify-between border-b border-border bg-background/95 px-3 py-2.5 backdrop-blur md:hidden"
-        style={{ paddingTop: "max(0.6rem, env(safe-area-inset-top))" }}
+        className="fixed inset-x-0 top-0 z-30 flex items-center justify-between border-b border-border bg-background/95 px-3 backdrop-blur md:hidden"
+        style={{
+          height: "calc(3rem + env(safe-area-inset-top))",
+          paddingTop: "env(safe-area-inset-top)",
+        }}
       >
         <button
           type="button"
           onClick={() => setMobileMenuOpen(true)}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-background/70 text-foreground"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background/70 text-foreground"
           aria-label="Open menu"
           title="Menu"
         >
@@ -270,7 +272,7 @@ function AppLayout() {
         <Link to="/app/chat" className="luxury-brand-text small">
           G&D
         </Link>
-        <ThemeToggle />
+        <span className="h-9 w-9" aria-hidden />
       </div>
 
       {mobileMenuOpen && (
@@ -371,6 +373,10 @@ function AppLayout() {
                   {[profile.year, profile.university].filter(Boolean).join(" - ")}
                 </div>
               </div>
+              <div className="mb-2 flex items-center justify-between rounded-lg px-2 py-1.5">
+                <span className="text-sm font-medium text-muted-foreground">Appearance</span>
+                <ThemeToggle />
+              </div>
               <button
                 type="button"
                 onClick={async () => {
@@ -388,7 +394,7 @@ function AppLayout() {
         </div>
       )}
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-[calc(3.15rem+env(safe-area-inset-top))] md:pb-0 md:pt-0">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-[calc(3rem+env(safe-area-inset-top))] md:pb-0 md:pt-0">
         <Outlet />
       </main>
     </div>

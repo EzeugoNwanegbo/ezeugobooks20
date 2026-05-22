@@ -1397,7 +1397,7 @@ export function ChatPage() {
       {/* Main column */}
       <div className="relative flex min-h-0 flex-1 flex-col min-w-0">
         {/* Header */}
-        <div className="shrink-0 border-b border-border bg-background/70 px-3 py-2 backdrop-blur sm:px-4 sm:py-2.5 lg:px-6 lg:py-3">
+        <div className="hidden shrink-0 border-b border-border bg-background/70 px-3 py-2 backdrop-blur md:block sm:px-4 sm:py-2.5 lg:px-6 lg:py-3">
           <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between xl:gap-4">
             <div className="flex min-w-0 items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
@@ -1527,8 +1527,35 @@ export function ChatPage() {
         {/* Composer */}
         <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <div className="pointer-events-auto max-w-3xl mx-auto">
+            <div className="mb-1.5 flex overflow-x-auto rounded-2xl border border-border bg-background/65 p-0.5 backdrop-blur-[2px] [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden">
+              {CHAT_MODES.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMode(m)}
+                  title={
+                    m === "Visuals"
+                      ? "Create an animated visual explanation"
+                      : m === "Storytelling"
+                        ? "Explain as a story"
+                        : m === "Detailed"
+                          ? "Concepts + deeper detail"
+                          : "Plain English with an analogy"
+                  }
+                  className={`flex min-h-8 flex-1 items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-medium transition-colors ${
+                    mode === m
+                      ? "bg-gradient-primary text-primary-foreground"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {m === "Storytelling" && <BookText className="h-3 w-3" />}
+                  {m === "Visuals" && <Sparkles className="h-3 w-3" />}
+                  {m}
+                </button>
+              ))}
+            </div>
             {mode === "Visuals" && (
-              <div className="mb-2 rounded-2xl border border-border bg-background/65 px-2.5 py-2 backdrop-blur-[2px] sm:rounded-[28px] sm:px-3">
+              <div className="mb-2 hidden rounded-2xl border border-border bg-background/65 px-2.5 py-2 backdrop-blur-[2px] md:block sm:rounded-[28px] sm:px-3">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span className="inline-flex shrink-0 items-center gap-1.5 font-medium text-primary">
                     <Sparkles className="h-3.5 w-3.5" />
@@ -1564,12 +1591,12 @@ export function ChatPage() {
               </div>
             )}
             {useLibrary && (
-              <div className="mb-2 rounded-2xl border border-border bg-background/60 px-2.5 py-1.5 backdrop-blur-[2px] sm:rounded-[28px] sm:px-3">
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="mb-1.5 rounded-2xl border border-border bg-background/60 px-2 py-1 backdrop-blur-[2px] sm:mb-2 sm:rounded-[28px] sm:px-3 sm:py-1.5">
+                <div className="flex flex-nowrap items-center gap-1.5 sm:flex-wrap sm:gap-2">
                   <button
                     type="button"
                     onClick={() => setFilePickerOpen(true)}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/15 sm:px-3"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary hover:bg-primary/15 sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs"
                   >
                     <FileText className="h-3.5 w-3.5" />
                     Add files
@@ -1580,7 +1607,7 @@ export function ChatPage() {
                       type="button"
                       onClick={() => setFilePickerOpen(true)}
                       title={selectedDocs.map((doc) => doc.file_name).join(", ")}
-                      className="inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-border bg-surface/80 px-2.5 py-1.5 text-left text-xs text-foreground"
+                      className="inline-flex min-w-0 flex-1 items-center gap-1 rounded-full border border-border bg-surface/80 px-2 py-1 text-left text-[11px] text-foreground sm:gap-1.5 sm:px-2.5 sm:py-1.5 sm:text-xs"
                     >
                       <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       <span className="truncate">
@@ -1589,10 +1616,15 @@ export function ChatPage() {
                       </span>
                     </button>
                   ) : docs.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">Your library is empty.</span>
+                    <span className="min-w-0 truncate text-[11px] text-muted-foreground sm:text-xs">
+                      Your library is empty.
+                    </span>
                   ) : (
-                    <span className="text-xs text-muted-foreground">
-                      Pinpoint search will choose the strongest file matches.
+                    <span className="min-w-0 truncate text-[11px] text-muted-foreground sm:text-xs">
+                      <span className="sm:hidden">Auto file match</span>
+                      <span className="hidden sm:inline">
+                        Pinpoint search will choose the strongest file matches.
+                      </span>
                     </span>
                   )}
 
@@ -1600,7 +1632,7 @@ export function ChatPage() {
                     <button
                       type="button"
                       onClick={() => setSelectedDocIds([])}
-                      className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+                      className="ml-auto shrink-0 text-[11px] text-muted-foreground hover:text-foreground sm:text-xs"
                     >
                       Clear
                     </button>
