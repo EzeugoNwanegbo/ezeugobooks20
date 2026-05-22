@@ -290,107 +290,120 @@ function AppLayout() {
       </div>
 
       {mobileMenuOpen && (
-        <div
-          className="fixed bottom-0 left-0 z-50 w-[64vw] min-w-[13.5rem] max-w-[15.5rem] overflow-y-auto rounded-br-xl border-r border-t border-[#2f2a22] bg-[#0e0d0b] px-2.5 pb-3 pt-2.5 text-[#f5f0e8] shadow-[18px_18px_44px_rgba(0,0,0,0.38)] md:hidden"
-          style={{
-            maxHeight: "calc(100dvh - 3rem - env(safe-area-inset-top))",
-            top: "calc(3rem + env(safe-area-inset-top))",
-          }}
-        >
-          <div className="flex w-full flex-col gap-2">
-            <div>
-              <button
-                type="button"
-                onClick={openNewChat}
-                className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#f5f0e8] px-3 py-2 text-sm font-bold text-[#0e0d0b] shadow-[0_12px_32px_rgba(245,240,232,0.12)]"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                New chat
-              </button>
-            </div>
+        <>
+          <button
+            type="button"
+            className="fixed bottom-0 right-0 z-40 bg-transparent md:hidden"
+            style={{ top: "3rem", width: "42vw" }}
+            aria-label="Close menu"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <div
+            className="fixed bottom-0 left-0 z-50 w-[58vw] min-w-[12.5rem] max-w-[14.5rem] overflow-y-auto rounded-br-xl border-r border-t border-[#2f2a22] bg-[#0e0d0b] px-2.5 pb-3 pt-1.5 text-[#f5f0e8] shadow-[18px_18px_44px_rgba(0,0,0,0.38)] md:hidden"
+            style={{
+              maxHeight: "calc(100dvh - 3rem)",
+              top: "3rem",
+            }}
+          >
+            <div className="flex w-full flex-col gap-2">
+              <div>
+                <button
+                  type="button"
+                  onClick={openNewChat}
+                  className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#f5f0e8] px-3 py-2 text-sm font-bold text-[#0e0d0b] shadow-[0_12px_32px_rgba(245,240,232,0.12)]"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  New chat
+                </button>
+              </div>
 
-            <nav className="grid gap-1.5">
-              <MobileDrawerNavItem
-                active={location.pathname.includes("chat")}
-                icon={<MessageSquare className="h-3.5 w-3.5" />}
-                label="Chat"
-                onPick={() => goToMobileRoute("/app/chat")}
-              />
-              <MobileDrawerNavItem
-                active={location.pathname.includes("library")}
-                icon={<BookOpen className="h-3.5 w-3.5" />}
-                label="Library"
-                onPick={() => goToMobileRoute("/app/library")}
-              />
-              <MobileDrawerNavItem
-                active={location.pathname.includes("studybody")}
-                icon={<Map className="h-3.5 w-3.5" />}
-                label="StudyBody"
-                onPick={() => goToMobileRoute("/app/studybody")}
-              />
-            </nav>
+              <nav className="grid gap-1.5">
+                <MobileDrawerNavItem
+                  active={location.pathname.includes("chat")}
+                  icon={<MessageSquare className="h-3.5 w-3.5" />}
+                  label="Chat"
+                  onPick={() => goToMobileRoute("/app/chat")}
+                />
+                <MobileDrawerNavItem
+                  active={location.pathname.includes("library")}
+                  icon={<BookOpen className="h-3.5 w-3.5" />}
+                  label="Library"
+                  onPick={() => goToMobileRoute("/app/library")}
+                />
+                <MobileDrawerNavItem
+                  active={location.pathname.includes("studybody")}
+                  icon={<Map className="h-3.5 w-3.5" />}
+                  label="StudyBody"
+                  onPick={() => goToMobileRoute("/app/studybody")}
+                />
+              </nav>
 
-            <div className="border-t border-[#2f2a22] pt-2">
-              <p className="text-center text-[10px] font-bold uppercase tracking-wide text-[#d8d0c2]">
-                Chat history
-              </p>
-              {mobileConvos.length === 0 ? (
-                <p className="py-1.5 text-center text-xs font-medium text-[#d8d0c2]">
-                  No chats yet.
+              <div className="border-t border-[#2f2a22] pt-2">
+                <p className="text-center text-[10px] font-bold uppercase tracking-wide text-[#d8d0c2]">
+                  Chat history
                 </p>
-              ) : (
-                <div className="space-y-2">
-                  <MobileConvoGroup
-                    title="Today"
-                    items={groupedMobileConvos.today}
-                    activeId={search.c}
-                    onPick={(id) => {
-                      navigate({ to: "/app/chat", search: { c: id } });
-                      setMobileMenuOpen(false);
-                    }}
-                  />
-                  <MobileConvoGroup
-                    title="Older"
-                    items={groupedMobileConvos.older}
-                    activeId={search.c}
-                    onPick={(id) => {
-                      navigate({ to: "/app/chat", search: { c: id } });
-                      setMobileMenuOpen(false);
-                    }}
-                  />
-                </div>
-              )}
-            </div>
+                {mobileConvos.length === 0 ? (
+                  <p className="py-1.5 text-center text-xs font-medium text-[#d8d0c2]">
+                    No chats yet.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <MobileConvoGroup
+                      title="Today"
+                      items={groupedMobileConvos.today}
+                      activeId={search.c}
+                      onPick={(id) => {
+                        navigate({ to: "/app/chat", search: { c: id } });
+                        setMobileMenuOpen(false);
+                      }}
+                    />
+                    <MobileConvoGroup
+                      title="Older"
+                      items={groupedMobileConvos.older}
+                      activeId={search.c}
+                      onPick={(id) => {
+                        navigate({ to: "/app/chat", search: { c: id } });
+                        setMobileMenuOpen(false);
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
 
-            <div className="border-t border-[#2f2a22] pt-2">
-              <div className="mb-1 px-1 text-left">
-                <div className="truncate text-xs font-semibold">{profile.name || "Student"}</div>
-                <div className="truncate text-[11px] text-[#d8d0c2]">
-                  {[profile.year, profile.university].filter(Boolean).join(" - ")}
+              <div className="border-t border-[#2f2a22] pt-2">
+                <div className="mb-1 px-1 text-left">
+                  <div className="truncate text-xs font-semibold">{profile.name || "Student"}</div>
+                  <div className="truncate text-[11px] text-[#d8d0c2]">
+                    {[profile.year, profile.university].filter(Boolean).join(" - ")}
+                  </div>
                 </div>
+                <div className="mb-1 flex w-full items-center justify-between rounded-lg px-1 py-1">
+                  <span className="text-xs font-semibold text-[#f5f0e8]">Appearance</span>
+                  <ThemeToggle />
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await signOut();
+                    setMobileMenuOpen(false);
+                    navigate({ to: "/" });
+                  }}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-1 py-1.5 text-xs font-semibold text-[#f5f0e8] hover:bg-[#1f1c17]"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Sign out
+                </button>
               </div>
-              <div className="mb-1 flex w-full items-center justify-between rounded-lg px-1 py-1">
-                <span className="text-xs font-semibold text-[#f5f0e8]">Appearance</span>
-                <ThemeToggle />
-              </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  await signOut();
-                  setMobileMenuOpen(false);
-                  navigate({ to: "/" });
-                }}
-                className="flex w-full items-center gap-2.5 rounded-lg px-1 py-1.5 text-xs font-semibold text-[#f5f0e8] hover:bg-[#1f1c17]"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                Sign out
-              </button>
             </div>
           </div>
-        </div>
+        </>
       )}
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:pb-0">
+      <main
+        className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-transform duration-200 ease-out md:pb-0 ${
+          mobileMenuOpen ? "max-md:translate-x-14 max-md:scale-[0.985] max-md:opacity-90" : ""
+        }`}
+      >
         <Outlet />
       </main>
     </div>
