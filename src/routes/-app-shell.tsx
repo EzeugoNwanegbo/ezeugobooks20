@@ -294,12 +294,12 @@ function AppLayout() {
           className="relative z-40 shrink-0 overflow-y-auto border-b border-[#2f2a22] bg-[#0e0d0b] px-3 pb-3 pt-2.5 text-[#f5f0e8] shadow-[0_18px_40px_rgba(0,0,0,0.35)] md:hidden"
           style={{ maxHeight: "calc(100dvh - 3rem - env(safe-area-inset-top))" }}
         >
-          <div className="mx-auto flex w-full max-w-sm flex-col gap-2">
+          <div className="mx-auto flex w-full max-w-xs flex-col gap-2">
             <div>
               <button
                 type="button"
                 onClick={openNewChat}
-                className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#f5f0e8] px-3 py-2 text-sm font-bold text-[#0e0d0b] shadow-[0_12px_32px_rgba(245,240,232,0.12)]"
+                className="mx-auto flex min-h-10 w-[70%] max-w-[13.5rem] items-center justify-center gap-2 rounded-lg bg-[#f5f0e8] px-3 py-2 text-sm font-bold text-[#0e0d0b] shadow-[0_12px_32px_rgba(245,240,232,0.12)]"
               >
                 <Plus className="h-3.5 w-3.5" />
                 New chat
@@ -328,11 +328,13 @@ function AppLayout() {
             </nav>
 
             <div className="border-t border-[#2f2a22] pt-2">
-              <p className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wide text-[#d8d0c2]">
+              <p className="text-center text-[10px] font-bold uppercase tracking-wide text-[#d8d0c2]">
                 Chat history
               </p>
               {mobileConvos.length === 0 ? (
-                <p className="px-1 py-1.5 text-xs font-medium text-[#d8d0c2]">No chats yet.</p>
+                <p className="py-1.5 text-center text-xs font-medium text-[#d8d0c2]">
+                  No chats yet.
+                </p>
               ) : (
                 <div className="space-y-2">
                   <MobileConvoGroup
@@ -358,13 +360,13 @@ function AppLayout() {
             </div>
 
             <div className="border-t border-[#2f2a22] pt-2">
-              <div className="mb-1 px-2">
+              <div className="mx-auto mb-1 w-[74%] max-w-[14rem] text-center">
                 <div className="truncate text-xs font-semibold">{profile.name || "Student"}</div>
                 <div className="truncate text-[11px] text-[#d8d0c2]">
                   {[profile.year, profile.university].filter(Boolean).join(" - ")}
                 </div>
               </div>
-              <div className="mb-1 flex items-center justify-between rounded-lg px-2 py-1">
+              <div className="mx-auto mb-1 flex w-[74%] max-w-[14rem] items-center justify-between rounded-lg px-2 py-1">
                 <span className="text-xs font-semibold text-[#f5f0e8]">Appearance</span>
                 <ThemeToggle />
               </div>
@@ -375,7 +377,7 @@ function AppLayout() {
                   setMobileMenuOpen(false);
                   navigate({ to: "/" });
                 }}
-                className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#f5f0e8] hover:bg-[#1f1c17]"
+                className="mx-auto flex w-[70%] max-w-[13.5rem] items-center justify-center gap-2.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#f5f0e8] hover:bg-[#1f1c17]"
               >
                 <LogOut className="h-3.5 w-3.5" />
                 Sign out
@@ -407,7 +409,7 @@ function MobileDrawerNavItem({
     <button
       type="button"
       onClick={onPick}
-      className={`mx-auto flex min-h-10 w-[78%] max-w-[16rem] items-center justify-center gap-2.5 rounded-lg px-3 py-2 text-sm font-bold transition-colors ${
+      className={`mx-auto flex min-h-10 w-[70%] max-w-[13.5rem] items-center justify-center gap-2.5 rounded-lg px-3 py-2 text-sm font-bold transition-colors ${
         active
           ? "border border-[#f5f0e8] bg-[#f5f0e8] text-[#0e0d0b] shadow-[0_12px_28px_rgba(245,240,232,0.12)]"
           : "border border-[#d8d0c2] bg-[#f5f0e8] text-[#0e0d0b] shadow-[0_8px_22px_rgba(0,0,0,0.24)] hover:bg-white"
@@ -433,7 +435,7 @@ function MobileConvoGroup({
   if (items.length === 0) return null;
 
   return (
-    <section>
+    <section className="mx-auto w-[76%] max-w-[14rem]">
       <p className="px-1 pb-0.5 text-[10px] font-bold uppercase tracking-wide text-[#d8d0c2]">
         {title}
       </p>
