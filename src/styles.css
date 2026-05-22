@@ -1154,7 +1154,7 @@ html.gd-native-app .luxury-auth-page .luxury-panel {
 }
 
 html.gd-native-app .luxury-app-shell main {
-  padding-top: calc(3rem + env(safe-area-inset-top)) !important;
+  padding-top: 0 !important;
 }
 
 html.gd-native-app .luxury-auth-page .animate-spin,

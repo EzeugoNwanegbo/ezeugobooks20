@@ -166,7 +166,7 @@ function AppLayout() {
   };
 
   return (
-    <div className="luxury-app-shell flex h-dvh min-h-dvh flex-col overflow-x-hidden bg-background md:flex-row md:overflow-hidden">
+    <div className="luxury-app-shell flex h-dvh min-h-dvh flex-col overflow-hidden bg-background md:flex-row">
       <div className="symbiote-blob app-blob-one" />
       <div className="symbiote-blob app-blob-two" />
 
@@ -254,7 +254,7 @@ function AppLayout() {
       </aside>
 
       <div
-        className="fixed inset-x-0 top-0 z-30 flex items-center justify-between border-b border-border bg-background/95 px-3 backdrop-blur md:hidden"
+        className="mobile-app-topbar sticky top-0 z-30 flex shrink-0 items-center justify-between border-b border-border bg-background px-3 shadow-[0_10px_24px_rgba(0,0,0,0.18)] md:hidden"
         style={{
           height: "calc(3rem + env(safe-area-inset-top))",
           paddingTop: "env(safe-area-inset-top)",
@@ -263,7 +263,7 @@ function AppLayout() {
         <button
           type="button"
           onClick={() => setMobileMenuOpen(true)}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background/70 text-foreground"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-primary/25 bg-surface text-foreground"
           aria-label="Open menu"
           title="Menu"
         >
@@ -292,7 +292,7 @@ function AppLayout() {
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(false)}
-                className="rounded-lg p-2 text-muted-foreground hover:text-foreground"
+                className="rounded-lg p-2 text-foreground hover:bg-surface-elevated"
                 aria-label="Close menu"
               >
                 <X className="h-5 w-5" />
@@ -335,11 +335,11 @@ function AppLayout() {
             </nav>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              <p className="px-1 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <p className="px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-foreground/70">
                 Chat history
               </p>
               {mobileConvos.length === 0 ? (
-                <p className="px-1 py-4 text-sm text-muted-foreground">
+                <p className="px-1 py-4 text-sm text-foreground/70">
                   Your past chats will appear here.
                 </p>
               ) : (
@@ -374,7 +374,7 @@ function AppLayout() {
                 </div>
               </div>
               <div className="mb-2 flex items-center justify-between rounded-lg px-2 py-1.5">
-                <span className="text-sm font-medium text-muted-foreground">Appearance</span>
+                <span className="text-sm font-medium text-foreground">Appearance</span>
                 <ThemeToggle />
               </div>
               <button
@@ -384,7 +384,7 @@ function AppLayout() {
                   setMobileMenuOpen(false);
                   navigate({ to: "/" });
                 }}
-                className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm font-medium text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
+                className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm font-medium text-foreground hover:bg-surface-elevated"
               >
                 <LogOut className="h-4 w-4" />
                 Sign out
@@ -394,7 +394,7 @@ function AppLayout() {
         </div>
       )}
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-[calc(3rem+env(safe-area-inset-top))] md:pb-0 md:pt-0">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:pb-0">
         <Outlet />
       </main>
     </div>
@@ -420,8 +420,8 @@ function MobileDrawerNavItem({
       onClick={onPick}
       className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
         active
-          ? "border border-primary/15 bg-primary/10 text-primary"
-          : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
+          ? "border border-primary/35 bg-primary/15 text-foreground"
+          : "border border-border/70 bg-surface/45 text-foreground hover:border-primary/25 hover:bg-surface-elevated"
       }`}
     >
       {icon}
@@ -445,7 +445,7 @@ function MobileConvoGroup({
 
   return (
     <section>
-      <p className="px-1 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/65">
         {title}
       </p>
       <div className="space-y-1">
@@ -456,8 +456,8 @@ function MobileConvoGroup({
             onClick={() => onPick(item.id)}
             className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
               activeId === item.id
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
+                ? "bg-primary/15 text-foreground"
+                : "text-foreground/85 hover:bg-surface-elevated hover:text-foreground"
             }`}
           >
             <span className="block truncate">{item.title || "New conversation"}</span>
