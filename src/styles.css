@@ -1138,8 +1138,7 @@ html.gd-native-app body {
   overscroll-behavior: none;
 }
 
-html.gd-native-app .luxury-auth-page header,
-html.gd-native-app .luxury-app-shell > div.fixed.top-0 {
+html.gd-native-app .luxury-auth-page header {
   display: none !important;
 }
 
@@ -1155,7 +1154,7 @@ html.gd-native-app .luxury-auth-page .luxury-panel {
 }
 
 html.gd-native-app .luxury-app-shell main {
-  padding-top: max(0.5rem, env(safe-area-inset-top)) !important;
+  padding-top: calc(3.15rem + env(safe-area-inset-top)) !important;
 }
 
 html.gd-native-app .luxury-app-shell > nav.fixed.bottom-0 {

@@ -1299,6 +1299,12 @@ export function ChatPage() {
     setMessages([]);
   };
 
+  useEffect(() => {
+    const handleNewChat = () => newChat();
+    window.addEventListener("gd:new-chat", handleNewChat);
+    return () => window.removeEventListener("gd:new-chat", handleNewChat);
+  });
+
   const deleteConversation = async (id: string) => {
     if (!user) return;
     if (!confirm("Delete this chat?")) return;
@@ -1411,31 +1417,14 @@ export function ChatPage() {
                     ? convos.find((c) => c.id === conversationId)?.title || "Chat"
                     : "New chat"}
                 </h1>
-                {docs.length > 0 && useLibrary && selectedDocs.length > 0 && (
-                  <span
-                    className="hidden sm:inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full bg-primary/15 text-primary border border-primary/30 ml-2"
-                    title={`${selectedDocs.length} study file${selectedDocs.length === 1 ? "" : "s"}`}
-                  >
-                    <BookOpen className="h-3 w-3" />
-                    {selectedDocs.length}
-                  </span>
-                )}
               </div>
-              <button
-                onClick={newChat}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:border-primary/40 xl:hidden"
-                title="New chat"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                New
-              </button>
             </div>
             <div className="chat-header-controls -mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] xl:mx-0 xl:gap-2 xl:overflow-visible xl:px-0 xl:pb-0 [&::-webkit-scrollbar]:hidden">
               <>
                 <button
                   onClick={() => setUseLibrary((v) => !v)}
                   title="Toggle file search"
-                  className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                  className={`hidden shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors sm:inline-flex ${
                     useLibrary
                       ? "border-primary/40 bg-primary/15 text-primary"
                       : "border-border text-muted-foreground hover:bg-surface-elevated"
@@ -1475,7 +1464,7 @@ export function ChatPage() {
                   }}
                   disabled={!useLibrary}
                   title="Choose files to search"
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground disabled:opacity-40"
+                  className="hidden shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground disabled:opacity-40 sm:inline-flex"
                 >
                   <FileText className="h-3.5 w-3.5" />
                   Files
@@ -1513,18 +1502,13 @@ export function ChatPage() {
 
         {/* Messages */}
         <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-3 pb-44 pt-5 sm:px-4 sm:pb-40 md:px-8 md:pt-8 lg:pb-36">
+          <div className="mx-auto max-w-3xl px-3 pb-32 pt-4 sm:px-4 sm:pb-40 md:px-8 md:pt-8 lg:pb-36">
             {loadingConvo && messages.length === 0 ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
               </div>
             ) : messages.length === 0 ? (
-              <EmptyState
-                name={profile.name || "there"}
-                onPick={(s) => send(s)}
-                hasDocs={docs.length > 0 && useLibrary}
-                mode={mode}
-              />
+              <EmptyState name={profile.name || "there"} onPick={(s) => send(s)} mode={mode} />
             ) : (
               <div className="space-y-6">
                 {messages.map((m, i) => (
@@ -1541,7 +1525,7 @@ export function ChatPage() {
         </div>
 
         {/* Composer */}
-        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-2 pt-6 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <div className="pointer-events-auto max-w-3xl mx-auto">
             {mode === "Visuals" && (
               <div className="mb-2 rounded-2xl border border-border bg-background/65 px-2.5 py-2 backdrop-blur-[2px] sm:rounded-[28px] sm:px-3">
@@ -1592,36 +1576,23 @@ export function ChatPage() {
                   </button>
 
                   {selectedDocs.length > 0 ? (
-                    selectedDocs.slice(0, 3).map((doc) => (
-                      <span
-                        key={doc.id}
-                        title={doc.file_name}
-                        className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-surface/80 px-2 py-1 text-xs text-foreground sm:max-w-[360px]"
-                      >
-                        <span className="truncate">{doc.file_name}</span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setSelectedDocIds((ids) => ids.filter((id) => id !== doc.id))
-                          }
-                          className="rounded-full text-muted-foreground hover:text-foreground"
-                          title="Remove file"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilePickerOpen(true)}
+                      title={selectedDocs.map((doc) => doc.file_name).join(", ")}
+                      className="inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-border bg-surface/80 px-2.5 py-1.5 text-left text-xs text-foreground"
+                    >
+                      <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">
+                        {selectedDocs[0]?.file_name}
+                        {selectedDocs.length > 1 ? ` +${selectedDocs.length - 1}` : ""}
                       </span>
-                    ))
+                    </button>
                   ) : docs.length === 0 ? (
                     <span className="text-xs text-muted-foreground">Your library is empty.</span>
                   ) : (
                     <span className="text-xs text-muted-foreground">
                       Pinpoint search will choose the strongest file matches.
-                    </span>
-                  )}
-
-                  {selectedDocs.length > 3 && (
-                    <span className="text-xs text-muted-foreground">
-                      +{selectedDocs.length - 3} more
                     </span>
                   )}
 
@@ -1666,15 +1637,7 @@ export function ChatPage() {
                   }
                 }}
                 rows={1}
-                placeholder={
-                  mode === "Visuals"
-                    ? "Describe what to visualize or animate..."
-                    : webSearch
-                      ? "Ask with web search..."
-                      : docs.length > 0 && useLibrary
-                        ? "Ask for the exact answer, page, or passage..."
-                        : "Ask a question or upload files to search precisely..."
-                }
+                placeholder=""
                 className="min-h-[44px] max-h-[180px] flex-1 resize-none rounded-2xl border border-input bg-background/70 px-4 py-2.5 text-sm backdrop-blur-[2px] focus:outline-none focus:ring-2 focus:ring-ring sm:rounded-[28px] sm:px-5"
                 style={{ height: "auto" }}
                 onInput={(e) => {
@@ -1718,7 +1681,7 @@ export function ChatPage() {
                 </button>
               )}
             </form>
-            <p className="mt-1.5 text-[11px] text-muted-foreground text-center">
+            <p className="mt-1.5 hidden text-center text-[11px] text-muted-foreground sm:block">
               G&D can be wrong. Always verify important work with your teacher, lecturer, or source
               material.
             </p>
@@ -1936,12 +1899,10 @@ function ConvoGroup({
 function EmptyState({
   name,
   onPick,
-  hasDocs,
   mode,
 }: {
   name: string;
   onPick: (s: string) => void;
-  hasDocs: boolean;
   mode: ChatMode;
 }) {
   const suggestions = mode === "Visuals" ? VISUAL_SUGGESTIONS : SUGGESTIONS;
@@ -1950,13 +1911,6 @@ function EmptyState({
     <div className="py-8 text-center sm:py-12">
       <AiMark size="lg" className="mb-5" />
       <h2 className="font-display text-4xl font-light leading-none sm:text-5xl">Ready, {name}</h2>
-      <p className="text-muted-foreground mt-1 text-balance max-w-md mx-auto">
-        {mode === "Visuals"
-          ? "Describe a topic, choose a file, or turn on Web to build an animated visual explanation."
-          : hasDocs
-            ? "Ask for the exact detail. I will search your files first, show the source, then explain."
-            : "Upload files in Library, then ask for the exact answer, page, passage, or comparison you need."}
-      </p>
       <div className="mx-auto mt-6 grid max-w-xl gap-2 sm:mt-8 sm:grid-cols-2">
         {suggestions.map((s) => (
           <button

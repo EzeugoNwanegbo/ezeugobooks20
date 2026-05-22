@@ -302,7 +302,7 @@ ${interlinkBlock}
 YOUR TASK:
 1. Search the document content first. Uploaded files and textbooks are the priority source.
 2. Start with "Exact answer:" and give the answer in one or two clear sentences.
-3. Then write "Where found:" and list document names plus page/chunk labels wherever available.
+3. Then write "Where found:" and list document names plus page/chunk labels wherever available. If there is no page label, keep the document name and chunk/source excerpt label.
 4. Then write "Evidence:" and include the relevant facts. Keep quotes short; prefer paraphrase with source labels.
 5. If the relevant info is not in the files, clearly say "I could not find an exact hit in your files" before adding any "[General knowledge]".
 6. Do not apply Simplified, Detailed, or Storytelling style. OpenAI will do that final explanation step.
@@ -366,6 +366,8 @@ RULES:
 - Preserve every fact from the research summary; do not drop important evidence.
 - Lead with the direct answer, then the source evidence, then the explanation.
 - Keep source references (document names / page numbers) where they appear in the summary.
+- For uploaded-file answers, include a short "**Source:**" line near the top using the document name and page/chunk label from the DeepSeek result. Do not hide the source in prose.
+- If a page number is not available, write the source as the document name plus the chunk/source excerpt label instead of omitting it.
 - If the summary says "[General knowledge]", keep that label so the student knows.
 - Write as if you are talking directly to ${p.name || "the student"} — warm, clear, encouraging.
 - Use markdown: bold key terms, short paragraphs, bullet lists where helpful.
@@ -1266,7 +1268,7 @@ DeepSeek document retrieval result:
 ${deepSeekText}
 """
 
-${curriculumGuidance ? `Web curriculum guidance used by DeepSeek:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer in ${body.mode} mode. Do not add facts that are not in the DeepSeek result. Keep document/page references visible.`,
+${curriculumGuidance ? `Web curriculum guidance used by DeepSeek:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer in ${body.mode} mode. Do not add facts that are not in the DeepSeek result. Include a **Source:** line near the top with the document name and page/chunk label from the DeepSeek result.`,
           },
         ],
         model: useWebCurriculum
