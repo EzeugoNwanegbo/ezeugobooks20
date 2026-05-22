@@ -30,6 +30,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "e4fb261a-6f77-43c4-8126-ace4b7195944"
+      }
+    },
+    "owner": "davezuggy"
   }
 }
