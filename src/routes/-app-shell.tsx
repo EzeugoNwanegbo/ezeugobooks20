@@ -291,52 +291,50 @@ function AppLayout() {
 
       {mobileMenuOpen && (
         <div
-          className="relative z-40 shrink-0 overflow-y-auto border-b border-[#2f2a22] bg-[#0e0d0b] px-3 pb-4 pt-3 text-[#f5f0e8] shadow-[0_18px_40px_rgba(0,0,0,0.35)] md:hidden"
+          className="relative z-40 shrink-0 overflow-y-auto border-b border-[#2f2a22] bg-[#0e0d0b] px-3 pb-3 pt-2.5 text-[#f5f0e8] shadow-[0_18px_40px_rgba(0,0,0,0.35)] md:hidden"
           style={{ maxHeight: "calc(100dvh - 3rem - env(safe-area-inset-top))" }}
         >
-          <div className="mx-auto flex w-full max-w-md flex-col gap-3">
+          <div className="mx-auto flex w-full max-w-sm flex-col gap-2">
             <div>
               <button
                 type="button"
                 onClick={openNewChat}
-                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#f5f0e8] px-3 py-2.5 text-[15px] font-bold text-[#0e0d0b] shadow-[0_12px_32px_rgba(245,240,232,0.12)]"
+                className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#f5f0e8] px-3 py-2 text-sm font-bold text-[#0e0d0b] shadow-[0_12px_32px_rgba(245,240,232,0.12)]"
               >
-                <Plus className="h-4 w-4" />
+                <Plus className="h-3.5 w-3.5" />
                 New chat
               </button>
             </div>
 
-            <nav className="grid gap-2">
+            <nav className="grid gap-1.5">
               <MobileDrawerNavItem
                 active={location.pathname.includes("chat")}
-                icon={<MessageSquare className="h-4 w-4" />}
+                icon={<MessageSquare className="h-3.5 w-3.5" />}
                 label="Chat"
                 onPick={() => goToMobileRoute("/app/chat")}
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("library")}
-                icon={<BookOpen className="h-4 w-4" />}
+                icon={<BookOpen className="h-3.5 w-3.5" />}
                 label="Library"
                 onPick={() => goToMobileRoute("/app/library")}
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("studybody")}
-                icon={<Map className="h-4 w-4" />}
+                icon={<Map className="h-3.5 w-3.5" />}
                 label="StudyBody"
                 onPick={() => goToMobileRoute("/app/studybody")}
               />
             </nav>
 
-            <div className="border-t border-[#2f2a22] pt-3">
-              <p className="px-1 pb-2 text-[11px] font-bold uppercase tracking-wide text-[#d8d0c2]">
+            <div className="border-t border-[#2f2a22] pt-2">
+              <p className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wide text-[#d8d0c2]">
                 Chat history
               </p>
               {mobileConvos.length === 0 ? (
-                <p className="px-1 py-4 text-sm font-medium text-[#d8d0c2]">
-                  Your past chats will appear here.
-                </p>
+                <p className="px-1 py-1.5 text-xs font-medium text-[#d8d0c2]">No chats yet.</p>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <MobileConvoGroup
                     title="Today"
                     items={groupedMobileConvos.today}
@@ -359,15 +357,15 @@ function AppLayout() {
               )}
             </div>
 
-            <div className="border-t border-[#2f2a22] pt-3">
-              <div className="mb-2 px-2">
-                <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
-                <div className="truncate text-xs text-[#d8d0c2]">
+            <div className="border-t border-[#2f2a22] pt-2">
+              <div className="mb-1 px-2">
+                <div className="truncate text-xs font-semibold">{profile.name || "Student"}</div>
+                <div className="truncate text-[11px] text-[#d8d0c2]">
                   {[profile.year, profile.university].filter(Boolean).join(" - ")}
                 </div>
               </div>
-              <div className="mb-2 flex items-center justify-between rounded-lg px-2 py-1.5">
-                <span className="text-sm font-semibold text-[#f5f0e8]">Appearance</span>
+              <div className="mb-1 flex items-center justify-between rounded-lg px-2 py-1">
+                <span className="text-xs font-semibold text-[#f5f0e8]">Appearance</span>
                 <ThemeToggle />
               </div>
               <button
@@ -377,9 +375,9 @@ function AppLayout() {
                   setMobileMenuOpen(false);
                   navigate({ to: "/" });
                 }}
-                className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm font-semibold text-[#f5f0e8] hover:bg-[#1f1c17]"
+                className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#f5f0e8] hover:bg-[#1f1c17]"
               >
-                <LogOut className="h-4 w-4" />
+                <LogOut className="h-3.5 w-3.5" />
                 Sign out
               </button>
             </div>
@@ -409,7 +407,7 @@ function MobileDrawerNavItem({
     <button
       type="button"
       onClick={onPick}
-      className={`flex min-h-12 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[15px] font-bold transition-colors ${
+      className={`flex min-h-10 w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-bold transition-colors ${
         active
           ? "border border-[#f5f0e8] bg-[#f5f0e8] text-[#0e0d0b] shadow-[0_12px_28px_rgba(245,240,232,0.12)]"
           : "border border-[#d8d0c2] bg-[#f5f0e8] text-[#0e0d0b] shadow-[0_8px_22px_rgba(0,0,0,0.24)] hover:bg-white"
@@ -436,7 +434,7 @@ function MobileConvoGroup({
 
   return (
     <section>
-      <p className="px-1 pb-1 text-[11px] font-bold uppercase tracking-wide text-[#d8d0c2]">
+      <p className="px-1 pb-0.5 text-[10px] font-bold uppercase tracking-wide text-[#d8d0c2]">
         {title}
       </p>
       <div className="space-y-1">
@@ -445,7 +443,7 @@ function MobileConvoGroup({
             key={item.id}
             type="button"
             onClick={() => onPick(item.id)}
-            className={`w-full rounded-lg border px-3 py-2 text-left text-sm font-semibold transition-colors ${
+            className={`w-full rounded-lg border px-3 py-1.5 text-left text-xs font-semibold transition-colors ${
               activeId === item.id
                 ? "border-[#f5f0e8] bg-[#f5f0e8] text-[#0e0d0b]"
                 : "border-[#2f2a22] bg-[#1f1c17] text-[#f5f0e8] hover:border-[#d8d0c2]"
