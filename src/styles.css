@@ -4,8 +4,15 @@
 @import "tw-animate-css";
 
 /* ── Global mobile-first resets ── */
-*, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 
 @custom-variant dark (&:is(.dark *));
 
@@ -210,7 +217,9 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
 /* Touch-friendly minimums on mobile */
 @media (max-width: 768px) {
-  button, [role="button"], a {
+  button,
+  [role="button"],
+  a {
     min-height: 36px;
   }
 }
@@ -1119,5 +1128,48 @@ a.bg-gradient-primary > * {
   .luxury-app-shell {
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* Expo native shell: remove browser-like chrome while keeping the G&D tone. */
+html.gd-native-app,
+html.gd-native-app body {
+  background: var(--background);
+  overscroll-behavior: none;
+}
+
+html.gd-native-app .luxury-auth-page header,
+html.gd-native-app .luxury-app-shell > div.fixed.top-0 {
+  display: none !important;
+}
+
+html.gd-native-app .luxury-auth-page main {
+  align-items: center;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom)) !important;
+  padding-top: max(1rem, env(safe-area-inset-top)) !important;
+}
+
+html.gd-native-app .luxury-auth-page .luxury-panel {
+  border-radius: 18px;
+  box-shadow: none;
+}
+
+html.gd-native-app .luxury-app-shell main {
+  padding-top: max(0.5rem, env(safe-area-inset-top)) !important;
+}
+
+html.gd-native-app .luxury-app-shell > nav.fixed.bottom-0 {
+  border-top-color: rgba(245, 240, 232, 0.08);
+  box-shadow: 0 -18px 34px rgba(0, 0, 0, 0.28);
+}
+
+html.gd-native-app .luxury-auth-page .animate-spin,
+html.gd-native-app .luxury-app-shell .animate-spin {
+  display: none !important;
+}
+
+@media (max-width: 640px) {
+  html.gd-native-app .chat-header-controls {
+    flex-wrap: nowrap;
   }
 }
