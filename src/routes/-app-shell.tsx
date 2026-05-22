@@ -407,7 +407,7 @@ function MobileDrawerNavItem({
     <button
       type="button"
       onClick={onPick}
-      className={`flex min-h-10 w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-bold transition-colors ${
+      className={`mx-auto flex min-h-10 w-[78%] max-w-[16rem] items-center justify-center gap-2.5 rounded-lg px-3 py-2 text-sm font-bold transition-colors ${
         active
           ? "border border-[#f5f0e8] bg-[#f5f0e8] text-[#0e0d0b] shadow-[0_12px_28px_rgba(245,240,232,0.12)]"
           : "border border-[#d8d0c2] bg-[#f5f0e8] text-[#0e0d0b] shadow-[0_8px_22px_rgba(0,0,0,0.24)] hover:bg-white"
