@@ -147,6 +147,11 @@ function AppLayout() {
     window.setTimeout(() => window.dispatchEvent(new Event("gd:new-chat")), 0);
   };
 
+  const goToMobileRoute = (to: "/app/chat" | "/app/library" | "/app/studybody") => {
+    setMobileMenuOpen(false);
+    navigate({ to });
+  };
+
   const navItem = (to: string, icon: ReactNode, label: string) => {
     const active = location.pathname.startsWith(to);
     return (
@@ -286,65 +291,44 @@ function AppLayout() {
 
       {mobileMenuOpen && (
         <div
-          className="fixed inset-x-0 bottom-0 z-50 bg-black/70 md:hidden"
-          style={{ top: "calc(3rem + env(safe-area-inset-top))" }}
+          className="relative z-40 shrink-0 overflow-y-auto border-b border-[#2f2a22] bg-[#0e0d0b] px-3 pb-4 pt-3 text-[#f5f0e8] shadow-[0_18px_40px_rgba(0,0,0,0.35)] md:hidden"
+          style={{ maxHeight: "calc(100dvh - 3rem - env(safe-area-inset-top))" }}
         >
-          <button
-            type="button"
-            className="absolute inset-0 cursor-default"
-            aria-label="Close menu"
-            onClick={() => setMobileMenuOpen(false)}
-          />
-          <div className="absolute bottom-0 left-0 top-0 flex w-[88vw] max-w-sm flex-col border-r border-[#2f2a22] bg-[#0e0d0b] text-[#f5f0e8] shadow-[18px_0_46px_rgba(0,0,0,0.38)]">
-            <div className="flex items-center justify-between border-b border-[#2f2a22] px-4 py-3">
-              <span className="luxury-brand-text small">G&D</span>
-              <button
-                type="button"
-                onClick={() => setMobileMenuOpen(false)}
-                className="rounded-lg p-2 text-[#f5f0e8] hover:bg-[#1f1c17]"
-                aria-label="Close menu"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="border-b border-[#2f2a22] p-3">
+          <div className="mx-auto flex w-full max-w-md flex-col gap-3">
+            <div>
               <button
                 type="button"
                 onClick={openNewChat}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#f5f0e8] px-3 py-2.5 text-sm font-bold text-[#0e0d0b] shadow-[0_12px_32px_rgba(245,240,232,0.12)]"
+                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#f5f0e8] px-3 py-2.5 text-[15px] font-bold text-[#0e0d0b] shadow-[0_12px_32px_rgba(245,240,232,0.12)]"
               >
                 <Plus className="h-4 w-4" />
                 New chat
               </button>
             </div>
 
-            <nav className="space-y-2 border-b border-[#2f2a22] p-3">
+            <nav className="grid gap-2">
               <MobileDrawerNavItem
-                to="/app/chat"
                 active={location.pathname.includes("chat")}
                 icon={<MessageSquare className="h-4 w-4" />}
                 label="Chat"
-                onPick={() => setMobileMenuOpen(false)}
+                onPick={() => goToMobileRoute("/app/chat")}
               />
               <MobileDrawerNavItem
-                to="/app/library"
                 active={location.pathname.includes("library")}
                 icon={<BookOpen className="h-4 w-4" />}
                 label="Library"
-                onPick={() => setMobileMenuOpen(false)}
+                onPick={() => goToMobileRoute("/app/library")}
               />
               <MobileDrawerNavItem
-                to="/app/studybody"
                 active={location.pathname.includes("studybody")}
                 icon={<Map className="h-4 w-4" />}
                 label="StudyBody"
-                onPick={() => setMobileMenuOpen(false)}
+                onPick={() => goToMobileRoute("/app/studybody")}
               />
             </nav>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              <p className="px-1 pb-2 text-xs font-bold uppercase tracking-wide text-[#d8d0c2]">
+            <div className="border-t border-[#2f2a22] pt-3">
+              <p className="px-1 pb-2 text-[11px] font-bold uppercase tracking-wide text-[#d8d0c2]">
                 Chat history
               </p>
               {mobileConvos.length === 0 ? (
@@ -375,7 +359,7 @@ function AppLayout() {
               )}
             </div>
 
-            <div className="border-t border-[#2f2a22] p-3">
+            <div className="border-t border-[#2f2a22] pt-3">
               <div className="mb-2 px-2">
                 <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
                 <div className="truncate text-xs text-[#d8d0c2]">
@@ -411,23 +395,21 @@ function AppLayout() {
 }
 
 function MobileDrawerNavItem({
-  to,
   active,
   icon,
   label,
   onPick,
 }: {
-  to: string;
   active: boolean;
   icon: ReactNode;
   label: string;
   onPick: () => void;
 }) {
   return (
-    <Link
-      to={to}
+    <button
+      type="button"
       onClick={onPick}
-      className={`flex min-h-12 items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] font-bold transition-colors ${
+      className={`flex min-h-12 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[15px] font-bold transition-colors ${
         active
           ? "border border-[#f5f0e8] bg-[#f5f0e8] text-[#0e0d0b] shadow-[0_12px_28px_rgba(245,240,232,0.12)]"
           : "border border-[#d8d0c2] bg-[#f5f0e8] text-[#0e0d0b] shadow-[0_8px_22px_rgba(0,0,0,0.24)] hover:bg-white"
@@ -435,7 +417,7 @@ function MobileDrawerNavItem({
     >
       {icon}
       {label}
-    </Link>
+    </button>
   );
 }
 
