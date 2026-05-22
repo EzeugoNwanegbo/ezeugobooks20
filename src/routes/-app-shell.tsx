@@ -254,7 +254,7 @@ function AppLayout() {
       </aside>
 
       <div
-        className="mobile-app-topbar sticky top-0 z-30 flex shrink-0 items-center justify-between border-b border-border bg-background px-3 shadow-[0_10px_24px_rgba(0,0,0,0.18)] md:hidden"
+        className="mobile-app-topbar sticky top-0 z-[60] flex shrink-0 items-center justify-between border-b border-border bg-background px-3 shadow-[0_10px_24px_rgba(0,0,0,0.18)] md:hidden"
         style={{
           height: "calc(3rem + env(safe-area-inset-top))",
           paddingTop: "env(safe-area-inset-top)",
@@ -262,32 +262,41 @@ function AppLayout() {
       >
         <button
           type="button"
-          onClick={() => setMobileMenuOpen(true)}
+          onClick={() => setMobileMenuOpen((open) => !open)}
           className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-primary/25 bg-surface text-foreground"
-          aria-label="Open menu"
-          title="Menu"
+          aria-expanded={mobileMenuOpen}
+          aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+          title={mobileMenuOpen ? "Close menu" : "Menu"}
         >
-          <Menu className="h-5 w-5" />
+          {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
         <Link to="/app/chat" className="luxury-brand-text small">
           G&D
         </Link>
-        <span className="h-9 w-9" aria-hidden />
+        <button
+          type="button"
+          onClick={openNewChat}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-surface text-foreground"
+          aria-label="New chat"
+          title="New chat"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
       </div>
 
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] md:hidden">
+        <div
+          className="fixed inset-x-0 bottom-0 z-50 bg-black/70 md:hidden"
+          style={{ top: "calc(3rem + env(safe-area-inset-top))" }}
+        >
           <button
             type="button"
             className="absolute inset-0 cursor-default"
             aria-label="Close menu"
             onClick={() => setMobileMenuOpen(false)}
           />
-          <div
-            className="absolute bottom-0 left-0 top-0 flex w-[84vw] max-w-sm flex-col border-r border-border bg-background shadow-elegant"
-            style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
-          >
-            <div className="flex items-center justify-between border-b border-border px-4 pb-3">
+          <div className="absolute bottom-0 left-0 top-0 flex w-[88vw] max-w-sm flex-col border-r border-border bg-background text-foreground shadow-[18px_0_46px_rgba(0,0,0,0.38)]">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <span className="luxury-brand-text small">G&D</span>
               <button
                 type="button"
@@ -303,7 +312,7 @@ function AppLayout() {
               <button
                 type="button"
                 onClick={openNewChat}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-primary px-3 py-2.5 text-sm font-medium text-primary-foreground shadow-glow"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-primary px-3 py-2.5 text-sm font-semibold text-primary-foreground shadow-glow"
               >
                 <Plus className="h-4 w-4" />
                 New chat
@@ -369,7 +378,7 @@ function AppLayout() {
             <div className="border-t border-border p-3">
               <div className="mb-2 px-2">
                 <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
-                <div className="truncate text-xs text-muted-foreground">
+                <div className="truncate text-xs text-foreground/70">
                   {[profile.year, profile.university].filter(Boolean).join(" - ")}
                 </div>
               </div>
@@ -420,8 +429,8 @@ function MobileDrawerNavItem({
       onClick={onPick}
       className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
         active
-          ? "border border-primary/35 bg-primary/15 text-foreground"
-          : "border border-border/70 bg-surface/45 text-foreground hover:border-primary/25 hover:bg-surface-elevated"
+          ? "border border-primary/50 bg-primary/20 text-foreground shadow-[0_0_0_1px_rgba(245,240,232,0.03)]"
+          : "border border-border bg-surface text-foreground shadow-sm hover:border-primary/35 hover:bg-surface-elevated"
       }`}
     >
       {icon}
@@ -456,8 +465,8 @@ function MobileConvoGroup({
             onClick={() => onPick(item.id)}
             className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
               activeId === item.id
-                ? "bg-primary/15 text-foreground"
-                : "text-foreground/85 hover:bg-surface-elevated hover:text-foreground"
+                ? "bg-primary/20 text-foreground"
+                : "bg-surface/70 text-foreground hover:bg-surface-elevated"
             }`}
           >
             <span className="block truncate">{item.title || "New conversation"}</span>
