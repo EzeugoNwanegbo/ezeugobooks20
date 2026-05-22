@@ -4,6 +4,7 @@ import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import { WebView } from "react-native-webview";
 
 const FALLBACK_WEB_URL = "http://192.168.100.16:3001/";
+const WEB_APP_CACHE_REV = "mobile-menu-glimpse-fa16163";
 
 const nativeAppBootstrap = `
   (function () {
@@ -22,6 +23,15 @@ function normalizeUrl(value: string) {
   return `https://${trimmed}`;
 }
 
+function withCacheBust(url: string, rev: string) {
+  const hashIndex = url.indexOf("#");
+  const base = hashIndex === -1 ? url : url.slice(0, hashIndex);
+  const hash = hashIndex === -1 ? "" : url.slice(hashIndex);
+  const separator = base.includes("?") ? "&" : "?";
+
+  return `${base}${separator}gd_mobile_rev=${encodeURIComponent(rev)}${hash}`;
+}
+
 export default function App() {
   const webUrl = useMemo(
     () => normalizeUrl(process.env.EXPO_PUBLIC_GD_WEB_URL || FALLBACK_WEB_URL),
@@ -30,6 +40,10 @@ export default function App() {
   const webViewRef = useRef<WebView>(null);
   const [webViewKey, setWebViewKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const webViewUrl = useMemo(
+    () => withCacheBust(webUrl, `${WEB_APP_CACHE_REV}-${webViewKey}`),
+    [webUrl, webViewKey],
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -63,7 +77,8 @@ export default function App() {
             allowsBackForwardNavigationGestures
             allowsLinkPreview={false}
             bounces={false}
-            cacheEnabled
+            cacheEnabled={false}
+            cacheMode="LOAD_NO_CACHE"
             domStorageEnabled
             incognito={false}
             injectedJavaScriptBeforeContentLoaded={nativeAppBootstrap}
@@ -77,7 +92,7 @@ export default function App() {
             scrollEnabled
             setSupportMultipleWindows={false}
             sharedCookiesEnabled
-            source={{ uri: webUrl }}
+            source={{ uri: webViewUrl }}
             style={styles.webView}
             thirdPartyCookiesEnabled
           />
