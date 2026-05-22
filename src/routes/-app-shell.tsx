@@ -291,10 +291,13 @@ function AppLayout() {
 
       {mobileMenuOpen && (
         <div
-          className="relative z-40 shrink-0 overflow-y-auto border-b border-[#2f2a22] bg-[#0e0d0b] px-3 pb-3 pt-2.5 text-[#f5f0e8] shadow-[0_18px_40px_rgba(0,0,0,0.35)] md:hidden"
-          style={{ maxHeight: "calc(100dvh - 3rem - env(safe-area-inset-top))" }}
+          className="fixed bottom-0 left-0 z-50 w-[74vw] max-w-[18rem] overflow-y-auto rounded-br-xl border-r border-t border-[#2f2a22] bg-[#0e0d0b] px-3 pb-3 pt-2.5 text-[#f5f0e8] shadow-[18px_18px_44px_rgba(0,0,0,0.38)] md:hidden"
+          style={{
+            maxHeight: "calc(100dvh - 3rem - env(safe-area-inset-top))",
+            top: "calc(3rem + env(safe-area-inset-top))",
+          }}
         >
-          <div className="mx-auto flex w-full max-w-xs flex-col gap-2">
+          <div className="flex w-full flex-col gap-2">
             <div>
               <button
                 type="button"
