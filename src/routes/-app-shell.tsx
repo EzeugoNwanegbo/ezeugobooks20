@@ -295,31 +295,31 @@ function AppLayout() {
             aria-label="Close menu"
             onClick={() => setMobileMenuOpen(false)}
           />
-          <div className="absolute bottom-0 left-0 top-0 flex w-[88vw] max-w-sm flex-col border-r border-border bg-background text-foreground shadow-[18px_0_46px_rgba(0,0,0,0.38)]">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="absolute bottom-0 left-0 top-0 flex w-[88vw] max-w-sm flex-col border-r border-[#2f2a22] bg-[#0e0d0b] text-[#f5f0e8] shadow-[18px_0_46px_rgba(0,0,0,0.38)]">
+            <div className="flex items-center justify-between border-b border-[#2f2a22] px-4 py-3">
               <span className="luxury-brand-text small">G&D</span>
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(false)}
-                className="rounded-lg p-2 text-foreground hover:bg-surface-elevated"
+                className="rounded-lg p-2 text-[#f5f0e8] hover:bg-[#1f1c17]"
                 aria-label="Close menu"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="border-b border-border p-3">
+            <div className="border-b border-[#2f2a22] p-3">
               <button
                 type="button"
                 onClick={openNewChat}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-primary px-3 py-2.5 text-sm font-semibold text-primary-foreground shadow-glow"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#f5f0e8] px-3 py-2.5 text-sm font-bold text-[#0e0d0b] shadow-[0_12px_32px_rgba(245,240,232,0.12)]"
               >
                 <Plus className="h-4 w-4" />
                 New chat
               </button>
             </div>
 
-            <nav className="space-y-1 border-b border-border p-3">
+            <nav className="space-y-2 border-b border-[#2f2a22] p-3">
               <MobileDrawerNavItem
                 to="/app/chat"
                 active={location.pathname.includes("chat")}
@@ -344,11 +344,11 @@ function AppLayout() {
             </nav>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              <p className="px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-foreground/70">
+              <p className="px-1 pb-2 text-xs font-bold uppercase tracking-wide text-[#d8d0c2]">
                 Chat history
               </p>
               {mobileConvos.length === 0 ? (
-                <p className="px-1 py-4 text-sm text-foreground/70">
+                <p className="px-1 py-4 text-sm font-medium text-[#d8d0c2]">
                   Your past chats will appear here.
                 </p>
               ) : (
@@ -375,15 +375,15 @@ function AppLayout() {
               )}
             </div>
 
-            <div className="border-t border-border p-3">
+            <div className="border-t border-[#2f2a22] p-3">
               <div className="mb-2 px-2">
                 <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
-                <div className="truncate text-xs text-foreground/70">
+                <div className="truncate text-xs text-[#d8d0c2]">
                   {[profile.year, profile.university].filter(Boolean).join(" - ")}
                 </div>
               </div>
               <div className="mb-2 flex items-center justify-between rounded-lg px-2 py-1.5">
-                <span className="text-sm font-medium text-foreground">Appearance</span>
+                <span className="text-sm font-semibold text-[#f5f0e8]">Appearance</span>
                 <ThemeToggle />
               </div>
               <button
@@ -393,7 +393,7 @@ function AppLayout() {
                   setMobileMenuOpen(false);
                   navigate({ to: "/" });
                 }}
-                className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm font-medium text-foreground hover:bg-surface-elevated"
+                className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm font-semibold text-[#f5f0e8] hover:bg-[#1f1c17]"
               >
                 <LogOut className="h-4 w-4" />
                 Sign out
@@ -427,10 +427,10 @@ function MobileDrawerNavItem({
     <Link
       to={to}
       onClick={onPick}
-      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+      className={`flex min-h-12 items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] font-bold transition-colors ${
         active
-          ? "border border-primary/50 bg-primary/20 text-foreground shadow-[0_0_0_1px_rgba(245,240,232,0.03)]"
-          : "border border-border bg-surface text-foreground shadow-sm hover:border-primary/35 hover:bg-surface-elevated"
+          ? "border border-[#f5f0e8] bg-[#f5f0e8] text-[#0e0d0b] shadow-[0_12px_28px_rgba(245,240,232,0.12)]"
+          : "border border-[#d8d0c2] bg-[#f5f0e8] text-[#0e0d0b] shadow-[0_8px_22px_rgba(0,0,0,0.24)] hover:bg-white"
       }`}
     >
       {icon}
@@ -454,7 +454,7 @@ function MobileConvoGroup({
 
   return (
     <section>
-      <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/65">
+      <p className="px-1 pb-1 text-[11px] font-bold uppercase tracking-wide text-[#d8d0c2]">
         {title}
       </p>
       <div className="space-y-1">
@@ -463,10 +463,10 @@ function MobileConvoGroup({
             key={item.id}
             type="button"
             onClick={() => onPick(item.id)}
-            className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+            className={`w-full rounded-lg border px-3 py-2 text-left text-sm font-semibold transition-colors ${
               activeId === item.id
-                ? "bg-primary/20 text-foreground"
-                : "bg-surface/70 text-foreground hover:bg-surface-elevated"
+                ? "border-[#f5f0e8] bg-[#f5f0e8] text-[#0e0d0b]"
+                : "border-[#2f2a22] bg-[#1f1c17] text-[#f5f0e8] hover:border-[#d8d0c2]"
             }`}
           >
             <span className="block truncate">{item.title || "New conversation"}</span>
