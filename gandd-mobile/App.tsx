@@ -4,7 +4,7 @@ import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import { WebView } from "react-native-webview";
 
 const FALLBACK_WEB_URL = "http://192.168.100.16:3001/";
-const WEB_APP_CACHE_REV = "mobile-menu-glimpse-fa16163";
+const WEB_APP_CACHE_REV = "mobile-split-menu-peek-v2";
 
 const nativeAppBootstrap = `
   (function () {

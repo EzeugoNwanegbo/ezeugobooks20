@@ -289,22 +289,9 @@ function AppLayout() {
         </button>
       </div>
 
-      {mobileMenuOpen && (
-        <>
-          <button
-            type="button"
-            className="fixed bottom-0 right-0 z-40 bg-transparent md:hidden"
-            style={{ top: "3rem", width: "42vw" }}
-            aria-label="Close menu"
-            onClick={() => setMobileMenuOpen(false)}
-          />
-          <div
-            className="fixed bottom-0 left-0 z-50 w-[58vw] min-w-[12.5rem] max-w-[14.5rem] overflow-y-auto rounded-br-xl border-r border-t border-[#2f2a22] bg-[#0e0d0b] px-2.5 pb-3 pt-1.5 text-[#f5f0e8] shadow-[18px_18px_44px_rgba(0,0,0,0.38)] md:hidden"
-            style={{
-              maxHeight: "calc(100dvh - 3rem)",
-              top: "3rem",
-            }}
-          >
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        {mobileMenuOpen && (
+          <aside className="relative z-30 flex w-[58vw] min-w-[12.5rem] max-w-[14.5rem] shrink-0 flex-col overflow-y-auto border-r border-t border-[#2f2a22] bg-[#0e0d0b] px-2.5 pb-3 pt-1.5 text-[#f5f0e8] shadow-[18px_0_36px_rgba(0,0,0,0.34)] md:hidden">
             <div className="flex w-full flex-col gap-2">
               <div>
                 <button
@@ -395,17 +382,13 @@ function AppLayout() {
                 </button>
               </div>
             </div>
-          </div>
-        </>
-      )}
+          </aside>
+        )}
 
-      <main
-        className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-transform duration-200 ease-out md:pb-0 ${
-          mobileMenuOpen ? "max-md:translate-x-14 max-md:scale-[0.985] max-md:opacity-90" : ""
-        }`}
-      >
-        <Outlet />
-      </main>
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:pb-0">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }
