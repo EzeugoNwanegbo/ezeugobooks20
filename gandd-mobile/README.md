@@ -44,13 +44,37 @@ For normal testing, set `EXPO_PUBLIC_GD_WEB_URL` to the deployed G&D website:
 EXPO_PUBLIC_GD_WEB_URL=https://your-gandd-site.com
 ```
 
-## App Store path
+## Google Play path
+
+Before building for Google Play, set `EXPO_PUBLIC_GD_WEB_URL` to the live HTTPS
+G&D website. Do not use a laptop IP address or localhost for the Play Store
+build.
+
+Create the Android App Bundle:
+
+```bash
+eas build --platform android --profile production
+```
+
+The production profile creates an `.aab`, which is the upload format for Google
+Play. The preview profile creates an `.apk` for direct phone testing:
+
+```bash
+eas build --platform android --profile preview
+```
+
+To submit with EAS, connect a Google Play service account first, then run:
+
+```bash
+eas submit --platform android --profile production
+```
+
+## iOS App Store path
 
 To ship this as an iPhone app, use EAS Build:
 
 ```bash
-npx eas build:configure
-npx eas build --platform ios
+eas build --platform ios
 ```
 
 You will need an Apple Developer account for TestFlight and App Store release.

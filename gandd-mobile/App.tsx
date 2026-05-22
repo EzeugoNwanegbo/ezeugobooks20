@@ -3,7 +3,7 @@ import { useMemo, useRef, useState } from "react";
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import { WebView } from "react-native-webview";
 
-const FALLBACK_WEB_URL = "http://192.168.100.16:3001/";
+const FALLBACK_WEB_URL = "";
 const WEB_APP_CACHE_REV = "mobile-split-menu-peek-v2";
 
 const nativeAppBootstrap = `
@@ -16,8 +16,8 @@ const nativeAppBootstrap = `
   true;
 `;
 
-function normalizeUrl(value: string) {
-  const trimmed = value.trim();
+function normalizeUrl(value?: string) {
+  const trimmed = (value || FALLBACK_WEB_URL).trim();
   if (!trimmed) return FALLBACK_WEB_URL;
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   return `https://${trimmed}`;
@@ -44,21 +44,22 @@ export default function App() {
     () => withCacheBust(webUrl, `${WEB_APP_CACHE_REV}-${webViewKey}`),
     [webUrl, webViewKey],
   );
+  const displayError = error || (!webUrl ? "The G&D website URL is not configured." : null);
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
       <View style={styles.shell}>
-        {error ? (
+        {displayError ? (
           <View style={styles.errorState}>
             <View style={styles.mark}>
               <Text style={styles.markText}>G&D</Text>
             </View>
             <Text style={styles.errorTitle}>G&D could not open</Text>
-            <Text style={styles.errorText}>{error}</Text>
+            <Text style={styles.errorText}>{displayError}</Text>
             <Text style={styles.errorHint}>
-              Keep your iPhone and laptop on the same Wi-Fi when testing a local address. For the
-              real app, use your deployed G&D website URL.
+              For local testing, set EXPO_PUBLIC_GD_WEB_URL in .env. For Play Store builds, use the
+              deployed HTTPS website URL.
             </Text>
             <Pressable
               onPress={() => {
