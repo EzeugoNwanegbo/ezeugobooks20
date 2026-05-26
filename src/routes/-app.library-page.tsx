@@ -165,33 +165,76 @@ export function LibraryPage() {
       let extracted = "";
       let pageCount = 0;
       const lowerName = file.name.toLowerCase();
+      const isImage =
+        file.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(lowerName);
+      const isText = file.type.startsWith("text/") || lowerName.endsWith(".txt");
 
-      // iOS often reports PDFs as application/octet-stream or other non-standard
-      // MIME types. Check MIME type, extension, then magic bytes (%PDF header).
+      // iOS often reports PDFs as application/octet-stream or with no MIME at
+      // all (iCloud Drive). Check MIME, extension, then scan first 1KB for the
+      // "%PDF-" header — Acrobat-compatible tolerance for leading garbage.
       let isPdf =
         file.type === "application/pdf" ||
         file.type.includes("pdf") ||
         lowerName.endsWith(".pdf");
-      if (!isPdf && file.size >= 4) {
-        const header = new Uint8Array(await file.slice(0, 4).arrayBuffer());
-        isPdf = header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46;
+      if (!isPdf && !isImage && !isText && file.size >= 5) {
+        const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
+        for (let i = 0; i <= head.length - 5; i++) {
+          if (
+            head[i] === 0x25 &&
+            head[i + 1] === 0x50 &&
+            head[i + 2] === 0x44 &&
+            head[i + 3] === 0x46 &&
+            head[i + 4] === 0x2d
+          ) {
+            isPdf = true;
+            break;
+          }
+        }
       }
 
       if (isPdf) {
         const r = await extractPdfText(file);
         extracted = r.text;
         pageCount = r.pageCount;
-      } else if (file.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(file.name)) {
+      } else if (isImage) {
         setProgress("Reading image text in your browser...");
         const r = await extractImageText(file, (status, percent) => {
           setProgress(percent === undefined ? status : `${status} (${percent}%)`);
         });
         extracted = r.text;
         pageCount = r.pageCount;
-      } else if (file.type.startsWith("text/")) {
+      } else if (isText) {
         extracted = await file.text();
+      } else if (file.size > 0) {
+        // Last-resort fallback for unknown binaries (e.g. iCloud Drive PDFs
+        // with no extension, no MIME, and leading bytes before %PDF). Let
+        // pdfjs decide — it throws a clean error if it isn't really a PDF.
+        try {
+          const r = await extractPdfText(file);
+          extracted = r.text;
+          pageCount = r.pageCount;
+          isPdf = true;
+        } catch (probeErr) {
+          const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+          const hex = Array.from(head)
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join(" ");
+          console.warn("Unrecognised upload", {
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            head: hex,
+            probeErr,
+          });
+          toast.error(
+            `Couldn't read this file as a PDF, text, or image (type: ${file.type || "unknown"}, ${(file.size / 1024 / 1024).toFixed(1)} MB). On iPhone, try opening it in Files and using Share → Save to Files before uploading.`,
+          );
+          setUploading(false);
+          setProgress("");
+          return;
+        }
       } else {
-        toast.error("Only PDF, text, and image files are supported right now.");
+        toast.error("That file looks empty. Try a different one.");
         setUploading(false);
         setProgress("");
         return;
