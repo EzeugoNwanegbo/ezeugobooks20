@@ -3,7 +3,6 @@ import { useSearch } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { extractPdfText } from "@/lib/pdf";
-import { extractImageText } from "@/lib/image-ocr";
 import { chunkDocumentText, documentPreview, type DocumentChunkInput } from "@/lib/document-chunks";
 import { toast } from "sonner";
 import {
@@ -77,18 +76,7 @@ async function suggestFolder(
 
 function getUploadErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) return "Upload failed";
-
-  const message = error.message || "Upload failed";
-  const normalized = message.toLowerCase();
-
-  if (
-    normalized.includes("undefined is not a function") ||
-    normalized.includes("is not a function")
-  ) {
-    return "This browser could not read that file. Try updating the browser, saving the document as a standard PDF, or uploading a text file instead.";
-  }
-
-  return message;
+  return error.message || "Upload failed";
 }
 
 export function LibraryPage() {
@@ -197,6 +185,11 @@ export function LibraryPage() {
         extracted = r.text;
         pageCount = r.pageCount;
       } else if (isImage) {
+        setProgress("Loading OCR engine...");
+        // Lazy-import tesseract so PDF/text uploads don't pay the cost
+        // (and aren't blocked when the OCR bundle fails to load on flaky
+        // mobile networks).
+        const { extractImageText } = await import("@/lib/image-ocr");
         setProgress("Reading image text in your browser...");
         const r = await extractImageText(file, (status, percent) => {
           setProgress(percent === undefined ? status : `${status} (${percent}%)`);
