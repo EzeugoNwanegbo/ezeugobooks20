@@ -165,7 +165,19 @@ export function LibraryPage() {
       let extracted = "";
       let pageCount = 0;
       const lowerName = file.name.toLowerCase();
-      if (file.type === "application/pdf" || lowerName.endsWith(".pdf")) {
+
+      // iOS often reports PDFs as application/octet-stream or other non-standard
+      // MIME types. Check MIME type, extension, then magic bytes (%PDF header).
+      let isPdf =
+        file.type === "application/pdf" ||
+        file.type.includes("pdf") ||
+        lowerName.endsWith(".pdf");
+      if (!isPdf && file.size >= 4) {
+        const header = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+        isPdf = header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46;
+      }
+
+      if (isPdf) {
         const r = await extractPdfText(file);
         extracted = r.text;
         pageCount = r.pageCount;
@@ -207,7 +219,7 @@ export function LibraryPage() {
         extracted: documentPreview(extracted),
         chunks,
         pageCount: pageCount || 0,
-        fileType: file.type.includes("pdf")
+        fileType: isPdf
           ? "pdf"
           : file.type.startsWith("image/")
             ? "image"
