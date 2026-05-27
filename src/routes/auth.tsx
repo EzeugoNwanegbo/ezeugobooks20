@@ -78,6 +78,10 @@ function AuthFlow() {
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const isNativeApp =
+    typeof window !== "undefined" &&
+    (localStorage.getItem("gd_native_app") === "1" ||
+      /wv\)|; wv\)|WebView/i.test(navigator.userAgent));
 
   useEffect(() => {
     if (loading || !user || !profile) return;
@@ -226,25 +230,29 @@ function AuthFlow() {
               </div>
             )}
 
-            <button
-              onClick={handleGoogle}
-              type="button"
-              disabled={googleSubmitting}
-              className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background/70 hover:bg-surface-elevated transition-colors text-sm font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {googleSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
-              {googleSubmitting
-                ? "Opening Google..."
-                : isSignup
-                  ? "Create account with Google"
-                  : "Sign in with Google"}
-            </button>
+            {!isNativeApp && (
+              <>
+                <button
+                  onClick={handleGoogle}
+                  type="button"
+                  disabled={googleSubmitting}
+                  className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background/70 hover:bg-surface-elevated transition-colors text-sm font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {googleSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
+                  {googleSubmitting
+                    ? "Opening Google..."
+                    : isSignup
+                      ? "Create account with Google"
+                      : "Sign in with Google"}
+                </button>
 
-            <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
-              <div className="h-px flex-1 bg-border" />
-              or use email
-              <div className="h-px flex-1 bg-border" />
-            </div>
+                <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
+                  <div className="h-px flex-1 bg-border" />
+                  or use email
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+              </>
+            )}
 
             <form onSubmit={handleEmail} className="space-y-3">
               <div>
