@@ -24,6 +24,7 @@ type AuthContextValue = {
   authError: string | null;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -38,6 +39,7 @@ const guestAuthContext: AuthContextValue = {
   authError: null,
   refreshProfile: async () => {},
   signOut: async () => {},
+  deleteAccount: async () => {},
 };
 
 function withTimeout<T>(promise: PromiseLike<T>, label: string): Promise<T> {
@@ -219,6 +221,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (error) {
           setAuthError(getAuthErrorMessage(error));
         }
+      },
+      deleteAccount: async () => {
+        if (!session?.access_token) throw new Error("Not signed in");
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+        const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+        const res = await fetch(`${supabaseUrl}/functions/v1/delete-account`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+            apikey: anonKey,
+          },
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({})) as { error?: string };
+          throw new Error(body.error ?? "Failed to delete account");
+        }
+        await supabase.auth.signOut();
       },
     }),
     [user, session, profile, loading, authError],

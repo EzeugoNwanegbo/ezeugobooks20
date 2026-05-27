@@ -8,10 +8,21 @@ import {
   Menu,
   MessageSquare,
   Plus,
+  Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
@@ -31,7 +42,7 @@ export function AppShell() {
 }
 
 function AppLayout() {
-  const { user, profile, loading, authError, refreshProfile, signOut } = useAuth();
+  const { user, profile, loading, authError, refreshProfile, signOut, deleteAccount } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const search = useSearch({ strict: false }) as { c?: string };
@@ -39,6 +50,8 @@ function AppLayout() {
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileConvos, setMobileConvos] = useState<ConversationRow[]>([]);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   useEffect(() => {
     if (loading) return;
@@ -170,8 +183,44 @@ function AppLayout() {
     );
   };
 
+  const handleDeleteAccount = async () => {
+    setDeletingAccount(true);
+    try {
+      await deleteAccount();
+      navigate({ to: "/" });
+    } catch {
+      setDeletingAccount(false);
+      setShowDeleteDialog(false);
+    }
+  };
+
   return (
     <div className="luxury-app-shell flex h-dvh min-h-dvh flex-col overflow-hidden bg-background md:flex-row">
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete account</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes your account and all associated data — documents,
+              conversations, study plans, and profile information. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingAccount}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDeleteAccount();
+              }}
+              disabled={deletingAccount}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingAccount ? "Deleting…" : "Delete account"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="symbiote-blob app-blob-one" />
       <div className="symbiote-blob app-blob-two" />
 
@@ -254,6 +303,18 @@ function AppLayout() {
           >
             <LogOut className="h-4 w-4 shrink-0" />
             {!isSidebarCollapsed && <span>Sign out</span>}
+          </button>
+          <button
+            onClick={() => setShowDeleteDialog(true)}
+            className={`flex items-center text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-destructive ${
+              isSidebarCollapsed
+                ? "justify-center rounded-lg p-2"
+                : "w-full gap-3 rounded-lg px-3 py-2 text-sm font-medium"
+            }`}
+            title={isSidebarCollapsed ? "Delete account" : undefined}
+          >
+            <Trash2 className="h-4 w-4 shrink-0" />
+            {!isSidebarCollapsed && <span>Delete account</span>}
           </button>
         </div>
       </aside>
@@ -379,6 +440,17 @@ function AppLayout() {
                 >
                   <LogOut className="h-3.5 w-3.5" />
                   Sign out
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setShowDeleteDialog(true);
+                  }}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-1 py-1.5 text-xs font-semibold text-red-400 hover:bg-[#1f1c17]"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete account
                 </button>
               </div>
             </div>

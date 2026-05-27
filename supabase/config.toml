@@ -11,3 +11,6 @@ verify_jwt = true
 
 [functions.studybody]
 verify_jwt = true
+
+[functions.delete-account]
+verify_jwt = true
