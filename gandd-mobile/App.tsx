@@ -88,6 +88,19 @@ export default function App() {
             onError={(event) => {
               setError(event.nativeEvent.description || "The page failed to load.");
             }}
+            onRenderProcessGone={(event) => {
+              // Android kills the WebView renderer when it runs low on memory —
+              // commonly while the file picker is in the foreground or when a
+              // large upload is loaded into memory. Without this handler the
+              // WebView is left as a permanent blank white page. Remount it so
+              // the app recovers instead of going blank.
+              console.warn("WebView renderer gone", event.nativeEvent?.didCrash);
+              setWebViewKey((key) => key + 1);
+            }}
+            onContentProcessDidTerminate={() => {
+              // iOS equivalent of onRenderProcessGone.
+              setWebViewKey((key) => key + 1);
+            }}
             originWhitelist={["*"]}
             pullToRefreshEnabled={false}
             scrollEnabled
