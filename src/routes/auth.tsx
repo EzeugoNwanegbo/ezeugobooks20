@@ -151,17 +151,17 @@ function AuthFlow() {
         if (error) throw error;
 
         if (data.session) {
-          const { error: signOutError } = await withAuthTimeout(
-            supabase.auth.signOut(),
-            "Preparing email confirmation",
-          );
-          if (signOutError) throw signOutError;
+          // Signed in immediately. The auth listener loads the profile and the
+          // navigation effect sends them to onboarding — keep `submitting` true
+          // until then so the form doesn't flash.
+          toast.success("Welcome to G&D!");
+        } else {
+          // Project has email confirmation enabled, so no session is returned.
+          setPassword("");
+          setIsSignup(false);
+          setAuthNotice(EMAIL_CONFIRM_NOTICE);
+          toast.success("Check your email to confirm your account.");
         }
-
-        setPassword("");
-        setIsSignup(false);
-        setAuthNotice(EMAIL_CONFIRM_NOTICE);
-        toast.success("Check your email to confirm your account.");
       } else {
         const { error } = await withAuthTimeout(
           supabase.auth.signInWithPassword({ email: trimmedEmail, password }),
