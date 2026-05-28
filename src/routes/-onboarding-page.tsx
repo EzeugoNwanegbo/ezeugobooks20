@@ -53,7 +53,7 @@ function OnboardingFlow() {
       if (error) throw error;
       await refreshProfile();
       toast.success("You're all set! Let's add some files to your library.");
-      navigate({ to: "/app/library", search: { onboarding: true } as any });
+      navigate({ to: "/app/library", search: { onboarding: true } });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save profile");
     } finally {
@@ -66,7 +66,10 @@ function OnboardingFlow() {
       <div className="luxury-auth-page flex min-h-dvh items-center justify-center">
         <div className="symbiote-blob auth-blob-one" />
         <div className="symbiote-blob auth-blob-two" />
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <div className="text-center">
+          <div className="luxury-brand-text">G&D</div>
+          <p className="mt-2 text-xs text-muted-foreground">Preparing your setup...</p>
+        </div>
       </div>
     );
   }

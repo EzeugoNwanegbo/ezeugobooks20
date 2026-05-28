@@ -7,6 +7,9 @@ const LibraryPage = lazy(() =>
 );
 
 export const Route = createFileRoute("/app/library")({
+  validateSearch: (search: Record<string, unknown>): { onboarding?: boolean } => ({
+    onboarding: search.onboarding === true || search.onboarding === "true",
+  }),
   head: () => ({ meta: [{ title: "Library - G&D" }] }),
   component: LibraryRoute,
 });

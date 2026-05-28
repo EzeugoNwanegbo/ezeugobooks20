@@ -8,8 +8,17 @@ const themeInitScript = `
   try {
     var theme = window.localStorage.getItem("gd-theme") === "light" ? "light" : "dark";
     var root = document.documentElement;
+    var nav = window.navigator || {};
+    var memory = Number(nav.deviceMemory || 0);
+    var cores = Number(nav.hardwareConcurrency || 0);
+    var ua = String(nav.userAgent || "");
+    var nativeApp = window.localStorage.getItem("gd_native_app") === "1" || /wv\\)|; wv\\)|WebView/i.test(ua);
+    var oldAndroid = /Android\\s[0-8](\\.|;|\\s|$)/i.test(ua);
+    var oldIos = /OS\\s([1-9]|1[0-2])_/i.test(ua);
+    var lowPower = nativeApp || oldAndroid || oldIos || (memory > 0 && memory <= 4) || (cores > 0 && cores <= 4);
     root.classList.toggle("light", theme === "light");
     root.classList.toggle("dark", theme === "dark");
+    root.classList.toggle("gd-low-power", lowPower);
     root.style.colorScheme = theme;
   } catch (_) {}
 })();

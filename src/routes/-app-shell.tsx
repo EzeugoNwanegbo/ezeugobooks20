@@ -128,7 +128,7 @@ function AppLayout() {
             {authError ||
               "Your account is signed in. We are waiting for the profile record before opening the workspace."}
           </p>
-          {authError && (
+          {(authError || !profile) && (
             <div className="mt-5 flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"

@@ -37,7 +37,6 @@ type DocRow = {
   created_at: string;
 };
 
-
 function getUploadErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) return "Upload failed";
   return error.message || "Upload failed";
@@ -117,17 +116,14 @@ export function LibraryPage() {
       let extracted = "";
       let pageCount = 0;
       const lowerName = file.name.toLowerCase();
-      const isImage =
-        file.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(lowerName);
+      const isImage = file.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(lowerName);
       const isText = file.type.startsWith("text/") || lowerName.endsWith(".txt");
 
       // iOS often reports PDFs as application/octet-stream or with no MIME at
       // all (iCloud Drive). Check MIME, extension, then scan first 1KB for the
       // "%PDF-" header — Acrobat-compatible tolerance for leading garbage.
       let isPdf =
-        file.type === "application/pdf" ||
-        file.type.includes("pdf") ||
-        lowerName.endsWith(".pdf");
+        file.type === "application/pdf" || file.type.includes("pdf") || lowerName.endsWith(".pdf");
       if (!isPdf && !isImage && !isText && file.size >= 5) {
         const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
         for (let i = 0; i <= head.length - 5; i++) {
@@ -212,11 +208,7 @@ export function LibraryPage() {
         extracted: documentPreview(extracted),
         chunks,
         pageCount: pageCount || 0,
-        fileType: isPdf
-          ? "pdf"
-          : file.type.startsWith("image/")
-            ? "image"
-            : "text",
+        fileType: isPdf ? "pdf" : file.type.startsWith("image/") ? "image" : "text",
         fileSize: file.size,
       });
       setChosenFolder("__none");
@@ -401,6 +393,10 @@ export function LibraryPage() {
 
   const search = useSearch({ strict: false }) as { onboarding?: boolean };
   const isOnboarding = search?.onboarding === true;
+  const openFilePicker = () => {
+    if (uploading) return;
+    fileRef.current?.click();
+  };
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -434,8 +430,16 @@ export function LibraryPage() {
         </div>
 
         {/* Upload card */}
-        <label
-          htmlFor="file-up"
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={openFilePicker}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              openFilePicker();
+            }
+          }}
           onDragOver={(e) => {
             e.preventDefault();
             e.currentTarget.classList.add("border-primary", "bg-primary/10");
@@ -458,7 +462,8 @@ export function LibraryPage() {
             ref={fileRef}
             type="file"
             accept="application/pdf,application/octet-stream,text/plain,image/png,image/jpeg,image/webp,.pdf,.txt,.png,.jpg,.jpeg,.webp"
-            className="hidden"
+            className="sr-only"
+            tabIndex={-1}
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (f) onUpload(f);
@@ -484,13 +489,20 @@ export function LibraryPage() {
                   PDF, text file, or image — drag & drop or tap to browse
                 </div>
               </div>
-              <div className="inline-flex items-center gap-2 rounded-lg bg-gradient-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-glow">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openFilePicker();
+                }}
+                className="inline-flex items-center gap-2 rounded-lg bg-gradient-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-glow"
+              >
                 <Upload className="h-4 w-4" />
                 Upload file
-              </div>
+              </button>
             </div>
           )}
-        </label>
+        </div>
 
         {/* Folder list */}
         <div className="mt-6 space-y-4 sm:mt-8">

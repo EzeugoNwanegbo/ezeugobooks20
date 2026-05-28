@@ -75,6 +75,7 @@ export default function App() {
           <WebView
             key={webViewKey}
             ref={webViewRef}
+            allowFileAccess
             allowsBackForwardNavigationGestures
             allowsLinkPreview={false}
             bounces={false}

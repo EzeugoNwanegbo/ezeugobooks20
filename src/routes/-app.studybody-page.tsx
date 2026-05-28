@@ -347,7 +347,7 @@ export function StudyBodyPage() {
         documents: studyDocs,
       });
 
-      const { data: plan, error: planErr } = await db
+      const { data: planData, error: planErr } = await db
         .from("study_plans")
         .insert({
           user_id: user.id,
@@ -366,6 +366,7 @@ export function StudyBodyPage() {
         )
         .single();
       if (planErr) throw planErr;
+      const plan = planData as PlanRow;
 
       const topicRows = generated.topics.map((topic: StudyRoadmapTopic, index: number) => ({
         user_id: user.id,
@@ -424,7 +425,7 @@ export function StudyBodyPage() {
       });
       if (!generated.questions.length) throw new Error("No questions came back from StudyBody.");
 
-      const { data: session, error: sessionErr } = await db
+      const { data: sessionData, error: sessionErr } = await db
         .from("study_sessions")
         .insert({
           user_id: user.id,
@@ -437,6 +438,7 @@ export function StudyBodyPage() {
         .select("id, plan_id, topic_id, question_type, score, total_questions, status, feedback")
         .single();
       if (sessionErr) throw sessionErr;
+      const session = sessionData as SessionRow;
 
       const questionRows = generated.questions.map((question: GeneratedQuestion, index: number) => {
         const normalizedType: "mcq" | "essay" =

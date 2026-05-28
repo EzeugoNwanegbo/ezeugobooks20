@@ -94,9 +94,7 @@ function AuthFlow() {
         <div className="symbiote-blob auth-blob-one" />
         <div className="symbiote-blob auth-blob-two" />
         <div className="luxury-panel w-full max-w-md rounded-lg p-5 text-center shadow-elegant sm:p-6">
-          <h1 className="font-display text-3xl font-light leading-none">
-            Profile could not load
-          </h1>
+          <h1 className="font-display text-3xl font-light leading-none">Profile could not load</h1>
           <p className="mt-2 text-sm text-muted-foreground">{authError}</p>
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
             <button
@@ -124,7 +122,10 @@ function AuthFlow() {
       <div className="luxury-auth-page flex min-h-dvh items-center justify-center bg-background">
         <div className="symbiote-blob auth-blob-one" />
         <div className="symbiote-blob auth-blob-two" />
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <div className="text-center">
+          <div className="luxury-brand-text">G&D</div>
+          <p className="mt-2 text-xs text-muted-foreground">Opening your workspace...</p>
+        </div>
       </div>
     );
   }

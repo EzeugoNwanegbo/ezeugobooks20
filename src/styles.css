@@ -1083,6 +1083,41 @@ a.bg-gradient-primary > * {
   }
 }
 
+html.gd-low-power .symbiote-blob,
+html.gd-low-power .availability-dot,
+html.gd-low-power .luxury-ticker div,
+html.gd-low-power .ai-symbiote-mark,
+html.gd-low-power .ai-symbiote-mark::before,
+html.gd-low-power .ai-symbiote-mark::after,
+html.gd-low-power .ai-symbiote-dot {
+  animation: none !important;
+}
+
+html.gd-low-power .symbiote-blob {
+  display: none !important;
+}
+
+html.gd-low-power .luxury-panel,
+html.gd-low-power .backdrop-blur,
+html.gd-low-power .backdrop-blur-sm,
+html.gd-low-power .backdrop-blur-\[2px\] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.gd-low-power button.bg-gradient-primary::before,
+html.gd-low-power a.bg-gradient-primary::before,
+html.gd-low-power .luxury-primary::before,
+html.gd-low-power .luxury-card::before {
+  display: none !important;
+}
+
+html.gd-low-power *,
+html.gd-low-power *::before,
+html.gd-low-power *::after {
+  transition-duration: 0ms !important;
+}
+
 /* ── Tablet breakpoint (768px–1024px) ── */
 @media (min-width: 768px) and (max-width: 1024px) {
   .luxury-hero h1 {
