@@ -4,6 +4,7 @@ import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { extractPdfText } from "@/lib/pdf";
 import { chunkDocumentText, documentPreview, type DocumentChunkInput } from "@/lib/document-chunks";
+import { readBlobAsArrayBuffer, readBlobAsText } from "@/lib/file";
 import { toast } from "sonner";
 import {
   Upload,
@@ -129,7 +130,7 @@ export function LibraryPage() {
         file.type.includes("pdf") ||
         lowerName.endsWith(".pdf");
       if (!isPdf && !isImage && !isText && file.size >= 5) {
-        const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
+        const head = new Uint8Array(await readBlobAsArrayBuffer(file.slice(0, 1024)));
         for (let i = 0; i <= head.length - 5; i++) {
           if (
             head[i] === 0x25 &&
@@ -161,7 +162,7 @@ export function LibraryPage() {
         extracted = r.text;
         pageCount = r.pageCount;
       } else if (isText) {
-        extracted = await file.text();
+        extracted = await readBlobAsText(file);
       } else if (file.size > 0) {
         // Last-resort fallback for unknown binaries (e.g. iCloud Drive PDFs
         // with no extension, no MIME, and leading bytes before %PDF). Let
@@ -172,7 +173,7 @@ export function LibraryPage() {
           pageCount = r.pageCount;
           isPdf = true;
         } catch (probeErr) {
-          const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+          const head = new Uint8Array(await readBlobAsArrayBuffer(file.slice(0, 16)));
           const hex = Array.from(head)
             .map((b) => b.toString(16).padStart(2, "0"))
             .join(" ");
@@ -449,6 +450,14 @@ export function LibraryPage() {
             const f = e.dataTransfer.files?.[0];
             if (f) onUpload(f);
           }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              fileRef.current?.click();
+            }
+          }}
+          role="button"
+          tabIndex={0}
           className={`block cursor-pointer rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 p-5 text-center transition-all hover:border-primary hover:bg-primary/10 sm:p-8 ${
             uploading ? "pointer-events-none opacity-70" : ""
           } ${isOnboarding && docs.length === 0 ? "ring-2 ring-primary ring-offset-4 ring-offset-background animate-pulse shadow-glow" : ""}`}
@@ -458,7 +467,7 @@ export function LibraryPage() {
             ref={fileRef}
             type="file"
             accept="application/pdf,application/octet-stream,text/plain,image/png,image/jpeg,image/webp,.pdf,.txt,.png,.jpg,.jpeg,.webp"
-            className="hidden"
+            className="sr-only"
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (f) onUpload(f);

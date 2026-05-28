@@ -3,6 +3,7 @@
 // pdfjs 4.x/5.x). UMD `.js` files instead of `.mjs`.
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist/legacy/build/pdf.js";
 import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.js?url";
+import { readBlobAsArrayBuffer } from "@/lib/file";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -21,7 +22,7 @@ export async function extractPdfText(
 ): Promise<{ text: string; pageCount: number }> {
   let pdf: Awaited<ReturnType<typeof getDocument>["promise"]> | null = null;
   try {
-    const buf = new Uint8Array(await file.arrayBuffer());
+    const buf = new Uint8Array(await readBlobAsArrayBuffer(file));
     pdf = await getDocument({
       data: buf,
       cMapUrl: CMAP_URL,

@@ -2,6 +2,50 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "./types";
 
+type AuthStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+function createMemoryStorage(): AuthStorage {
+  const store = new Map<string, string>();
+  return {
+    getItem: (key) => store.get(key) ?? null,
+    setItem: (key, value) => {
+      store.set(key, value);
+    },
+    removeItem: (key) => {
+      store.delete(key);
+    },
+  };
+}
+
+function getUsableStorage(storage: Storage | null, testKey: string): Storage | null {
+  try {
+    if (!storage) return null;
+    storage.setItem(testKey, "1");
+    storage.removeItem(testKey);
+    return storage;
+  } catch {
+    return null;
+  }
+}
+
+function getWindowStorage(name: "localStorage" | "sessionStorage"): Storage | null {
+  try {
+    return window[name];
+  } catch {
+    return null;
+  }
+}
+
+function getAuthStorage(): AuthStorage | undefined {
+  if (typeof window === "undefined") return undefined;
+
+  return (
+    getUsableStorage(getWindowStorage("localStorage"), "gd-local-storage-test") ??
+    getUsableStorage(getWindowStorage("sessionStorage"), "gd-session-storage-test") ??
+    createMemoryStorage()
+  );
+}
+
 function createSupabaseClient() {
   const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
   const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -12,23 +56,9 @@ function createSupabaseClient() {
     );
   }
 
-  // Safely check localStorage availability
-  let storage: Storage | undefined;
-  if (typeof window !== "undefined") {
-    try {
-      const testKey = "__test__";
-      localStorage.setItem(testKey, "1");
-      localStorage.removeItem(testKey);
-      storage = localStorage;
-    } catch (e) {
-      console.warn("localStorage not available, auth will not persist across page reloads", e);
-      storage = undefined;
-    }
-  }
-
   return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     auth: {
-      storage,
+      storage: getAuthStorage(),
       persistSession: true,
       autoRefreshToken: true,
     },

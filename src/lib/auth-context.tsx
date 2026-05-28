@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -72,8 +72,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const authRequestId = useRef(0);
+  const currentSessionRef = useRef<Session | null>(null);
+  const loadedProfileUserIdRef = useRef<string | null>(null);
 
-  const loadProfile = async (currentUser: User) => {
+  const loadProfile = useCallback(async (currentUser: User) => {
     try {
       const { data, error } = await withTimeout(
         supabase.from("user_profiles").select("*").eq("id", currentUser.id).maybeSingle(),
@@ -84,6 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (data) {
         setAuthError(null);
+        loadedProfileUserIdRef.current = currentUser.id;
         setProfile(data as Profile);
         return;
       }
@@ -102,6 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (createError) throw createError;
 
       setAuthError(null);
+      loadedProfileUserIdRef.current = currentUser.id;
       setProfile(created as Profile);
     } catch (error) {
       console.error("load profile", error);
@@ -116,6 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .maybeSingle();
           if (data) {
             setAuthError(null);
+            loadedProfileUserIdRef.current = currentUser.id;
             setProfile(data as Profile);
             return;
           }
@@ -124,9 +130,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
       setAuthError(getAuthErrorMessage(error));
+      loadedProfileUserIdRef.current = null;
       setProfile(null);
     }
-  };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -149,19 +156,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log("[AuthProvider] Auth state changed:", { event: _event, session: !!sess });
         if (!active) return;
 
+        const requestId = ++authRequestId.current;
+        const previousUserId = currentSessionRef.current?.user?.id ?? null;
+        const nextUser = sess?.user ?? null;
+        const nextUserId = nextUser?.id ?? null;
+        const hasLoadedProfile = nextUserId && loadedProfileUserIdRef.current === nextUserId;
+
+        currentSessionRef.current = sess;
         setAuthError(null);
         setSession(sess);
-        setUser(sess?.user ?? null);
-        if (sess?.user) {
+        setUser(nextUser);
+        if (nextUser) {
+          if (previousUserId === nextUserId && hasLoadedProfile) {
+            setLoading(false);
+            return;
+          }
+
           // defer to avoid deadlock with supabase client
           setLoading(true);
           setTimeout(() => {
             if (!active) return;
-            void loadProfile(sess.user).finally(() => {
-              if (active) setLoading(false);
+            void loadProfile(nextUser).finally(() => {
+              if (active && requestId === authRequestId.current) setLoading(false);
             });
           }, 0);
         } else {
+          loadedProfileUserIdRef.current = null;
           setProfile(null);
           setLoading(false);
         }
@@ -175,14 +195,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .then(async ({ data }) => {
           console.log("[AuthProvider] Got existing session:", !!data.session);
           if (!active) return;
+          const requestId = ++authRequestId.current;
+          currentSessionRef.current = data.session;
           setAuthError(null);
           setSession(data.session);
           setUser(data.session?.user ?? null);
           if (data.session?.user) {
             await loadProfile(data.session.user);
           } else {
+            loadedProfileUserIdRef.current = null;
             setProfile(null);
           }
+          if (active && requestId === authRequestId.current) setLoading(false);
         })
         .catch((error) => {
           console.error("[AuthProvider] Failed to get session:", error);
@@ -203,7 +227,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       active = false;
       unsubscribe?.();
     };
-  }, []);
+  }, [loadProfile]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -241,7 +265,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await supabase.auth.signOut();
       },
     }),
-    [user, session, profile, loading, authError],
+    [user, session, profile, loading, authError, loadProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
