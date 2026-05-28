@@ -144,11 +144,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       console.log("[AuthProvider] Setting up auth listener...");
+      // Track whether the listener has already fired with a session so that a
+      // slower getSession() response doesn't clobber the listener's state.
+      // This prevents the sign-up-loop on mobile browsers (e.g. Samsung
+      // Internet) where localStorage may be unavailable and getSession()
+      // returns null even though onAuthStateChange just fired with a session.
+      let listenerFired = false;
+
       // Set up auth listener FIRST
       const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
         console.log("[AuthProvider] Auth state changed:", { event: _event, session: !!sess });
         if (!active) return;
 
+        listenerFired = true;
         setAuthError(null);
         setSession(sess);
         setUser(sess?.user ?? null);
@@ -176,11 +184,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log("[AuthProvider] Got existing session:", !!data.session);
           if (!active) return;
           setAuthError(null);
-          setSession(data.session);
-          setUser(data.session?.user ?? null);
           if (data.session?.user) {
+            setSession(data.session);
+            setUser(data.session.user);
             await loadProfile(data.session.user);
-          } else {
+          } else if (!listenerFired) {
+            // Only null-out state when the listener hasn't already established
+            // a session — avoids overwriting a just-created sign-up session.
+            setSession(null);
+            setUser(null);
             setProfile(null);
           }
         })
@@ -188,9 +200,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.error("[AuthProvider] Failed to get session:", error);
           if (!active) return;
           setAuthError(getAuthErrorMessage(error));
-          setSession(null);
-          setUser(null);
-          setProfile(null);
+          if (!listenerFired) {
+            setSession(null);
+            setUser(null);
+            setProfile(null);
+          }
         })
         .finally(() => {
           if (active) setLoading(false);

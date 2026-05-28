@@ -2,6 +2,7 @@ import { createWorker } from "tesseract.js";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_OCR_IMAGE_DIMENSION = 2600;
+const MAX_WORKER_INIT_MS = 20_000;
 
 type OcrProgress = (status: string, percent?: number) => void;
 
@@ -68,7 +69,8 @@ export async function extractImageText(
 
   onProgress?.("Preparing image for OCR", 5);
   const image = await prepareImageForOcr(file);
-  const worker = await createWorker("eng", 1, {
+
+  const workerInit = createWorker("eng", 1, {
     logger: (message) => {
       const percent =
         typeof message.progress === "number"
@@ -77,6 +79,18 @@ export async function extractImageText(
       onProgress?.(formatTesseractStatus(message.status), percent);
     },
   });
+  const workerTimeout = new Promise<never>((_, reject) =>
+    setTimeout(
+      () =>
+        reject(
+          new Error(
+            "OCR engine took too long to load. Check your connection and try again, or use a PDF instead.",
+          ),
+        ),
+      MAX_WORKER_INIT_MS,
+    ),
+  );
+  const worker = await Promise.race([workerInit, workerTimeout]);
 
   try {
     await worker.setParameters({

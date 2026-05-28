@@ -12,7 +12,8 @@ function createSupabaseClient() {
     );
   }
 
-  // Safely check localStorage availability
+  // Safely check localStorage availability, fall back to sessionStorage for
+  // browsers that block localStorage (e.g. Samsung Internet private mode).
   let storage: Storage | undefined;
   if (typeof window !== "undefined") {
     try {
@@ -20,9 +21,17 @@ function createSupabaseClient() {
       localStorage.setItem(testKey, "1");
       localStorage.removeItem(testKey);
       storage = localStorage;
-    } catch (e) {
-      console.warn("localStorage not available, auth will not persist across page reloads", e);
-      storage = undefined;
+    } catch {
+      try {
+        const testKey = "__test__";
+        sessionStorage.setItem(testKey, "1");
+        sessionStorage.removeItem(testKey);
+        storage = sessionStorage;
+        console.warn("localStorage unavailable — using sessionStorage (auth will not persist across tabs)");
+      } catch {
+        console.warn("localStorage and sessionStorage both unavailable — auth will not persist");
+        storage = undefined;
+      }
     }
   }
 
