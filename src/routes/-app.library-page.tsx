@@ -37,42 +37,6 @@ type DocRow = {
   created_at: string;
 };
 
-const SUGGEST_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-folder`;
-const SUGGEST_FOLDER_TIMEOUT_MS = 8_000;
-
-async function suggestFolder(
-  fileName: string,
-  excerpt: string,
-  existingFolders: string[],
-): Promise<{ folder: string; isNew: boolean } | null> {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), SUGGEST_FOLDER_TIMEOUT_MS);
-
-  try {
-    const { data: sess } = await supabase.auth.getSession();
-    const token = sess.session?.access_token;
-    if (!token) return null;
-    const r = await fetch(SUGGEST_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
-        fileName,
-        excerpt: excerpt.slice(0, 6000),
-        existingFolders,
-      }),
-    });
-    if (!r.ok) return null;
-    return (await r.json()) as { folder: string; isNew: boolean };
-  } catch {
-    return null;
-  } finally {
-    window.clearTimeout(timeout);
-  }
-}
 
 function getUploadErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) return "Upload failed";
@@ -94,7 +58,6 @@ export function LibraryPage() {
     pageCount: number;
     fileType: string;
     fileSize: number;
-    suggestion: { folder: string; isNew: boolean };
   } | null>(null);
   const [chosenFolder, setChosenFolder] = useState<string>("");
   const [newFolderName, setNewFolderName] = useState<string>("");
@@ -220,7 +183,7 @@ export function LibraryPage() {
             probeErr,
           });
           toast.error(
-            `Couldn't read this file as a PDF, text, or image (type: ${file.type || "unknown"}, ${(file.size / 1024 / 1024).toFixed(1)} MB). On iPhone, try opening it in Files and using Share → Save to Files before uploading.`,
+            `Couldn't read this file as a PDF, text, or image (type: ${file.type || "unknown"}, ${(file.size / 1024 / 1024).toFixed(1)} MB). Try saving the file to your Downloads or Files folder first, then upload from there.`,
           );
           setUploading(false);
           setProgress("");
@@ -241,13 +204,6 @@ export function LibraryPage() {
       // huge course materials). storage_path is a virtual marker.
       const path = `text-only/${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
 
-      setProgress("Suggesting folder...");
-      const suggestion = await suggestFolder(
-        file.name,
-        extracted,
-        folders.map((f) => f.name),
-      );
-
       // Open assignment modal — defer DB insert until user confirms
       setPendingAssign({
         fileName: file.name,
@@ -261,19 +217,9 @@ export function LibraryPage() {
             ? "image"
             : "text",
         fileSize: file.size,
-        suggestion: suggestion ?? { folder: "Uncategorised", isNew: true },
       });
-      // Pre-select: matching existing folder if any
-      const match = folders.find(
-        (f) => f.name.toLowerCase() === (suggestion?.folder || "").toLowerCase(),
-      );
-      if (match) {
-        setChosenFolder(match.id);
-        setNewFolderName("");
-      } else {
-        setChosenFolder("__new");
-        setNewFolderName(suggestion?.folder || "");
-      }
+      setChosenFolder("__none");
+      setNewFolderName("");
     } catch (err) {
       console.error("upload document", err);
       toast.error(getUploadErrorMessage(err));
@@ -324,7 +270,7 @@ export function LibraryPage() {
           page_count: pendingAssign.pageCount || null,
           extracted_text: pendingAssign.extracted,
           folder_id: folderId,
-          suggested_subject: pendingAssign.suggestion.folder,
+          suggested_subject: null,
         })
         .select("id")
         .single();
@@ -488,18 +434,18 @@ export function LibraryPage() {
           htmlFor="file-up"
           onDragOver={(e) => {
             e.preventDefault();
-            e.currentTarget.classList.add("border-primary", "bg-primary/5");
+            e.currentTarget.classList.add("border-primary", "bg-primary/10");
           }}
           onDragLeave={(e) => {
-            e.currentTarget.classList.remove("border-primary", "bg-primary/5");
+            e.currentTarget.classList.remove("border-primary", "bg-primary/10");
           }}
           onDrop={(e) => {
             e.preventDefault();
-            e.currentTarget.classList.remove("border-primary", "bg-primary/5");
+            e.currentTarget.classList.remove("border-primary", "bg-primary/10");
             const f = e.dataTransfer.files?.[0];
             if (f) onUpload(f);
           }}
-          className={`block cursor-pointer rounded-lg border-2 border-dashed border-border bg-surface/40 p-5 text-center transition-all hover:border-primary/40 sm:p-8 ${
+          className={`block cursor-pointer rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 p-5 text-center transition-all hover:border-primary hover:bg-primary/10 sm:p-8 ${
             uploading ? "pointer-events-none opacity-70" : ""
           } ${isOnboarding && docs.length === 0 ? "ring-2 ring-primary ring-offset-4 ring-offset-background animate-pulse shadow-glow" : ""}`}
         >
@@ -507,7 +453,7 @@ export function LibraryPage() {
             id="file-up"
             ref={fileRef}
             type="file"
-            accept="application/pdf,text/plain,image/png,image/jpeg,image/webp,.pdf,.txt,.png,.jpg,.jpeg,.webp"
+            accept="application/pdf,application/octet-stream,text/plain,image/png,image/jpeg,image/webp,.pdf,.txt,.png,.jpg,.jpeg,.webp"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -521,21 +467,22 @@ export function LibraryPage() {
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-primary/15 bg-primary/10 sm:h-12 sm:w-12">
-                <Upload className="h-5 w-5 text-primary" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg border-2 border-primary/40 bg-primary/15 sm:h-14 sm:w-14">
+                <Upload className="h-6 w-6 text-primary sm:h-7 sm:w-7" />
               </div>
               <div>
-                <div className="font-semibold">
+                <div className="text-base font-bold text-primary sm:text-lg">
                   {isOnboarding && docs.length === 0
-                    ? "Click here to upload your first file"
-                    : "Drop a PDF, text file, or image to make it searchable"}
+                    ? "Tap here to upload your first file"
+                    : "Upload a file"}
                 </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  Images are extracted in your browser with Tesseract OCR before indexing.
+                <div className="mt-1 text-sm text-muted-foreground">
+                  PDF, text file, or image — drag & drop or tap to browse
                 </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  PDF, .txt, PNG, JPG, or WebP indexed for pinpoint answers
-                </div>
+              </div>
+              <div className="inline-flex items-center gap-2 rounded-lg bg-gradient-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-glow">
+                <Upload className="h-4 w-4" />
+                Upload file
               </div>
             </div>
           )}
@@ -597,10 +544,10 @@ export function LibraryPage() {
             <div className="flex items-start justify-between gap-3 mb-4">
               <div className="flex items-center gap-2.5">
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
-                  <Sparkles className="h-4 w-4 text-primary" />
+                  <Folder className="h-4 w-4 text-primary" />
                 </span>
                 <div>
-                  <div className="font-display text-xl font-light">Organise this note</div>
+                  <div className="font-display text-xl font-light">Save to folder</div>
                   <div className="max-w-[calc(100vw-8rem)] truncate text-xs text-muted-foreground sm:max-w-[260px]">
                     {pendingAssign.fileName}
                   </div>
@@ -612,12 +559,6 @@ export function LibraryPage() {
               >
                 <X className="h-4 w-4" />
               </button>
-            </div>
-
-            <div className="text-xs text-muted-foreground mb-2">
-              G&D suggests:{" "}
-              <span className="text-primary font-semibold">{pendingAssign.suggestion.folder}</span>
-              {pendingAssign.suggestion.isNew && <span className="ml-1">(new folder)</span>}
             </div>
 
             <label className="block text-xs font-semibold mb-1.5">Folder</label>

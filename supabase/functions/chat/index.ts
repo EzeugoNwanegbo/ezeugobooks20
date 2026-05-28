@@ -252,9 +252,11 @@ function modeInstruction(mode: Mode, examFormat: string): string {
   }
   // Simplified (default)
   return `Present the answer in SIMPLIFIED mode.
+- HARD LIMIT: 3 short paragraphs maximum. Condense the draft — do not expand it.
 - Use plain English and one real-world analogy to make the concept click.
-- Maximum 3 short paragraphs — no jargon without explanation.
-- End with "**Study tip:**" - one sentence directly relevant to ${examFormat} assessment.`;
+- No jargon without an immediate plain-English explanation.
+- If there is a source reference, put it in one short inline line — not a separate section.
+- End with "**Study tip:**" — one sentence directly relevant to ${examFormat} assessment.`;
 }
 
 /** System prompt for DeepSeek — pure fact extraction, no style. */
@@ -461,6 +463,7 @@ async function callDeepSeekSync(
   return withLengthLimitNote(choice?.message?.content ?? "", choice?.finish_reason);
 }
 
+/** Call GPT-4o-mini with streaming — this is what the student sees. */
 /** Call GPT-4o-mini with streaming — this is what the student sees. */
 async function callGPTStream(
   apiKey: string,
@@ -1268,7 +1271,7 @@ DeepSeek document retrieval result:
 ${deepSeekText}
 """
 
-${curriculumGuidance ? `Web curriculum guidance used by DeepSeek:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer in ${body.mode} mode. Do not add facts that are not in the DeepSeek result. Include a **Source:** line near the top with the document name and page/chunk label from the DeepSeek result.`,
+${curriculumGuidance ? `Web curriculum guidance used by DeepSeek:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer STRICTLY following the ${body.mode} mode rules in your system prompt. Do not exceed the length and structure limits for that mode. Do not add facts outside the DeepSeek result.`,
           },
         ],
         model: useWebCurriculum
@@ -1322,7 +1325,7 @@ DeepSeek factual draft:
 ${deepSeekText}
 """
 
-${curriculumGuidance ? `Web curriculum guidance used by DeepSeek:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer in ${body.mode} mode. Do not add facts that are not in the DeepSeek draft.`,
+${curriculumGuidance ? `Web curriculum guidance used by DeepSeek:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer STRICTLY following the ${body.mode} mode rules in your system prompt. Do not exceed the length and structure limits for that mode. Do not add facts outside the DeepSeek draft.`,
           },
         ],
         model: useWebCurriculum ? "deepseek-to-openai-web-curriculum" : "deepseek-to-openai",

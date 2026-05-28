@@ -84,42 +84,42 @@ function AuthFlow() {
       /wv\)|; wv\)|WebView/i.test(navigator.userAgent));
 
   useEffect(() => {
-    if (loading || !user || !profile) return;
+    if (submitting || loading || !user || !profile) return;
     navigate({ to: profile?.onboarded ? "/app/chat" : "/onboarding", replace: true });
-  }, [loading, user, profile, navigate]);
+  }, [submitting, loading, user, profile, navigate]);
 
-  if (loading || user) {
-    if (user && authError && !profile) {
-      return (
-        <div className="luxury-auth-page flex min-h-dvh items-center justify-center bg-background px-4">
-          <div className="symbiote-blob auth-blob-one" />
-          <div className="symbiote-blob auth-blob-two" />
-          <div className="luxury-panel w-full max-w-md rounded-lg p-5 text-center shadow-elegant sm:p-6">
-            <h1 className="font-display text-3xl font-light leading-none">
-              Profile could not load
-            </h1>
-            <p className="mt-2 text-sm text-muted-foreground">{authError}</p>
-            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-              <button
-                type="button"
-                onClick={() => void refreshProfile()}
-                className="inline-flex flex-1 items-center justify-center rounded-lg bg-gradient-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-glow"
-              >
-                Try again
-              </button>
-              <button
-                type="button"
-                onClick={() => void signOut()}
-                className="inline-flex flex-1 items-center justify-center rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
-              >
-                Sign out
-              </button>
-            </div>
+  if (user && authError && !profile) {
+    return (
+      <div className="luxury-auth-page flex min-h-dvh items-center justify-center bg-background px-4">
+        <div className="symbiote-blob auth-blob-one" />
+        <div className="symbiote-blob auth-blob-two" />
+        <div className="luxury-panel w-full max-w-md rounded-lg p-5 text-center shadow-elegant sm:p-6">
+          <h1 className="font-display text-3xl font-light leading-none">
+            Profile could not load
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">{authError}</p>
+          <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={() => void refreshProfile()}
+              className="inline-flex flex-1 items-center justify-center rounded-lg bg-gradient-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-glow"
+            >
+              Try again
+            </button>
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              className="inline-flex flex-1 items-center justify-center rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+            >
+              Sign out
+            </button>
           </div>
         </div>
-      );
-    }
+      </div>
+    );
+  }
 
+  if ((loading || user) && !submitting) {
     return (
       <div className="luxury-auth-page flex min-h-dvh items-center justify-center bg-background">
         <div className="symbiote-blob auth-blob-one" />
