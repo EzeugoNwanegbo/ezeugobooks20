@@ -61,6 +61,7 @@ export function LibraryPage() {
   } | null>(null);
   const [chosenFolder, setChosenFolder] = useState<string>("");
   const [newFolderName, setNewFolderName] = useState<string>("");
+  const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const refresh = async () => {
@@ -231,7 +232,8 @@ export function LibraryPage() {
   };
 
   const confirmAssign = async () => {
-    if (!user || !pendingAssign) return;
+    if (!user || !pendingAssign || saving) return;
+    setSaving(true);
     let folderId: string | null = null;
     try {
       if (chosenFolder === "__new") {
@@ -310,6 +312,8 @@ export function LibraryPage() {
       await refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -555,7 +559,8 @@ export function LibraryPage() {
               </div>
               <button
                 onClick={cancelAssign}
-                className="text-muted-foreground hover:text-foreground p-1"
+                disabled={saving}
+                className="text-muted-foreground hover:text-foreground p-1 disabled:opacity-40"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -589,15 +594,18 @@ export function LibraryPage() {
             <div className="mt-5 flex gap-2 justify-end">
               <button
                 onClick={cancelAssign}
-                className="px-4 py-2 text-sm rounded-lg border border-border hover:bg-surface-elevated transition-colors"
+                disabled={saving}
+                className="px-4 py-2 text-sm rounded-lg border border-border hover:bg-surface-elevated transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
-                onClick={confirmAssign}
-                className="px-4 py-2 text-sm rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow"
+                onClick={() => void confirmAssign()}
+                disabled={saving}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Save
+                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {saving ? "Saving..." : "Save"}
               </button>
             </div>
           </div>
