@@ -42,6 +42,24 @@ function getUploadErrorMessage(error: unknown): string {
   return error.message || "Upload failed";
 }
 
+// Parsing happens entirely in the browser (pdfjs / OCR read the whole file
+// into memory). Desktop browsers cope with very large files; phone browsers —
+// Android Chrome in particular — kill the renderer process when a tab uses too
+// much memory, which shows up as a blank page with no catchable error. Cap the
+// size on memory-constrained devices so the user gets a clear message instead.
+function getMaxUploadBytes(): number {
+  const DESKTOP_MAX = 300 * 1024 * 1024;
+  const MOBILE_MAX = 75 * 1024 * 1024;
+  if (typeof navigator === "undefined") return DESKTOP_MAX;
+
+  const ua = navigator.userAgent || "";
+  const isMobileUa = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+  const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 0;
+  const lowMemory = deviceMemory > 0 && deviceMemory <= 4;
+
+  return isMobileUa || lowMemory ? MOBILE_MAX : DESKTOP_MAX;
+}
+
 export function LibraryPage() {
   const { user } = useAuth();
   const [folders, setFolders] = useState<FolderRow[]>([]);
@@ -106,8 +124,12 @@ export function LibraryPage() {
 
   const onUpload = async (file: File) => {
     if (!user) return;
-    if (file.size > 300 * 1024 * 1024) {
-      toast.error("File too large (max 300 MB)");
+    const maxBytes = getMaxUploadBytes();
+    if (file.size > maxBytes) {
+      const maxMb = Math.round(maxBytes / 1024 / 1024);
+      toast.error(
+        `This file is ${(file.size / 1024 / 1024).toFixed(0)} MB. On this device the limit is ${maxMb} MB — larger files can crash the browser tab. Try a smaller file, split the PDF, or upload from a computer.`,
+      );
       return;
     }
     setUploading(true);

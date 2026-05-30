@@ -84,9 +84,13 @@ function AuthFlow() {
       /wv\)|; wv\)|WebView/i.test(navigator.userAgent));
 
   useEffect(() => {
-    if (submitting || loading || !user || !profile) return;
+    // Navigate as soon as the session + profile are ready. This deliberately
+    // does NOT depend on `submitting`: on a successful sign-up we keep
+    // `submitting` true to avoid flashing the bare form, so gating navigation
+    // on it would deadlock here.
+    if (loading || !user || !profile) return;
     navigate({ to: profile?.onboarded ? "/app/chat" : "/onboarding", replace: true });
-  }, [submitting, loading, user, profile, navigate]);
+  }, [loading, user, profile, navigate]);
 
   if (user && authError && !profile) {
     return (
@@ -117,7 +121,7 @@ function AuthFlow() {
     );
   }
 
-  if ((loading || user) && !submitting) {
+  if (loading || user) {
     return (
       <div className="luxury-auth-page flex min-h-dvh items-center justify-center bg-background">
         <div className="symbiote-blob auth-blob-one" />
@@ -136,6 +140,12 @@ function AuthFlow() {
 
     setSubmitting(true);
     setAuthNotice(null);
+    // When the action ends with us navigating away (sign-up that returns a
+    // session, or a successful sign-in) we keep `submitting` true so the
+    // "Creating.../Signing in..." state holds until the auth listener loads
+    // the profile and the navigation effect fires. Resetting it here is what
+    // caused the bare form to flash back on slower devices.
+    let keepSubmitting = false;
     try {
       const trimmedEmail = email.trim();
       const supabase = await loadSupabase();
@@ -152,9 +162,8 @@ function AuthFlow() {
         if (error) throw error;
 
         if (data.session) {
-          // Signed in immediately. The auth listener loads the profile and the
-          // navigation effect sends them to onboarding — keep `submitting` true
-          // until then so the form doesn't flash.
+          // Signed in immediately — hold the submitting state until navigation.
+          keepSubmitting = true;
           toast.success("Welcome to G&D!");
         } else {
           // Project has email confirmation enabled, so no session is returned.
@@ -169,13 +178,14 @@ function AuthFlow() {
           "Signing in",
         );
         if (error) throw error;
+        keepSubmitting = true;
         toast.success("Welcome back!");
         navigate({ to: "/app/chat" });
       }
     } catch (err) {
       toast.error(getAuthErrorMessage(err));
     } finally {
-      setSubmitting(false);
+      if (!keepSubmitting) setSubmitting(false);
     }
   };
 
