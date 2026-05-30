@@ -18,10 +18,15 @@ const STANDARD_FONT_URL = `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/standar
 export async function extractPdfText(
   file: File,
   maxChars = Number.POSITIVE_INFINITY,
+  // Diagnostic hook: reports the current step so the caller can record where a
+  // crash happened (Android Chrome can kill the tab mid-parse with no error).
+  onStage?: (stage: string) => void,
 ): Promise<{ text: string; pageCount: number }> {
   let pdf: Awaited<ReturnType<typeof getDocument>["promise"]> | null = null;
   try {
+    onStage?.("pdf:reading-bytes");
     const buf = new Uint8Array(await file.arrayBuffer());
+    onStage?.("pdf:creating-document");
     pdf = await getDocument({
       data: buf,
       cMapUrl: CMAP_URL,
@@ -30,11 +35,13 @@ export async function extractPdfText(
       // Don't auto-prompt for passwords — surface a clear error instead.
       password: "",
     }).promise;
+    onStage?.("pdf:document-loaded");
 
     const pageCount = pdf.numPages;
     let out = "";
 
     for (let i = 1; i <= pageCount; i++) {
+      onStage?.(`pdf:reading-page-${i}/${pageCount}`);
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
       const pageText = content.items

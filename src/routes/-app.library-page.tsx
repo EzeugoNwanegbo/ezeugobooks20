@@ -102,19 +102,25 @@ export function LibraryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // If a previous upload left an "in-flight" breadcrumb, the tab crashed mid
-  // parse (almost always an out-of-memory kill on a large file). Explain it.
+  // If a previous upload left an "in-flight" breadcrumb, the tab died mid
+  // processing (Android Chrome can kill the renderer with no catchable error).
+  // DIAGNOSTIC: we also record the last stage reached, so this toast tells us
+  // exactly where it died (e.g. "pdf:creating-document") on the next test.
   useEffect(() => {
     let stuck: string | null = null;
+    let stage: string | null = null;
     try {
       stuck = sessionStorage.getItem("gd_upload_inflight");
+      stage = sessionStorage.getItem("gd_upload_stage");
       if (stuck) sessionStorage.removeItem("gd_upload_inflight");
+      if (stage) sessionStorage.removeItem("gd_upload_stage");
     } catch {
       // ignore
     }
     if (stuck) {
       toast.error(
-        `Uploading "${stuck}" didn't finish — the page reloaded mid-upload. Please try again; if it keeps happening, tell us the file type.`,
+        `Upload of "${stuck}" stopped at step: ${stage ?? "unknown"}. The page reloaded mid-upload. Please screenshot this and send it to us.`,
+        { duration: 60_000 },
       );
     }
   }, []);
@@ -137,18 +143,28 @@ export function LibraryPage() {
       return;
     }
     setUploading(true);
-    // Breadcrumb: if the browser tab dies mid-parse (Android Chrome killing the
-    // renderer on memory pressure), there's no catchable error — the page just
-    // goes blank and reloads. We detect that on next mount and explain it.
+    // Breadcrumb + stage marker: if the browser tab dies mid-processing (Android
+    // Chrome killing the renderer), there's no catchable error. We record an
+    // "in-flight" flag plus the last stage reached, then report it on next mount
+    // so we know exactly where it died. Best-effort (sessionStorage may throw).
+    const setStage = (stage: string) => {
+      try {
+        sessionStorage.setItem("gd_upload_stage", stage);
+      } catch {
+        // ignore
+      }
+    };
     try {
       sessionStorage.setItem("gd_upload_inflight", file.name);
     } catch {
       // sessionStorage may be unavailable; the breadcrumb is best-effort.
     }
+    setStage("started");
     try {
       setProgress("Extracting text (large PDFs may take a minute)...");
       let extracted = "";
       let pageCount = 0;
+      setStage("detecting-type");
       const lowerName = file.name.toLowerCase();
       const isImage = file.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(lowerName);
       const isText = file.type.startsWith("text/") || lowerName.endsWith(".txt");
@@ -180,16 +196,20 @@ export function LibraryPage() {
         // made the page memory-heavy exactly when the Android file picker is
         // open, which makes Android Chrome more likely to discard/kill the
         // page (the "blank, stuck until reload" symptom).
+        setStage("pdf:importing-engine");
         const { extractPdfText } = await import("@/lib/pdf");
-        const r = await extractPdfText(file);
+        setStage("pdf:engine-loaded");
+        const r = await extractPdfText(file, Number.POSITIVE_INFINITY, setStage);
         extracted = r.text;
         pageCount = r.pageCount;
       } else if (isImage) {
+        setStage("image:importing-ocr");
         setProgress("Loading OCR engine...");
         // Lazy-import tesseract so PDF/text uploads don't pay the cost
         // (and aren't blocked when the OCR bundle fails to load on flaky
         // mobile networks).
         const { extractImageText } = await import("@/lib/image-ocr");
+        setStage("image:ocr-loaded");
         setProgress("Reading image text in your browser...");
         const r = await extractImageText(file, (status, percent) => {
           setProgress(percent === undefined ? status : `${status} (${percent}%)`);
@@ -197,14 +217,18 @@ export function LibraryPage() {
         extracted = r.text;
         pageCount = r.pageCount;
       } else if (isText) {
+        setStage("text:reading");
         extracted = await file.text();
       } else if (file.size > 0) {
         // Last-resort fallback for unknown binaries (e.g. iCloud Drive PDFs
         // with no extension, no MIME, and leading bytes before %PDF). Let
         // pdfjs decide — it throws a clean error if it isn't really a PDF.
         try {
+          setStage("probe:importing-engine");
           const { extractPdfText } = await import("@/lib/pdf");
-          const r = await extractPdfText(file);
+          const r = await extractPdfText(file, Number.POSITIVE_INFINITY, (s) =>
+            setStage(`probe:${s}`),
+          );
           extracted = r.text;
           pageCount = r.pageCount;
           isPdf = true;
@@ -234,6 +258,7 @@ export function LibraryPage() {
         return;
       }
 
+      setStage("chunking");
       setProgress("Preparing searchable chunks...");
       const chunks = chunkDocumentText(extracted);
 
@@ -242,6 +267,7 @@ export function LibraryPage() {
       // huge course materials). storage_path is a virtual marker.
       const path = `text-only/${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
 
+      setStage("opening-modal");
       // Open assignment modal — defer DB insert until user confirms
       setPendingAssign({
         fileName: file.name,
@@ -260,6 +286,7 @@ export function LibraryPage() {
     } finally {
       try {
         sessionStorage.removeItem("gd_upload_inflight");
+        sessionStorage.removeItem("gd_upload_stage");
       } catch {
         // ignore
       }
