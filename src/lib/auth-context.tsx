@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -72,6 +72,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  // The user id whose profile is already loaded. Used to skip the full-screen
+  // loading state on background token refreshes (which fire whenever the tab
+  // regains focus — e.g. returning from the Android file picker). Re-entering
+  // loading there unmounts the app and cancels in-progress uploads.
+  const loadedUserIdRef = useRef<string | null>(null);
 
   const loadProfile = async (currentUser: User) => {
     try {
@@ -161,6 +166,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(sess);
         setUser(sess?.user ?? null);
         if (sess?.user) {
+          // Background events (TOKEN_REFRESHED on tab refocus, USER_UPDATED, or
+          // SIGNED_IN re-fired for the same user) must NOT re-enter the loading
+          // state — that unmounts the whole app and kills any in-progress
+          // upload. Only the first load / a genuine user change loads the
+          // profile behind the full-screen splash.
+          if (loadedUserIdRef.current === sess.user.id) return;
+          loadedUserIdRef.current = sess.user.id;
           // defer to avoid deadlock with supabase client
           setLoading(true);
           setTimeout(() => {
@@ -170,6 +182,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             });
           }, 0);
         } else {
+          loadedUserIdRef.current = null;
           setProfile(null);
           setLoading(false);
         }
@@ -187,7 +200,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (data.session?.user) {
             setSession(data.session);
             setUser(data.session.user);
-            await loadProfile(data.session.user);
+            // Skip if the listener already loaded this user's profile, so we
+            // don't double-fetch on initial mount.
+            if (loadedUserIdRef.current !== data.session.user.id) {
+              loadedUserIdRef.current = data.session.user.id;
+              await loadProfile(data.session.user);
+            }
           } else if (!listenerFired) {
             // Only null-out state when the listener hasn't already established
             // a session — avoids overwriting a just-created sign-up session.
