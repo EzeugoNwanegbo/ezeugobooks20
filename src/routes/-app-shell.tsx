@@ -24,7 +24,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 
 type ConversationRow = {
@@ -34,11 +34,7 @@ type ConversationRow = {
 };
 
 export function AppShell() {
-  return (
-    <AuthProvider>
-      <AppLayout />
-    </AuthProvider>
-  );
+  return <AppLayout />;
 }
 
 function AppLayout() {

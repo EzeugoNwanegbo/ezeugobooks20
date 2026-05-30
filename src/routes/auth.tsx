@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
-import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { useAuth } from "@/lib/auth-context";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 type AuthSearch = { mode?: "signup" | "signin" };
@@ -60,11 +60,7 @@ export const Route = createFileRoute("/auth")({
 });
 
 function AuthPage() {
-  return (
-    <AuthProvider>
-      <AuthFlow />
-    </AuthProvider>
-  );
+  return <AuthFlow />;
 }
 
 function AuthFlow() {

@@ -5,6 +5,13 @@ import { getRouter } from "./router";
 import { AppErrorBoundary } from "./components/error-boundary";
 import "./styles.css";
 
+// Stamp the build id so you can verify which build is actually live: open the
+// console (BUILD ...) or inspect <html data-build="...">.
+if (typeof window !== "undefined") {
+  console.log(`BUILD ${__BUILD_ID__}`);
+  document.documentElement.setAttribute("data-build", __BUILD_ID__);
+}
+
 // Surface otherwise-silent failures (e.g. a rejected promise during an upload
 // on a memory-constrained Android device) instead of letting the page sit
 // blank. These only log — the ErrorBoundary handles anything thrown in render.

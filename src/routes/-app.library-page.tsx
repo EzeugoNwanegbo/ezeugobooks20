@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
-import { extractPdfText } from "@/lib/pdf";
 import { chunkDocumentText, documentPreview, type DocumentChunkInput } from "@/lib/document-chunks";
 import { toast } from "sonner";
 import {
@@ -47,18 +46,10 @@ function getUploadErrorMessage(error: unknown): string {
 // Android Chrome in particular — kill the renderer process when a tab uses too
 // much memory, which shows up as a blank page with no catchable error. Cap the
 // size on memory-constrained devices so the user gets a clear message instead.
-function getMaxUploadBytes(): number {
-  const DESKTOP_MAX = 300 * 1024 * 1024;
-  const MOBILE_MAX = 75 * 1024 * 1024;
-  if (typeof navigator === "undefined") return DESKTOP_MAX;
-
-  const ua = navigator.userAgent || "";
-  const isMobileUa = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
-  const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 0;
-  const lowMemory = deviceMemory > 0 && deviceMemory <= 4;
-
-  return isMobileUa || lowMemory ? MOBILE_MAX : DESKTOP_MAX;
-}
+// A generous safety ceiling only — the Android blank-page issue is NOT a
+// file-size/memory problem (it happens with small files too), so this is just
+// a guard against absurd uploads, not the fix.
+const MAX_UPLOAD_BYTES = 300 * 1024 * 1024;
 
 export function LibraryPage() {
   const { user } = useAuth();
@@ -111,6 +102,23 @@ export function LibraryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // If a previous upload left an "in-flight" breadcrumb, the tab crashed mid
+  // parse (almost always an out-of-memory kill on a large file). Explain it.
+  useEffect(() => {
+    let stuck: string | null = null;
+    try {
+      stuck = sessionStorage.getItem("gd_upload_inflight");
+      if (stuck) sessionStorage.removeItem("gd_upload_inflight");
+    } catch {
+      // ignore
+    }
+    if (stuck) {
+      toast.error(
+        `Uploading "${stuck}" didn't finish — the page reloaded mid-upload. Please try again; if it keeps happening, tell us the file type.`,
+      );
+    }
+  }, []);
+
   const grouped = useMemo(() => {
     const map: Record<string, DocRow[]> = { __none: [] };
     for (const f of folders) map[f.id] = [];
@@ -124,15 +132,19 @@ export function LibraryPage() {
 
   const onUpload = async (file: File) => {
     if (!user) return;
-    const maxBytes = getMaxUploadBytes();
-    if (file.size > maxBytes) {
-      const maxMb = Math.round(maxBytes / 1024 / 1024);
-      toast.error(
-        `This file is ${(file.size / 1024 / 1024).toFixed(0)} MB. On this device the limit is ${maxMb} MB — larger files can crash the browser tab. Try a smaller file, split the PDF, or upload from a computer.`,
-      );
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast.error("File too large (max 300 MB)");
       return;
     }
     setUploading(true);
+    // Breadcrumb: if the browser tab dies mid-parse (Android Chrome killing the
+    // renderer on memory pressure), there's no catchable error — the page just
+    // goes blank and reloads. We detect that on next mount and explain it.
+    try {
+      sessionStorage.setItem("gd_upload_inflight", file.name);
+    } catch {
+      // sessionStorage may be unavailable; the breadcrumb is best-effort.
+    }
     try {
       setProgress("Extracting text (large PDFs may take a minute)...");
       let extracted = "";
@@ -163,6 +175,12 @@ export function LibraryPage() {
       }
 
       if (isPdf) {
+        // Lazy-import pdf.js so the Library page stays lightweight until a file
+        // is actually being processed. Loading the heavy PDF engine up front
+        // made the page memory-heavy exactly when the Android file picker is
+        // open, which makes Android Chrome more likely to discard/kill the
+        // page (the "blank, stuck until reload" symptom).
+        const { extractPdfText } = await import("@/lib/pdf");
         const r = await extractPdfText(file);
         extracted = r.text;
         pageCount = r.pageCount;
@@ -185,6 +203,7 @@ export function LibraryPage() {
         // with no extension, no MIME, and leading bytes before %PDF). Let
         // pdfjs decide — it throws a clean error if it isn't really a PDF.
         try {
+          const { extractPdfText } = await import("@/lib/pdf");
           const r = await extractPdfText(file);
           extracted = r.text;
           pageCount = r.pageCount;
@@ -239,6 +258,11 @@ export function LibraryPage() {
       console.error("upload document", err);
       toast.error(getUploadErrorMessage(err));
     } finally {
+      try {
+        sessionStorage.removeItem("gd_upload_inflight");
+      } catch {
+        // ignore
+      }
       setUploading(false);
       setProgress("");
       if (fileRef.current) fileRef.current.value = "";
@@ -577,7 +601,7 @@ export function LibraryPage() {
 
       {/* Folder assignment modal */}
       {pendingAssign && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 p-4">
           <div className="luxury-panel max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-lg p-5 shadow-elegant sm:p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div className="flex items-center gap-2.5">

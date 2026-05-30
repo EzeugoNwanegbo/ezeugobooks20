@@ -1105,9 +1105,11 @@ html.gd-low-power .backdrop-blur-\[2px\] {
   -webkit-backdrop-filter: none !important;
 }
 
-/* Disable backdrop-filter on phones — Android GPU compositing can black out
-   the page when backdrop-blur is combined with fixed positioning + transforms. */
-@media (max-width: 767px) {
+/* Disable backdrop-filter on touch devices (phones AND tablets) — Android GPU
+   compositing can black out the page when backdrop-blur is combined with fixed
+   positioning + transforms. `pointer: coarse` catches large Android tablets the
+   old max-width:767px rule missed. */
+@media (max-width: 767px), (pointer: coarse) {
   .backdrop-blur,
   .backdrop-blur-sm,
   .backdrop-blur-\[2px\] {

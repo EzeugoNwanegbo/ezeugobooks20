@@ -3,17 +3,13 @@ import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { useAuth } from "@/lib/auth-context";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const STEPS = ["About you", "Your studies", "Your exams", "Your style"] as const;
 
 export function OnboardingPage() {
-  return (
-    <AuthProvider>
-      <OnboardingFlow />
-    </AuthProvider>
-  );
+  return <OnboardingFlow />;
 }
 
 function OnboardingFlow() {
@@ -29,8 +25,17 @@ function OnboardingFlow() {
   const [mode, setMode] = useState<"Simplified" | "Detailed">("Simplified");
 
   useEffect(() => {
-    if (!loading && !user) navigate({ to: "/auth" });
-    if (profile?.onboarded) navigate({ to: "/app/library" });
+    // Wait for auth to settle before deciding anything — never redirect on the
+    // transient loading=false/user=null window.
+    if (loading) return;
+    if (!user) {
+      navigate({ to: "/auth", replace: true });
+      return;
+    }
+    if (profile?.onboarded) {
+      navigate({ to: "/app/library" });
+      return;
+    }
     if (profile?.name && !name) setName(profile.name);
   }, [loading, user, profile, navigate, name]);
 

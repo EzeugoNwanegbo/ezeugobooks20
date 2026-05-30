@@ -1,5 +1,6 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner";
+import { AuthProvider } from "@/lib/auth-context";
 
 import appCss from "../styles.css?url";
 
@@ -51,6 +52,8 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
+      // Bumps every build — View Source on the live site to confirm a deploy landed.
+      { name: "app-build", content: __BUILD_ID__ },
       { title: "G&D - pinpoint answers from your files" },
       {
         name: "description",
@@ -89,10 +92,15 @@ function RootShell({ children }: { children: React.ReactNode }) {
 }
 
 function RootComponent() {
+  // A single AuthProvider for the whole app. Previously each route (/auth,
+  // /onboarding, /app) mounted its own provider, so navigating between them
+  // tore down and rebuilt auth state — racing getSession() against
+  // onAuthStateChange and momentarily reporting "no user", which bounced
+  // freshly-signed-up users back to /auth on slower devices.
   return (
-    <>
+    <AuthProvider>
       <Outlet />
       <Toaster richColors position="top-right" />
-    </>
+    </AuthProvider>
   );
 }

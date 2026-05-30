@@ -207,7 +207,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         })
         .finally(() => {
-          if (active) setLoading(false);
+          // If the listener already fired with a session, it owns the loading
+          // lifecycle (it flips loading=false after the profile loads). Racing
+          // it to false here is what produced a transient loading=false /
+          // user=null render that bounced freshly-signed-up users to /auth.
+          if (active && !listenerFired) setLoading(false);
         });
     } catch (error) {
       failAuth(error);
