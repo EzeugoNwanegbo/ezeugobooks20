@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
 import { lazy, Suspense } from "react";
+import { ChatSkeleton } from "@/components/app-skeletons";
 
 type ChatSearch = { c?: string };
 
@@ -18,7 +18,7 @@ export const Route = createFileRoute("/app/chat")({
 
 function ChatRoute() {
   return (
-    <Suspense fallback={<Loader2 className="m-auto h-5 w-5 animate-spin text-primary" />}>
+    <Suspense fallback={<ChatSkeleton />}>
       <ChatPage />
     </Suspense>
   );

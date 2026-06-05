@@ -3,6 +3,9 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { isNativeApp } from "@/lib/native";
+import { lastRoute } from "@/lib/last-route";
+import { signInWithGoogleNative } from "@/lib/native-auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 type AuthSearch = { mode?: "signup" | "signin" };
@@ -74,10 +77,7 @@ function AuthFlow() {
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const isNativeApp =
-    typeof window !== "undefined" &&
-    (localStorage.getItem("gd_native_app") === "1" ||
-      /wv\)|; wv\)|WebView/i.test(navigator.userAgent));
+  const native = isNativeApp();
 
   useEffect(() => {
     // Navigate as soon as the session + profile are ready. This deliberately
@@ -85,7 +85,7 @@ function AuthFlow() {
     // `submitting` true to avoid flashing the bare form, so gating navigation
     // on it would deadlock here.
     if (loading || !user || !profile) return;
-    navigate({ to: profile?.onboarded ? "/app/chat" : "/onboarding", replace: true });
+    navigate({ to: profile?.onboarded ? lastRoute() : "/onboarding", replace: true });
   }, [loading, user, profile, navigate]);
 
   if (user && authError && !profile) {
@@ -176,7 +176,7 @@ function AuthFlow() {
         if (error) throw error;
         keepSubmitting = true;
         toast.success("Welcome back!");
-        navigate({ to: "/app/chat" });
+        navigate({ to: lastRoute() });
       }
     } catch (err) {
       toast.error(getAuthErrorMessage(err));
@@ -191,6 +191,15 @@ function AuthFlow() {
     setGoogleSubmitting(true);
     setAuthNotice(null);
     try {
+      if (native) {
+        // System-browser flow: Google blocks OAuth inside embedded webviews,
+        // and the deep-link listener finishes the session on redirect back.
+        await withAuthTimeout(signInWithGoogleNative(), "Starting Google sign-in");
+        // Keep the spinner up; we hand off to the browser and the deep-link
+        // handler completes the session when the user returns.
+        return;
+      }
+
       const supabase = await loadSupabase();
       const { error } = await withAuthTimeout(
         supabase.auth.signInWithOAuth({
@@ -237,29 +246,27 @@ function AuthFlow() {
               </div>
             )}
 
-            {!isNativeApp && (
-              <>
-                <button
-                  onClick={handleGoogle}
-                  type="button"
-                  disabled={googleSubmitting}
-                  className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background/70 hover:bg-surface-elevated transition-colors text-sm font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {googleSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
-                  {googleSubmitting
-                    ? "Opening Google..."
-                    : isSignup
-                      ? "Create account with Google"
-                      : "Sign in with Google"}
-                </button>
+            <>
+              <button
+                onClick={handleGoogle}
+                type="button"
+                disabled={googleSubmitting}
+                className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background/70 hover:bg-surface-elevated transition-colors text-sm font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {googleSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
+                {googleSubmitting
+                  ? "Opening Google..."
+                  : isSignup
+                    ? "Create account with Google"
+                    : "Sign in with Google"}
+              </button>
 
-                <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
-                  <div className="h-px flex-1 bg-border" />
-                  or use email
-                  <div className="h-px flex-1 bg-border" />
-                </div>
-              </>
-            )}
+              <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
+                <div className="h-px flex-1 bg-border" />
+                or use email
+                <div className="h-px flex-1 bg-border" />
+              </div>
+            </>
 
             <form onSubmit={handleEmail} className="space-y-3">
               <div>

@@ -3,7 +3,13 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import { getRouter } from "./router";
 import { AppErrorBoundary } from "./components/error-boundary";
+import { initNativeShell } from "./lib/native";
 import "./styles.css";
+
+// Mark the document as the native app and configure the status bar before the
+// first paint, so safe-area styling and native auth behavior apply from the
+// very first frame.
+initNativeShell();
 
 // Stamp the build id so you can verify which build is actually live: open the
 // console (BUILD ...) or inspect <html data-build="...">.

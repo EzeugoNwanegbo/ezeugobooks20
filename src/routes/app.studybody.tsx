@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
 import { lazy, Suspense } from "react";
+import { PageSkeleton } from "@/components/app-skeletons";
 
 const StudyBodyPage = lazy(() =>
   import("./-app.studybody-page").then((module) => ({ default: module.StudyBodyPage })),
@@ -13,7 +13,7 @@ export const Route = createFileRoute("/app/studybody")({
 
 function StudyBodyRoute() {
   return (
-    <Suspense fallback={<Loader2 className="m-auto h-5 w-5 animate-spin text-primary" />}>
+    <Suspense fallback={<PageSkeleton />}>
       <StudyBodyPage />
     </Suspense>
   );

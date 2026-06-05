@@ -51,7 +51,10 @@ export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      {
+        name: "viewport",
+        content: "width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5",
+      },
       // Bumps every build — View Source on the live site to confirm a deploy landed.
       { name: "app-build", content: __BUILD_ID__ },
       { title: "G&D - pinpoint answers from your files" },

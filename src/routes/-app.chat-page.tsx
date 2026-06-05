@@ -10,6 +10,7 @@ import {
   type DocumentCtx,
   type WebSource,
 } from "@/lib/chat-client";
+import { takePendingChatDoc } from "@/lib/chat-handoff";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -598,6 +599,27 @@ export function ChatPage() {
     if (!docsLoaded) return;
     setSelectedDocIds((current) => current.filter((id) => docs.some((doc) => doc.id === id)));
   }, [docs, docsLoaded]);
+
+  // "Upload, then start chatting": the Library page stages the freshly-uploaded
+  // document id. Once the library list has loaded (so the new doc is present
+  // and won't be filtered out), attach it as the search context and open a
+  // clean conversation focused on that file.
+  const pendingDocAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!user || !docsLoaded || pendingDocAppliedRef.current) return;
+    pendingDocAppliedRef.current = true;
+    const docId = takePendingChatDoc(user.id);
+    if (!docId || !docs.some((doc) => doc.id === docId)) return;
+    setUseLibrary(true);
+    setSelectedDocIds([docId]);
+    setLibraryNotice(null);
+    setMessages([]);
+    if (conversationId) navigate({ to: "/app/chat", search: {} });
+    const attached = docs.find((doc) => doc.id === docId);
+    toast(`Attached "${attached?.file_name ?? "your file"}"`, {
+      description: "Ask anything about it — answers will cite this file.",
+    });
+  }, [user, docsLoaded, docs, conversationId, navigate]);
 
   const selectedDocs = useMemo(
     () => docs.filter((doc) => selectedDocIds.includes(doc.id)),

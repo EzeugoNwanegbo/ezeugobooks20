@@ -16,7 +16,10 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppStudybodyRouteImport } from './routes/app.studybody'
+import { Route as AppSettingsRouteImport } from './routes/app.settings'
 import { Route as AppLibraryRouteImport } from './routes/app.library'
+import { Route as AppHistoryRouteImport } from './routes/app.history'
+import { Route as AppFeedbackRouteImport } from './routes/app.feedback'
 import { Route as AppChatRouteImport } from './routes/app.chat'
 
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -54,9 +57,24 @@ const AppStudybodyRoute = AppStudybodyRouteImport.update({
   path: '/studybody',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppLibraryRoute = AppLibraryRouteImport.update({
   id: '/library',
   path: '/library',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppHistoryRoute = AppHistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFeedbackRoute = AppFeedbackRouteImport.update({
+  id: '/feedback',
+  path: '/feedback',
   getParentRoute: () => AppRoute,
 } as any)
 const AppChatRoute = AppChatRouteImport.update({
@@ -73,7 +91,10 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/app/chat': typeof AppChatRoute
+  '/app/feedback': typeof AppFeedbackRoute
+  '/app/history': typeof AppHistoryRoute
   '/app/library': typeof AppLibraryRoute
+  '/app/settings': typeof AppSettingsRoute
   '/app/studybody': typeof AppStudybodyRoute
 }
 export interface FileRoutesByTo {
@@ -84,7 +105,10 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/app/chat': typeof AppChatRoute
+  '/app/feedback': typeof AppFeedbackRoute
+  '/app/history': typeof AppHistoryRoute
   '/app/library': typeof AppLibraryRoute
+  '/app/settings': typeof AppSettingsRoute
   '/app/studybody': typeof AppStudybodyRoute
 }
 export interface FileRoutesById {
@@ -96,7 +120,10 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/app/chat': typeof AppChatRoute
+  '/app/feedback': typeof AppFeedbackRoute
+  '/app/history': typeof AppHistoryRoute
   '/app/library': typeof AppLibraryRoute
+  '/app/settings': typeof AppSettingsRoute
   '/app/studybody': typeof AppStudybodyRoute
 }
 export interface FileRouteTypes {
@@ -109,7 +136,10 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/app/chat'
+    | '/app/feedback'
+    | '/app/history'
     | '/app/library'
+    | '/app/settings'
     | '/app/studybody'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -120,7 +150,10 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/app/chat'
+    | '/app/feedback'
+    | '/app/history'
     | '/app/library'
+    | '/app/settings'
     | '/app/studybody'
   id:
     | '__root__'
@@ -131,7 +164,10 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/app/chat'
+    | '/app/feedback'
+    | '/app/history'
     | '/app/library'
+    | '/app/settings'
     | '/app/studybody'
   fileRoutesById: FileRoutesById
 }
@@ -195,11 +231,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppStudybodyRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/settings': {
+      id: '/app/settings'
+      path: '/settings'
+      fullPath: '/app/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/library': {
       id: '/app/library'
       path: '/library'
       fullPath: '/app/library'
       preLoaderRoute: typeof AppLibraryRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/history': {
+      id: '/app/history'
+      path: '/history'
+      fullPath: '/app/history'
+      preLoaderRoute: typeof AppHistoryRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/feedback': {
+      id: '/app/feedback'
+      path: '/feedback'
+      fullPath: '/app/feedback'
+      preLoaderRoute: typeof AppFeedbackRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/chat': {
@@ -214,13 +271,19 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppChatRoute: typeof AppChatRoute
+  AppFeedbackRoute: typeof AppFeedbackRoute
+  AppHistoryRoute: typeof AppHistoryRoute
   AppLibraryRoute: typeof AppLibraryRoute
+  AppSettingsRoute: typeof AppSettingsRoute
   AppStudybodyRoute: typeof AppStudybodyRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppChatRoute: AppChatRoute,
+  AppFeedbackRoute: AppFeedbackRoute,
+  AppHistoryRoute: AppHistoryRoute,
   AppLibraryRoute: AppLibraryRoute,
+  AppSettingsRoute: AppSettingsRoute,
   AppStudybodyRoute: AppStudybodyRoute,
 }
 

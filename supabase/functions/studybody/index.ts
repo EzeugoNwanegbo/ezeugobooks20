@@ -41,11 +41,12 @@ interface Body {
   count?: number;
   questions?: unknown[];
   answers?: Record<string, string>;
+  excludePrompts?: string[];
+  difficultyHint?: "easier" | "medium" | "harder";
 }
 
 const MAX_DOC_CHARS_TOTAL = 100_000;
 const DEEPSEEK_TIMEOUT_MS = 90_000;
-const OPENAI_TIMEOUT_MS = 45_000;
 
 async function fetchWithTimeout(
   input: string,
@@ -143,35 +144,8 @@ async function callDeepSeekJson(apiKey: string, systemPrompt: string, userPrompt
   return parseJsonObject(json.choices?.[0]?.message?.content ?? "{}");
 }
 
-async function callOpenAIText(apiKey: string, systemPrompt: string, userPrompt: string) {
-  const response = await fetchWithTimeout(
-    "https://api.openai.com/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.55,
-        max_tokens: 1200,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-      }),
-    },
-    OPENAI_TIMEOUT_MS,
-  );
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`OpenAI error ${response.status}: ${text}`);
-  }
-
-  const json = await response.json();
-  return (json.choices?.[0]?.message?.content ?? "").toString().trim();
+function hasUsableDocuments(documents: StudyDocument[] = []): boolean {
+  return documents.some((doc) => (doc.excerpt || "").trim().length > 40);
 }
 
 async function generatePlan(body: Body, deepSeekKey: string) {
@@ -224,10 +198,19 @@ Use 5 to 10 roadmap topics. Keep it practical and exam-focused.`,
 async function generateQuestions(body: Body, deepSeekKey: string) {
   const type = body.questionType || "mcq";
   const count = Math.min(Math.max(body.count || 5, 1), 10);
+  const exclude = (body.excludePrompts || []).filter((p) => typeof p === "string" && p.trim());
+  const difficultyHint = body.difficultyHint || "medium";
+
   const result = await callDeepSeekJson(
     deepSeekKey,
-    `You are StudyBody's question generator. Generate questions only from the selected uploaded file excerpts.
-Return strict JSON only. Do not invent source references.`,
+    `You are StudyBody's question generator. You write exam questions STRICTLY from the uploaded textbook excerpts and nothing else.
+Hard rules:
+- Every question, its correct answer, and its explanation must be fully answerable using ONLY the provided excerpts. Do not use outside knowledge.
+- Every question MUST include at least one source_refs entry that points to the excerpt it came from, using the file name and the exact [Page ...] / [Chunk ...] label shown in that excerpt.
+- NEVER fabricate or guess a page number or label. Only cite a [Page ...] / [Chunk ...] label that literally appears in the excerpts below. If you cannot point to a real label, do not produce that question.
+- If the excerpts do not contain enough material for the requested number of questions, return FEWER questions instead of inventing any. It is correct to return an empty list when the material does not cover the topic.
+- Never repeat or lightly reword a question listed under "Already asked".
+Return strict JSON only.`,
     `${profileBlock(body.profile)}
 
 Topic:
@@ -235,8 +218,12 @@ ${JSON.stringify(body.topic || {}, null, 2)}
 
 Question type requested: ${type}
 Number of questions: ${count}
+Difficulty calibration: ${difficultyHint} (adjust how demanding the questions are accordingly).
 
-Uploaded file excerpts:
+Already asked (do NOT repeat or paraphrase these):
+${exclude.length ? exclude.map((p, i) => `${i + 1}. ${p}`).join("\n") : "(none yet)"}
+
+Uploaded textbook excerpts (the ONLY allowed source):
 ${documentContext(body.documents)}
 
 Return JSON:
@@ -244,10 +231,10 @@ Return JSON:
   "questions": [
     {
       "type": "mcq" | "essay",
-      "prompt": "question text",
+      "prompt": "question text grounded in the excerpts",
       "options": [{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."},{"id":"D","text":"..."}],
       "correct_answer": "A or ideal essay answer",
-      "explanation": "source-grounded explanation",
+      "explanation": "explanation that quotes/points to the source excerpt",
       "rubric": ["point 1", "point 2"],
       "difficulty": "easy" | "medium" | "hard",
       "source_refs": [{"file":"name", "page":"Page or chunk label"}]
@@ -257,16 +244,31 @@ Return JSON:
 For MCQ, provide exactly four options and one correct option id. For essay, options must be [].`,
   );
 
-  const questions = Array.isArray(result.questions) ? result.questions.slice(0, count) : [];
+  const raw = Array.isArray(result.questions) ? result.questions : [];
+  // Enforce on-source grounding: drop anything the model produced without a
+  // real source reference, so questions that drifted off the textbook do not
+  // reach the student.
+  const grounded = raw.filter((q) => {
+    const refs = (q as { source_refs?: unknown }).source_refs;
+    return Array.isArray(refs) && refs.length > 0;
+  });
+  const questions = (grounded.length ? grounded : raw).slice(0, count);
   return { questions };
 }
 
-async function reviewAnswers(body: Body, deepSeekKey: string, openAIKey: string) {
-  const grading = await callDeepSeekJson(
+async function reviewAnswers(body: Body, deepSeekKey: string) {
+  const mode = body.mode || "Simplified";
+  const result = await callDeepSeekJson(
     deepSeekKey,
-    `You are StudyBody's grading engine. Grade the student's answers against the supplied answer keys and rubrics.
-DeepSeek does the scoring and correction analysis. Return strict JSON only.`,
+    `You are StudyBody's grading AND coaching engine. DeepSeek does all of the work here.
+Grade the student's answers strictly against the supplied answer keys and rubrics, then write the coaching in the student's chosen style.
+Honesty rules:
+- Do not introduce facts beyond the questions, answer keys, and rubrics provided.
+- When you reference a fact in your feedback or coaching, cite the page/label from that question's source_refs (e.g. "see Page 12").
+- If something the student asks about or that you would explain is NOT covered by the provided material, say plainly "This wasn't found in your uploaded material" instead of guessing or using outside knowledge.
+Return strict JSON only.`,
     `${profileBlock(body.profile)}
+Coaching style: ${mode}
 
 Questions:
 ${JSON.stringify(body.questions || [], null, 2)}
@@ -289,22 +291,14 @@ Return JSON:
     }
   ],
   "weak_areas": ["topic weakness"],
-  "next_steps": ["what to revise next"]
+  "next_steps": ["what to revise next"],
+  "coaching": "A concise written review in the ${mode} style covering: the score, the strongest area, the weakest area, the corrected approach, and the single next study step. Plain text, no markdown headers."
 }`,
   );
 
-  const coaching = await callOpenAIText(
-    openAIKey,
-    `You are StudyBody's final coach. You receive DeepSeek's structured grading only.
-Explain results in the user's selected style. Do not add new facts beyond the grading data.`,
-    `${profileBlock(body.profile)}
-Mode: ${body.mode || "Simplified"}
-DeepSeek grading:
-${JSON.stringify(grading, null, 2)}
-
-Write a concise review with: score, strongest area, weak area, corrected approach, and next study step.`,
-  );
-
+  const coaching = (result.coaching ?? "").toString().trim();
+  const grading = { ...result };
+  delete (grading as Record<string, unknown>).coaching;
   return { grading, coaching };
 }
 
@@ -316,21 +310,37 @@ Deno.serve(async (req: Request) => {
   try {
     const body = (await req.json()) as Body;
     const deepSeekKey = Deno.env.get("DEEPSEEK_API_KEY");
-    const openAIKey = Deno.env.get("OPENAI_API_KEY");
 
     if (!deepSeekKey) return jsonResponse({ error: "DeepSeek API key not configured" }, 500);
 
     if (body.action === "generate_plan") {
+      if (!hasUsableDocuments(body.documents) && !(body.courseOutline || "").trim()) {
+        return jsonResponse(
+          {
+            error:
+              "No readable text found in the selected files. Re-upload them (scanned PDFs need OCR) or paste a course outline.",
+          },
+          400,
+        );
+      }
       return jsonResponse(await generatePlan(body, deepSeekKey));
     }
 
     if (body.action === "generate_questions") {
+      if (!hasUsableDocuments(body.documents)) {
+        return jsonResponse(
+          {
+            error:
+              "StudyBody can only ask questions from your file's text, but no readable text was found. Re-upload the file (scanned PDFs need OCR).",
+          },
+          400,
+        );
+      }
       return jsonResponse(await generateQuestions(body, deepSeekKey));
     }
 
     if (body.action === "review_answers") {
-      if (!openAIKey) return jsonResponse({ error: "OpenAI API key not configured" }, 500);
-      return jsonResponse(await reviewAnswers(body, deepSeekKey, openAIKey));
+      return jsonResponse(await reviewAnswers(body, deepSeekKey));
     }
 
     return jsonResponse({ error: "Unknown StudyBody action" }, 400);

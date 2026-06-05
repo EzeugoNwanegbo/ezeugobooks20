@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { chunkDocumentText, documentPreview, type DocumentChunkInput } from "@/lib/document-chunks";
+import { stageDocForChat } from "@/lib/chat-handoff";
 import { toast } from "sonner";
 import {
   Upload,
@@ -14,7 +15,9 @@ import {
   FolderPlus,
   ChevronRight,
   ChevronDown,
+  MessageSquare,
   MoreVertical,
+  Search,
   Sparkles,
   X,
 } from "lucide-react";
@@ -49,12 +52,14 @@ function getUploadErrorMessage(error: unknown): string {
 // A generous safety ceiling only — the Android blank-page issue is NOT a
 // file-size/memory problem (it happens with small files too), so this is just
 // a guard against absurd uploads, not the fix.
-const MAX_UPLOAD_BYTES = 300 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 
 export function LibraryPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [folders, setFolders] = useState<FolderRow[]>([]);
   const [docs, setDocs] = useState<DocRow[]>([]);
+  const [query, setQuery] = useState("");
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<string>("");
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
@@ -126,20 +131,37 @@ export function LibraryPage() {
   }, []);
 
   const grouped = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const folderNameById = new Map(folders.map((f) => [f.id, f.name.toLowerCase()]));
+    const matches = (d: DocRow) => {
+      if (!q) return true;
+      const folderName = d.folder_id ? (folderNameById.get(d.folder_id) ?? "") : "uncategorised";
+      return (
+        d.file_name.toLowerCase().includes(q) ||
+        (d.suggested_subject?.toLowerCase().includes(q) ?? false) ||
+        folderName.includes(q)
+      );
+    };
     const map: Record<string, DocRow[]> = { __none: [] };
     for (const f of folders) map[f.id] = [];
     for (const d of docs) {
+      if (!matches(d)) continue;
       const k = d.folder_id ?? "__none";
       if (!map[k]) map[k] = [];
       map[k].push(d);
     }
     return map;
-  }, [folders, docs]);
+  }, [folders, docs, query]);
+
+  const matchCount = useMemo(
+    () => Object.values(grouped).reduce((total, list) => total + list.length, 0),
+    [grouped],
+  );
 
   const onUpload = async (file: File) => {
     if (!user) return;
     if (file.size > MAX_UPLOAD_BYTES) {
-      toast.error("File too large (max 300 MB)");
+      toast.error("File too large (max 500 MB)");
       return;
     }
     setUploading(true);
@@ -296,7 +318,7 @@ export function LibraryPage() {
     }
   };
 
-  const confirmAssign = async () => {
+  const confirmAssign = async (thenChat = false) => {
     if (!user || !pendingAssign || saving) return;
     setSaving(true);
     let folderId: string | null = null;
@@ -374,6 +396,15 @@ export function LibraryPage() {
       setPendingAssign(null);
       setChosenFolder("");
       setNewFolderName("");
+
+      if (thenChat) {
+        // Hand the new document to the chat as its search context and jump
+        // straight into a fresh conversation — "upload, then start chatting".
+        stageDocForChat(user.id, doc.id);
+        navigate({ to: "/app/chat", search: {} });
+        return;
+      }
+
       await refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Save failed");
@@ -577,8 +608,21 @@ export function LibraryPage() {
           )}
         </div>
 
+        {/* Search */}
+        {docs.length > 0 && (
+          <div className="relative mt-6 sm:mt-8">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search documents and folders..."
+              className="h-11 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+        )}
+
         {/* Folder list */}
-        <div className="mt-6 space-y-4 sm:mt-8">
+        <div className="mt-4 space-y-4 sm:mt-6">
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             <BookOpen className="h-3.5 w-3.5" />
             {docs.length} {docs.length === 1 ? "document" : "documents"} · {folders.length}{" "}
@@ -586,25 +630,42 @@ export function LibraryPage() {
           </div>
 
           {docs.length === 0 && folders.length === 0 ? (
-            <div className="py-10 text-center text-sm text-muted-foreground sm:py-12">
-              No documents yet. Upload your first file to start asking precise questions.
+            <div className="py-10 text-center sm:py-12">
+              <p className="text-sm text-muted-foreground">No documents yet.</p>
+              <button
+                type="button"
+                onClick={openFilePicker}
+                className="mt-5 inline-flex items-center gap-2 rounded-lg bg-gradient-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-glow"
+              >
+                <Upload className="h-4 w-4" />
+                Upload Your First File
+              </button>
             </div>
+          ) : query.trim() && matchCount === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground sm:py-12">
+              No documents match "{query}".
+            </p>
           ) : (
             <div className="space-y-3">
-              {folders.map((f) => (
-                <FolderBlock
-                  key={f.id}
-                  folder={f}
-                  docs={grouped[f.id] || []}
-                  open={!!openFolders[f.id]}
-                  onToggle={() => toggleFolder(f.id)}
-                  onRename={() => renameFolder(f)}
-                  onDelete={() => deleteFolder(f)}
-                  onDeleteDoc={onDelete}
-                  onMoveDoc={moveDoc}
-                  allFolders={folders}
-                />
-              ))}
+              {folders.map((f) => {
+                const folderDocs = grouped[f.id] || [];
+                // While searching, hide folders that have no matching documents.
+                if (query.trim() && folderDocs.length === 0) return null;
+                return (
+                  <FolderBlock
+                    key={f.id}
+                    folder={f}
+                    docs={folderDocs}
+                    open={!!openFolders[f.id] || !!query.trim()}
+                    onToggle={() => toggleFolder(f.id)}
+                    onRename={() => renameFolder(f)}
+                    onDelete={() => deleteFolder(f)}
+                    onDeleteDoc={onDelete}
+                    onMoveDoc={moveDoc}
+                    allFolders={folders}
+                  />
+                );
+              })}
               {(grouped.__none || []).length > 0 && (
                 <FolderBlock
                   folder={{
@@ -613,7 +674,7 @@ export function LibraryPage() {
                     color: null,
                   }}
                   docs={grouped.__none || []}
-                  open={!!openFolders.__none}
+                  open={!!openFolders.__none || !!query.trim()}
                   onToggle={() => toggleFolder("__none")}
                   onDeleteDoc={onDelete}
                   onMoveDoc={moveDoc}
@@ -676,21 +737,32 @@ export function LibraryPage() {
               />
             )}
 
-            <div className="mt-5 flex gap-2 justify-end">
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
               <button
                 onClick={cancelAssign}
                 disabled={saving}
-                className="px-4 py-2 text-sm rounded-lg border border-border hover:bg-surface-elevated transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-sm rounded-lg border border-border hover:bg-surface-elevated transition-colors disabled:opacity-40 disabled:cursor-not-allowed sm:mr-auto"
               >
                 Cancel
               </button>
               <button
-                onClick={() => void confirmAssign()}
+                onClick={() => void confirmAssign(false)}
                 disabled={saving}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow disabled:opacity-60 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-sm rounded-lg border border-border font-medium hover:bg-surface-elevated transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                {saving ? "Saving..." : "Save"}
+                Save to Library
+              </button>
+              <button
+                onClick={() => void confirmAssign(true)}
+                disabled={saving}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {saving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <MessageSquare className="h-3.5 w-3.5" />
+                )}
+                {saving ? "Saving..." : "Start Chatting"}
               </button>
             </div>
           </div>

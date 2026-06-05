@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
 import { lazy, Suspense } from "react";
 
 const OnboardingPage = lazy(() =>
@@ -15,7 +14,7 @@ export const Route = createFileRoute("/onboarding")({
 
 function OnboardingRoute() {
   return (
-    <Suspense fallback={<Loader2 className="m-auto h-5 w-5 animate-spin text-primary" />}>
+    <Suspense fallback={<div className="min-h-dvh bg-background" />}>
       <OnboardingPage />
     </Suspense>
   );

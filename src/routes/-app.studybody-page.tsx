@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
+  AlertTriangle,
   Brain,
   CheckCircle2,
   FileText,
@@ -138,7 +139,7 @@ function termsFrom(value: string): string[] {
 }
 
 function sourceText(sourceRefs: unknown[] | null | undefined): string {
-  if (!Array.isArray(sourceRefs) || sourceRefs.length === 0) return "No source refs yet";
+  if (!Array.isArray(sourceRefs) || sourceRefs.length === 0) return "from your uploaded material";
   return sourceRefs
     .slice(0, 2)
     .map((ref) => {
@@ -149,10 +150,46 @@ function sourceText(sourceRefs: unknown[] | null | undefined): string {
     .join(", ");
 }
 
-function statusFromScore(score: number): TopicRow["status"] {
-  if (score >= 80) return "mastered";
-  if (score >= 45) return "practicing";
-  return "learning";
+// A topic is only "mastered" after two recent practice sets both clear this
+// bar — one lucky set will not flip the roadmap to done.
+const MASTERY_THRESHOLD = 80;
+const MASTERY_HISTORY = 3;
+
+function difficultyFromScore(score?: number | null): "easier" | "medium" | "harder" {
+  if (score == null) return "medium";
+  if (score >= MASTERY_THRESHOLD) return "harder";
+  if (score <= 50) return "easier";
+  return "medium";
+}
+
+// Char budget for whole-document roadmap sampling, kept under the edge
+// function's 100k total so the request stays within DeepSeek's context.
+const MAX_SPAN_CHARS_TOTAL = 90_000;
+
+// Pick items spread evenly across the list (always including the first and
+// last) until the character budget is reached, so the sample represents the
+// whole document instead of just the opening chunks.
+function sampleEvenly(items: string[], maxChars: number): string {
+  if (items.length === 0) return "";
+  const total = items.reduce((sum, item) => sum + item.length, 0);
+  if (total <= maxChars) return items.join("\n\n");
+
+  const avg = total / items.length;
+  const canFit = Math.max(1, Math.floor(maxChars / Math.max(avg, 1)));
+  if (canFit >= items.length) return items.join("\n\n");
+
+  const indices: number[] = [];
+  for (let k = 0; k < canFit; k += 1) {
+    const idx = canFit === 1 ? 0 : Math.round((k * (items.length - 1)) / (canFit - 1));
+    if (indices[indices.length - 1] !== idx) indices.push(idx);
+  }
+
+  return indices
+    .map((idx, order) => {
+      const gap = order > 0 && idx - indices[order - 1] > 1 ? "[...]\n" : "";
+      return `${gap}${items[idx]}`;
+    })
+    .join("\n\n");
 }
 
 export function StudyBodyPage() {
@@ -175,6 +212,9 @@ export function StudyBodyPage() {
   const [questions, setQuestions] = useState<QuestionRow[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [review, setReview] = useState<StudyReview | null>(null);
+  // Prompts already served per topic, so the adaptive loop keeps asking fresh
+  // questions instead of repeating itself as the student practices.
+  const askedByTopicRef = useRef<Record<string, string[]>>({});
 
   const activePlan = useMemo(
     () => plans.find((plan) => plan.id === selectedPlanId) ?? null,
@@ -190,6 +230,10 @@ export function StudyBodyPage() {
       topics.reduce((sum, topic) => sum + Number(topic.mastery_score || 0), 0) / topics.length,
     );
   }, [topics]);
+  const masteredCount = useMemo(
+    () => topics.filter((topic) => topic.status === "mastered").length,
+    [topics],
+  );
 
   const refreshDocsAndPlans = async () => {
     if (!user) return;
@@ -267,6 +311,7 @@ export function StudyBodyPage() {
     setQuestions([]);
     setAnswers({});
     setReview(null);
+    askedByTopicRef.current = {};
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPlanId]);
 
@@ -326,6 +371,56 @@ export function StudyBodyPage() {
     }));
   };
 
+  // For roadmap building we need coverage of the WHOLE document, not just the
+  // first few pages. Pull the stored chunks and sample evenly across each file
+  // (start → middle → end) so DeepSeek plans from the entire textbook.
+  const loadStudyDocumentsSpanning = async (documentIds: string[]): Promise<StudyDocument[]> => {
+    if (!documentIds.length) return [];
+
+    const { data, error } = await db
+      .from("document_chunks")
+      .select("document_id, chunk_index, page_start, page_end, content")
+      .in("document_id", documentIds)
+      .order("chunk_index", { ascending: true });
+
+    const rows =
+      (data as Pick<
+        ChunkRow,
+        "document_id" | "chunk_index" | "page_start" | "page_end" | "content"
+      >[]) ?? [];
+    // No chunk rows (older uploads) — fall back to head-of-text excerpts.
+    if (error || rows.length === 0) return loadStudyDocuments(documentIds);
+
+    const byDoc = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const list = byDoc.get(row.document_id) ?? [];
+      list.push(row);
+      byDoc.set(row.document_id, list);
+    }
+
+    const docMeta = new Map(docs.map((doc) => [doc.id, doc]));
+    const perDocBudget = Math.max(8000, Math.floor(MAX_SPAN_CHARS_TOTAL / documentIds.length));
+
+    const result: StudyDocument[] = [];
+    for (const [docId, chunks] of byDoc) {
+      const labelled = chunks.map((chunk) => {
+        const label =
+          chunk.page_start || chunk.page_end
+            ? `[Page ${chunk.page_start ?? "?"}${chunk.page_end && chunk.page_end !== chunk.page_start ? `-${chunk.page_end}` : ""}]`
+            : `[Chunk ${chunk.chunk_index + 1}]`;
+        return `${label}\n${chunk.content}`;
+      });
+      const meta = docMeta.get(docId);
+      result.push({
+        id: docId,
+        file_name: meta?.file_name ?? "Document",
+        folder: meta ? folderName(meta) : null,
+        excerpt: sampleEvenly(labelled, perDocBudget),
+      });
+    }
+    return result;
+  };
+
   const createPlan = async () => {
     if (!user || !profile) return;
     if (schemaMissing) {
@@ -339,7 +434,7 @@ export function StudyBodyPage() {
 
     setLoading(true);
     try {
-      const studyDocs = await loadStudyDocuments(selectedDocIds);
+      const studyDocs = await loadStudyDocumentsSpanning(selectedDocIds);
       const generated = await generateStudyPlan({
         profile,
         planTitle: planTitle.trim() || "StudyBody roadmap",
@@ -397,8 +492,11 @@ export function StudyBodyPage() {
     }
   };
 
-  const startPractice = async () => {
-    if (!user || !profile || !activePlan || !activeTopic) return;
+  const runPractice = async (
+    topic: TopicRow | null,
+    opts?: { continuing?: boolean; lastScore?: number | null },
+  ) => {
+    if (!user || !profile || !activePlan || !topic) return;
     if (schemaMissing) {
       toast.error("StudyBody tables are missing in Supabase. Apply the StudyBody migration first.");
       return;
@@ -411,26 +509,38 @@ export function StudyBodyPage() {
       return;
     }
 
+    setSelectedTopicId(topic.id);
     setPracticeLoading(true);
     setReview(null);
     setAnswers({});
     try {
-      const studyDocs = await loadStudyDocuments(ids, activeTopic.title);
+      const studyDocs = await loadStudyDocuments(ids, topic.title);
+      const exclude = askedByTopicRef.current[topic.id] ?? [];
+      const lastScore = opts?.continuing
+        ? (opts.lastScore ?? Number(topic.mastery_score || 0))
+        : Number(topic.mastery_score || 0);
       const generated = await generateStudyQuestions({
         profile,
-        topic: activeTopic,
+        topic,
         questionType,
         count: questionCount,
         documents: studyDocs,
+        excludePrompts: exclude,
+        difficultyHint: difficultyFromScore(lastScore),
       });
-      if (!generated.questions.length) throw new Error("No questions came back from StudyBody.");
+      if (!generated.questions.length) {
+        toast.message(
+          "No fresh questions left from this material for the topic. Try another topic or add more files.",
+        );
+        return;
+      }
 
       const { data: sessionData, error: sessionErr } = await db
         .from("study_sessions")
         .insert({
           user_id: user.id,
           plan_id: activePlan.id,
-          topic_id: activeTopic.id,
+          topic_id: topic.id,
           question_type: questionType,
           requested_count: questionCount,
           total_questions: generated.questions.length,
@@ -447,7 +557,7 @@ export function StudyBodyPage() {
           user_id: user.id,
           session_id: session.id,
           plan_id: activePlan.id,
-          topic_id: activeTopic.id,
+          topic_id: topic.id,
           question_type: normalizedType,
           prompt: question.prompt,
           options: normalizedType === "mcq" ? (question.options ?? []) : [],
@@ -469,21 +579,33 @@ export function StudyBodyPage() {
         .order("position", { ascending: true });
       if (questionErr) throw questionErr;
 
+      askedByTopicRef.current[topic.id] = [
+        ...exclude,
+        ...generated.questions.map((question) => question.prompt),
+      ];
+
       await db
         .from("study_topics")
         .update({ status: "practicing", last_practiced_at: new Date().toISOString() })
-        .eq("id", activeTopic.id);
+        .eq("id", topic.id);
       await refreshTopics(activePlan.id);
 
       setActiveSession(session as SessionRow);
       setQuestions((savedQuestions as QuestionRow[]) ?? []);
-      toast.success("Practice set ready");
+      toast.success(opts?.continuing ? "Next questions ready" : "Practice set ready");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not start practice");
     } finally {
       setPracticeLoading(false);
     }
   };
+
+  const startPractice = () => runPractice(activeTopic);
+  const continuePractice = () =>
+    runPractice(activeTopic, {
+      continuing: true,
+      lastScore: review ? Number(review.grading.percentage ?? 0) : null,
+    });
 
   const submitPractice = async () => {
     if (!user || !profile || !activeSession || !activeTopic) return;
@@ -542,11 +664,37 @@ export function StudyBodyPage() {
           completed_at: new Date().toISOString(),
         })
         .eq("id", activeSession.id);
+      // Sustained mastery: blend the most recent sessions instead of letting a
+      // single set define the topic, and only mark "mastered" after two recent
+      // sets both clear the bar.
+      const { data: recentRows } = await db
+        .from("study_sessions")
+        .select("score, status, created_at")
+        .eq("topic_id", activeTopic.id)
+        .eq("status", "completed")
+        .order("created_at", { ascending: false });
+      const recentScores = ((recentRows as { score: number | null }[]) ?? []).map((row) =>
+        Math.round(Number(row.score ?? 0)),
+      );
+      if (!recentScores.length) recentScores.push(percentage);
+      const recentWindow = recentScores.slice(0, MASTERY_HISTORY);
+      const rollingAvg = Math.round(
+        recentWindow.reduce((sum, value) => sum + value, 0) / recentWindow.length,
+      );
+      const mastered =
+        recentWindow.length >= 2 &&
+        recentWindow[0] >= MASTERY_THRESHOLD &&
+        recentWindow[1] >= MASTERY_THRESHOLD;
+      const nextStatus: TopicRow["status"] = mastered
+        ? "mastered"
+        : rollingAvg > 0
+          ? "practicing"
+          : "learning";
       await db
         .from("study_topics")
         .update({
-          mastery_score: percentage,
-          status: statusFromScore(percentage),
+          mastery_score: rollingAvg,
+          status: nextStatus,
           last_practiced_at: new Date().toISOString(),
         })
         .eq("id", activeTopic.id);
@@ -571,7 +719,20 @@ export function StudyBodyPage() {
         feedback: result,
       });
       await refreshTopics(activeSession.plan_id);
-      toast.success("Practice reviewed");
+
+      if (mastered) {
+        const next = topics.find(
+          (item) => item.id !== activeTopic.id && item.status !== "mastered",
+        );
+        if (next) {
+          toast.success(`${activeTopic.title} mastered — moving to the next topic.`);
+          await runPractice(next);
+        } else {
+          toast.success("Roadmap complete — every topic is mastered.");
+        }
+      } else {
+        toast.success("Practice reviewed — keep going to master this topic.");
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not review answers");
     } finally {
@@ -580,7 +741,7 @@ export function StudyBodyPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto overflow-x-hidden px-3 py-5 sm:px-6 lg:px-8">
+    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 overflow-x-hidden">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -663,8 +824,8 @@ export function StudyBodyPage() {
                       >
                         <FileText className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate font-medium">{doc.file_name}</span>
-                          <span className="block truncate text-xs text-muted-foreground">
+                          <span className="block break-words font-medium">{doc.file_name}</span>
+                          <span className="block break-words text-xs text-muted-foreground">
                             {folderName(doc) || "Uncategorised"}
                           </span>
                         </span>
@@ -708,7 +869,7 @@ export function StudyBodyPage() {
                           : "border-border bg-surface/30 hover:border-primary/30"
                       }`}
                     >
-                      <span className="block truncate font-medium">{plan.title}</span>
+                      <span className="block break-words font-medium">{plan.title}</span>
                       <span className="text-xs text-muted-foreground">{plan.source_type}</span>
                     </button>
                   ))
@@ -731,10 +892,20 @@ export function StudyBodyPage() {
                 {activePlan && (
                   <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
                     <Trophy className="h-4 w-4 text-primary" />
-                    {averageMastery}% average
+                    {masteredCount}/{topics.length} mastered
                   </div>
                 )}
               </div>
+
+              {activePlan && topics.length > 0 && (
+                <div className="mb-4">
+                  <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Roadmap progress</span>
+                    <span className="font-semibold text-foreground">{averageMastery}%</span>
+                  </div>
+                  <ProgressBar value={averageMastery} />
+                </div>
+              )}
 
               <div className="space-y-3">
                 {topics.length === 0 ? (
@@ -745,35 +916,48 @@ export function StudyBodyPage() {
                   topics.map((topic, index) => (
                     <button
                       key={topic.id}
-                      onClick={() => setSelectedTopicId(topic.id)}
+                      onClick={() => {
+                        setSelectedTopicId(topic.id);
+                        setActiveSession(null);
+                        setQuestions([]);
+                        setAnswers({});
+                        setReview(null);
+                      }}
                       className={`w-full min-w-0 rounded-lg border p-3 text-left transition-colors ${
                         selectedTopicId === topic.id
                           ? "border-primary/50 bg-primary/10"
                           : "border-border bg-surface/25 hover:border-primary/30"
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-3 min-w-0">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-start justify-between gap-2">
+                          <div className="flex min-w-0 flex-1 items-center gap-2 text-sm font-semibold">
                             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-xs">
                               {index + 1}
                             </span>
-                            <span className="truncate">{topic.title}</span>
+                            <span className="min-w-0 flex-1 break-words">{topic.title}</span>
                           </div>
-                          <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
-                            {topic.summary || "No summary yet."}
-                          </p>
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            {sourceText(topic.source_refs)}
-                          </p>
+                          {topic.status === "mastered" && (
+                            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                          )}
                         </div>
-                        <div className="text-right">
-                          <div className="text-sm font-semibold">
+                        <p className="mt-2 text-sm text-muted-foreground break-words">
+                          {topic.summary || "No summary yet."}
+                        </p>
+                        <p className="mt-2 text-xs text-muted-foreground break-words">
+                          {sourceText(topic.source_refs)}
+                        </p>
+                        <div className="mt-3 flex items-center gap-2">
+                          <ProgressBar
+                            value={Math.round(Number(topic.mastery_score || 0))}
+                            className="flex-1"
+                          />
+                          <span className="shrink-0 text-xs font-semibold">
                             {Math.round(Number(topic.mastery_score || 0))}%
-                          </div>
-                          <div className="text-xs text-muted-foreground">
+                          </span>
+                          <span className="shrink-0 text-[11px] text-muted-foreground">
                             {STATUS_LABEL[topic.status]}
-                          </div>
+                          </span>
                         </div>
                       </div>
                     </button>
@@ -854,7 +1038,22 @@ export function StudyBodyPage() {
                       <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                         {question.question_type} - {question.difficulty} - {index + 1}
                       </div>
-                      <p className="text-sm font-medium">{question.prompt}</p>
+                      <p className="text-sm font-medium break-words">{question.prompt}</p>
+                      {Array.isArray(question.source_refs) && question.source_refs.length > 0 ? (
+                        <p className="mt-2 flex items-start gap-1.5 rounded-md bg-primary/5 px-2 py-1.5 text-xs text-muted-foreground break-words">
+                          <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                          <span className="min-w-0">
+                            Source: {sourceText(question.source_refs)}
+                          </span>
+                        </p>
+                      ) : (
+                        <p className="mt-2 flex items-start gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-xs font-medium text-amber-600 break-words dark:text-amber-400">
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          <span className="min-w-0">
+                            Not found in your material — answer with caution.
+                          </span>
+                        </p>
+                      )}
                       {question.question_type === "mcq" ? (
                         <div className="mt-3 space-y-2">
                           {(question.options ?? []).map((option) => (
@@ -863,14 +1062,14 @@ export function StudyBodyPage() {
                               onClick={() =>
                                 setAnswers((current) => ({ ...current, [question.id]: option.id }))
                               }
-                              className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${
+                              className={`flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-sm ${
                                 answers[question.id] === option.id
                                   ? "border-primary/50 bg-primary/10"
                                   : "border-border hover:border-primary/30"
                               }`}
                             >
-                              <span className="font-semibold">{option.id}</span>
-                              <span>{option.text}</span>
+                              <span className="shrink-0 font-semibold">{option.id}</span>
+                              <span className="min-w-0 flex-1 break-words">{option.text}</span>
                             </button>
                           ))}
                         </div>
@@ -916,12 +1115,44 @@ export function StudyBodyPage() {
                   <p className="whitespace-pre-wrap text-sm text-muted-foreground">
                     {review.coaching}
                   </p>
+                  {activeTopic && activeTopic.status !== "mastered" && (
+                    <button
+                      onClick={continuePractice}
+                      disabled={practiceLoading}
+                      className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+                    >
+                      {practiceLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Play className="h-4 w-4" />
+                      )}
+                      Continue with new questions
+                    </button>
+                  )}
                 </div>
               )}
             </aside>
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+function ProgressBar({ value, className = "" }: { value: number; className?: string }) {
+  const pct = Math.max(0, Math.min(100, Math.round(value)));
+  return (
+    <div
+      className={`h-2 overflow-hidden rounded-full bg-surface/60 ${className}`}
+      role="progressbar"
+      aria-valuenow={pct}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
+      <div
+        className="h-full rounded-full bg-primary transition-[width] duration-500"
+        style={{ width: `${pct}%` }}
+      />
     </div>
   );
 }

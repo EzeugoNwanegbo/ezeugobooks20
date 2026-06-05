@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
 import { lazy, Suspense } from "react";
+import { PageSkeleton } from "@/components/app-skeletons";
 
 const LibraryPage = lazy(() =>
   import("./-app.library-page").then((module) => ({ default: module.LibraryPage })),
@@ -16,7 +16,7 @@ export const Route = createFileRoute("/app/library")({
 
 function LibraryRoute() {
   return (
-    <Suspense fallback={<Loader2 className="m-auto h-5 w-5 animate-spin text-primary" />}>
+    <Suspense fallback={<PageSkeleton />}>
       <LibraryPage />
     </Suspense>
   );

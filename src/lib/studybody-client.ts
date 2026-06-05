@@ -118,12 +118,16 @@ export async function generateStudyQuestions({
   questionType,
   count,
   documents,
+  excludePrompts,
+  difficultyHint,
 }: {
   profile: Profile;
   topic: unknown;
   questionType: StudyQuestionType;
   count: number;
   documents: StudyDocument[];
+  excludePrompts?: string[];
+  difficultyHint?: "easier" | "medium" | "harder";
 }) {
   return callStudyBody<{ questions: GeneratedQuestion[] }>({
     action: "generate_questions",
@@ -132,6 +136,8 @@ export async function generateStudyQuestions({
     questionType,
     count,
     documents,
+    excludePrompts,
+    difficultyHint,
   });
 }
 
