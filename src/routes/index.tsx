@@ -1,7 +1,17 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { isNativeApp } from "@/lib/native";
 
 export const Route = createFileRoute("/")({
+  // In the installed app the marketing landing page is just dead weight — send
+  // users straight into the product. The auth route handles the signed-in vs
+  // signed-out split (and bounces to /onboarding when needed). On the web we
+  // keep the landing page as-is.
+  beforeLoad: () => {
+    if (isNativeApp()) {
+      throw redirect({ to: "/auth" });
+    }
+  },
   head: () => ({
     meta: [
       { title: "G&D - pinpoint answers from large files" },
@@ -15,84 +25,81 @@ export const Route = createFileRoute("/")({
   component: Landing,
 });
 
-const cards = [
-  {
-    label: "01 / Upload",
-    title: "Large files become searchable.",
-    body: "Drop in PDFs, lecture notes, slide decks, or chapters. G&D extracts the text so every question can point back to the right source.",
-  },
-  {
-    label: "02 / Pinpoint",
-    title: "Ask for the exact thing.",
-    body: "Search across long files in seconds and return the passages, page labels, and file names that actually answer the question.",
-  },
-  {
-    label: "03 / Answer",
-    title: "Evidence first, explanation next.",
-    body: "Get the direct answer first, then the supporting source trail, then a clear explanation when you want the concept to stick.",
-  },
-];
+// Stripped-down home screen used as a deploy smoke test: just the G&D logo and
+// an inline venom-style mascot so it's instantly obvious whether a push reached
+// the live site.
+function VenomMascot() {
+  return (
+    <svg
+      width="200"
+      height="240"
+      viewBox="0 0 200 240"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-label="G&D venom mascot"
+      role="img"
+    >
+      {/* head */}
+      <path
+        d="M100 8c-44 0-78 30-78 78 0 40 20 74 48 100 8 8 14 14 30 14s22-6 30-14c28-26 48-60 48-100 0-48-34-78-78-78z"
+        fill="#0a0a0a"
+      />
+      {/* glossy highlight */}
+      <ellipse cx="78" cy="60" rx="20" ry="34" fill="#1f1f1f" opacity="0.6" />
+      {/* left eye */}
+      <path d="M40 78c14-16 38-12 44 6-10 14-44 16-44-6z" fill="#fff" />
+      {/* right eye */}
+      <path d="M160 78c-14-16-38-12-44 6 10 14 44 16 44-6z" fill="#fff" />
+      {/* mouth */}
+      <path d="M52 132c20 22 76 22 96 0-18 34-78 34-96 0z" fill="#0a0a0a" />
+      {/* teeth */}
+      <path
+        d="M58 134l8 16 8-16 8 16 8-16 8 16 8-16 8 16 8-16 8 16 8-16 8 16 8-16"
+        stroke="#fff"
+        strokeWidth="3"
+        fill="none"
+        strokeLinejoin="round"
+      />
+      {/* tongue */}
+      <path
+        d="M96 150c0 30-20 46-20 70 0 8 8 12 14 8 8-6 10-18 10-30 0 12 2 24 10 30 6 4 14 0 14-8 0-24-20-40-20-70z"
+        fill="#c01818"
+      />
+    </svg>
+  );
+}
 
 function Landing() {
   return (
-    <main className="luxury-page">
-      <div className="symbiote-blob blob-one" />
-      <div className="symbiote-blob blob-two" />
-      <div className="symbiote-blob blob-three" />
-
-      <nav className="luxury-nav" aria-label="Primary navigation">
-        <Link to="/" className="luxury-logo">
-          G&D
-        </Link>
-        <ThemeToggle />
-      </nav>
-
-      <section className="luxury-hero" id="method">
-        <p className="luxury-eyebrow">Precision search for your study files</p>
-        <h1>Ask huge files one question. Get the exact answer back.</h1>
-        <p className="luxury-copy">
-          Upload notes, PDFs, or slide decks and ask for the detail buried inside. G&D finds the
-          right passage, shows where it came from, and explains only after the evidence is pinned
-          down.
-        </p>
-        <div className="luxury-actions">
-          <Link to="/auth" search={{ mode: "signup" }} className="luxury-primary">
-            Search your files
-          </Link>
-          <Link to="/auth" className="luxury-ghost">
-            Enter workspace <span aria-hidden="true">-&gt;</span>
-          </Link>
-        </div>
-      </section>
-
-      <section className="luxury-card-grid" id="library" aria-label="Study workflow">
-        {cards.map((card) => (
-          <article className="luxury-card" key={card.title}>
-            <p>{card.label}</p>
-            <h2>{card.title}</h2>
-            <span>{card.body}</span>
-          </article>
-        ))}
-      </section>
-
-      <footer className="luxury-footer" id="practice">
-        <div className="luxury-status">
-          <span className="availability-dot" />
-          Library active
-        </div>
-        <div className="luxury-ticker" aria-hidden="true">
-          <div>
-            <span>selected PDFs</span>
-            <span>exact passages</span>
-            <span>page-aware answers</span>
-            <span>source-backed evidence</span>
-            <span>selected PDFs</span>
-            <span>exact passages</span>
-            <span>page-aware answers</span>
-            <span>source-backed evidence</span>
-          </div>
-        </div>
-      </footer>
+    <main
+      style={{
+        minHeight: "100dvh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "1.5rem",
+        background: "#000",
+        color: "#fff",
+        fontFamily: "system-ui, sans-serif",
+        textAlign: "center",
+        padding: "2rem",
+      }}
+    >
+      <Link
+        to="/"
+        style={{
+          fontSize: "4rem",
+          fontWeight: 800,
+          letterSpacing: "0.1em",
+          color: "#fff",
+          textDecoration: "none",
+        }}
+      >
+        G&amp;D
+      </Link>
+      <VenomMascot />
+      <ThemeToggle />
     </main>
   );
 }
