@@ -1,4 +1,5 @@
-@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=DM+Sans:wght@300;400&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Hanken+Grotesk:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap");
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
@@ -51,76 +52,77 @@ html {
   --color-source-general: var(--source-general);
   --color-source-web: var(--source-web);
 
-  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Cormorant Garamond", ui-serif, Georgia, serif;
+  --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
 :root {
-  --radius: 0.5rem;
+  --radius: 0.875rem;
 
-  /* Dark luxury app palette */
-  --background: #0e0d0b;
-  --foreground: #f5f0e8;
+  /* Dark Symbiote Organicism palette (matches the landing) */
+  --background: #060606;
+  --foreground: #e9e7e3;
 
-  --surface: #14120f;
-  --surface-elevated: #1a1815;
+  --surface: #111110;
+  --surface-elevated: #1b1b19;
 
-  --card: rgba(245, 240, 232, 0.04);
-  --card-foreground: #f5f0e8;
+  --card: rgba(228, 228, 204, 0.04);
+  --card-foreground: #e9e7e3;
 
-  --popover: #14120f;
-  --popover-foreground: #f5f0e8;
+  --popover: #111110;
+  --popover-foreground: #e9e7e3;
 
   /* Warm beige primary */
-  --primary: #f5f0e8;
-  --primary-foreground: #0e0d0b;
-  --primary-glow: #c8c2b4;
+  --primary: #e4e4cc;
+  --primary-foreground: #1b1d0e;
+  --primary-glow: #c8c8b0;
 
   /* Quiet secondary surface */
-  --secondary: #171512;
-  --secondary-foreground: #f5f0e8;
+  --secondary: #15150f;
+  --secondary-foreground: #e9e7e3;
 
-  --muted: #171512;
-  --muted-foreground: #8a8680;
+  --muted: #15150f;
+  --muted-foreground: #b6b4ab;
 
-  --accent: #c8c2b4;
-  --accent-foreground: #0e0d0b;
+  --accent: #c8c8b0;
+  --accent-foreground: #1b1d0e;
 
   /* Reserved warm warning tone */
-  --coral: #c8c2b4;
-  --coral-foreground: #0e0d0b;
+  --coral: #c8c8b0;
+  --coral-foreground: #1b1d0e;
 
   --destructive: #b66b5f;
-  --destructive-foreground: #0e0d0b;
+  --destructive-foreground: #1b1d0e;
 
-  --border: rgba(245, 240, 232, 0.1);
-  --input: rgba(245, 240, 232, 0.12);
-  --ring: #c8c2b4;
+  --border: rgba(228, 228, 204, 0.1);
+  --input: rgba(228, 228, 204, 0.12);
+  --ring: #c8c8b0;
 
   /* Source badges */
-  --source-library: #f5f0e8;
-  --source-general: #c8c2b4;
+  --source-library: #e4e4cc;
+  --source-general: #c8c8b0;
   --source-web: #9e9a93;
 
-  --luxury-soft: rgba(245, 240, 232, 0.04);
-  --luxury-soft-strong: rgba(245, 240, 232, 0.08);
-  --luxury-border-soft: rgba(245, 240, 232, 0.1);
-  --luxury-border-strong: rgba(245, 240, 232, 0.18);
+  --luxury-soft: rgba(228, 228, 204, 0.04);
+  --luxury-soft-strong: rgba(228, 228, 204, 0.08);
+  --luxury-border-soft: rgba(228, 228, 204, 0.1);
+  --luxury-border-strong: rgba(228, 228, 204, 0.18);
   --luxury-muted: #8a8680;
   --luxury-subtle: #6b6760;
   --luxury-faint: #4a4845;
   --luxury-ai-bg: #030303;
-  --luxury-selection: rgba(245, 240, 232, 0.18);
+  --luxury-selection: rgba(228, 228, 204, 0.18);
   --luxury-button-sheen: rgba(14, 13, 11, 0.16);
   --luxury-code-bg: #100f0d;
-  --luxury-pulse: rgba(245, 240, 232, 0.18);
+  --luxury-pulse: rgba(228, 228, 204, 0.18);
 
   /* Shadows */
   --gradient-primary: none;
   --gradient-surface: none;
   --gradient-glow: none;
   --shadow-elegant: 0 18px 70px -38px rgba(0, 0, 0, 0.86);
-  --shadow-glow: 0 0 34px rgba(245, 240, 232, 0.1);
+  --shadow-glow: 0 0 34px rgba(228, 228, 204, 0.1);
 
   --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -386,7 +388,7 @@ a.bg-gradient-primary > * {
   overflow-y: auto;
   background: var(--background);
   color: var(--foreground);
-  font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans);
   -webkit-overflow-scrolling: touch;
 }
 
@@ -408,9 +410,10 @@ a.bg-gradient-primary > * {
 
 .luxury-brand-text {
   color: var(--foreground);
-  font-family: "Cormorant Garamond", ui-serif, Georgia, serif;
-  font-size: 26px;
-  font-weight: 300;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   line-height: 1;
 }
 
@@ -590,7 +593,7 @@ a.bg-gradient-primary > * {
   overflow: hidden;
   background: var(--background);
   color: var(--foreground);
-  font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-weight: 300;
   isolation: isolate;
 }
@@ -666,10 +669,10 @@ a.bg-gradient-primary > * {
 
 .luxury-logo {
   color: var(--foreground);
-  font-family: "Cormorant Garamond", ui-serif, Georgia, serif;
-  font-size: 28px;
-  font-weight: 300;
-  letter-spacing: 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   text-decoration: none;
 }
 
@@ -710,14 +713,14 @@ a.bg-gradient-primary > * {
 }
 
 .luxury-hero h1 {
-  max-width: 520px;
+  max-width: 620px;
   margin: 0;
   color: var(--foreground);
-  font-family: "Cormorant Garamond", ui-serif, Georgia, serif;
-  font-size: 88px;
-  font-weight: 300;
-  line-height: 0.94;
-  letter-spacing: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.6rem, 6vw, 5rem);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
 }
 
 .luxury-hero h1 em {
@@ -855,11 +858,11 @@ a.bg-gradient-primary > * {
 .luxury-card h2 {
   margin: 0;
   color: var(--foreground);
-  font-family: "Cormorant Garamond", ui-serif, Georgia, serif;
-  font-size: 42px;
-  font-weight: 300;
-  line-height: 1.02;
-  letter-spacing: 0;
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
 }
 
 .luxury-card span {
