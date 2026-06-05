@@ -1,17 +1,7 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { isNativeApp } from "@/lib/native";
 
 export const Route = createFileRoute("/")({
-  // In the installed app the marketing landing page is just dead weight — send
-  // users straight into the product. The auth route handles the signed-in vs
-  // signed-out split (and bounces to /onboarding when needed). On the web we
-  // keep the landing page as-is.
-  beforeLoad: () => {
-    if (isNativeApp()) {
-      throw redirect({ to: "/auth" });
-    }
-  },
   head: () => ({
     meta: [
       { title: "G&D - pinpoint answers from large files" },
