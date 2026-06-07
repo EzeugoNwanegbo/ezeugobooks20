@@ -39,6 +39,18 @@ type DocRow = {
   created_at: string;
 };
 
+// A file that has been read + chunked in the browser and is waiting for the
+// user to choose a folder. Uploading several files queues a batch of these.
+type ProcessedFile = {
+  fileName: string;
+  storagePath: string;
+  extracted: string;
+  chunks: DocumentChunkInput[];
+  pageCount: number;
+  fileType: string;
+  fileSize: number;
+};
+
 function getUploadErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) return "Upload failed";
   return error.message || "Upload failed";
@@ -63,15 +75,7 @@ export function LibraryPage() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<string>("");
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
-  const [pendingAssign, setPendingAssign] = useState<{
-    fileName: string;
-    storagePath: string;
-    extracted: string;
-    chunks: DocumentChunkInput[];
-    pageCount: number;
-    fileType: string;
-    fileSize: number;
-  } | null>(null);
+  const [pendingBatch, setPendingBatch] = useState<ProcessedFile[] | null>(null);
   const [chosenFolder, setChosenFolder] = useState<string>("");
   const [newFolderName, setNewFolderName] = useState<string>("");
   const [saving, setSaving] = useState(false);
@@ -158,13 +162,15 @@ export function LibraryPage() {
     [grouped],
   );
 
-  const onUpload = async (file: File) => {
-    if (!user) return;
+  // Read + chunk a single file in the browser. Returns the processed result, or
+  // null if the file was rejected (too large, empty, unreadable) — the caller
+  // keeps going so one bad file doesn't sink the whole batch.
+  const processFile = async (file: File): Promise<ProcessedFile | null> => {
+    if (!user) return null;
     if (file.size > MAX_UPLOAD_BYTES) {
-      toast.error("File too large (max 500 MB)");
-      return;
+      toast.error(`"${file.name}" is too large (max 500 MB)`);
+      return null;
     }
-    setUploading(true);
     // Breadcrumb + stage marker: if the browser tab dies mid-processing (Android
     // Chrome killing the renderer), there's no catchable error. We record an
     // "in-flight" flag plus the last stage reached, then report it on next mount
@@ -182,129 +188,177 @@ export function LibraryPage() {
       // sessionStorage may be unavailable; the breadcrumb is best-effort.
     }
     setStage("started");
-    try {
-      setProgress("Extracting text (large PDFs may take a minute)...");
-      let extracted = "";
-      let pageCount = 0;
-      setStage("detecting-type");
-      const lowerName = file.name.toLowerCase();
-      const isImage = file.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(lowerName);
-      const isText = file.type.startsWith("text/") || lowerName.endsWith(".txt");
 
-      // iOS often reports PDFs as application/octet-stream or with no MIME at
-      // all (iCloud Drive). Check MIME, extension, then scan first 1KB for the
-      // "%PDF-" header — Acrobat-compatible tolerance for leading garbage.
-      let isPdf =
-        file.type === "application/pdf" || file.type.includes("pdf") || lowerName.endsWith(".pdf");
-      if (!isPdf && !isImage && !isText && file.size >= 5) {
-        const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
-        for (let i = 0; i <= head.length - 5; i++) {
-          if (
-            head[i] === 0x25 &&
-            head[i + 1] === 0x50 &&
-            head[i + 2] === 0x44 &&
-            head[i + 3] === 0x46 &&
-            head[i + 4] === 0x2d
-          ) {
-            isPdf = true;
-            break;
-          }
-        }
-      }
+    let extracted = "";
+    let pageCount = 0;
+    setStage("detecting-type");
+    const lowerName = file.name.toLowerCase();
+    const isImage = file.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(lowerName);
+    const isText = file.type.startsWith("text/") || lowerName.endsWith(".txt");
+    const isDocx = lowerName.endsWith(".docx");
+    const isPptx = lowerName.endsWith(".pptx");
 
-      if (isPdf) {
-        // Lazy-import pdf.js so the Library page stays lightweight until a file
-        // is actually being processed. Loading the heavy PDF engine up front
-        // made the page memory-heavy exactly when the Android file picker is
-        // open, which makes Android Chrome more likely to discard/kill the
-        // page (the "blank, stuck until reload" symptom).
-        setStage("pdf:importing-engine");
-        const { extractPdfText } = await import("@/lib/pdf");
-        setStage("pdf:engine-loaded");
-        const r = await extractPdfText(file, Number.POSITIVE_INFINITY, setStage);
-        extracted = r.text;
-        pageCount = r.pageCount;
-      } else if (isImage) {
-        setStage("image:importing-ocr");
-        setProgress("Loading OCR engine...");
-        // Lazy-import tesseract so PDF/text uploads don't pay the cost
-        // (and aren't blocked when the OCR bundle fails to load on flaky
-        // mobile networks).
-        const { extractImageText } = await import("@/lib/image-ocr");
-        setStage("image:ocr-loaded");
-        setProgress("Reading image text in your browser...");
-        const r = await extractImageText(file, (status, percent) => {
-          setProgress(percent === undefined ? status : `${status} (${percent}%)`);
-        });
-        extracted = r.text;
-        pageCount = r.pageCount;
-      } else if (isText) {
-        setStage("text:reading");
-        extracted = await file.text();
-      } else if (file.size > 0) {
-        // Last-resort fallback for unknown binaries (e.g. iCloud Drive PDFs
-        // with no extension, no MIME, and leading bytes before %PDF). Let
-        // pdfjs decide — it throws a clean error if it isn't really a PDF.
-        try {
-          setStage("probe:importing-engine");
-          const { extractPdfText } = await import("@/lib/pdf");
-          const r = await extractPdfText(file, Number.POSITIVE_INFINITY, (s) =>
-            setStage(`probe:${s}`),
-          );
-          extracted = r.text;
-          pageCount = r.pageCount;
+    // Legacy binary Office formats can't be read reliably in the browser.
+    if (/\.(doc|ppt)$/i.test(lowerName)) {
+      toast.error(
+        `"${file.name}" is an old Office format. Open it and "Save As" .docx or .pptx, then upload again.`,
+      );
+      return null;
+    }
+
+    // iOS often reports PDFs as application/octet-stream or with no MIME at
+    // all (iCloud Drive). Check MIME, extension, then scan first 1KB for the
+    // "%PDF-" header — Acrobat-compatible tolerance for leading garbage.
+    let isPdf =
+      file.type === "application/pdf" || file.type.includes("pdf") || lowerName.endsWith(".pdf");
+    if (!isPdf && !isImage && !isText && !isDocx && !isPptx && file.size >= 5) {
+      const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
+      for (let i = 0; i <= head.length - 5; i++) {
+        if (
+          head[i] === 0x25 &&
+          head[i + 1] === 0x50 &&
+          head[i + 2] === 0x44 &&
+          head[i + 3] === 0x46 &&
+          head[i + 4] === 0x2d
+        ) {
           isPdf = true;
-        } catch (probeErr) {
-          const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
-          const hex = Array.from(head)
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join(" ");
-          console.warn("Unrecognised upload", {
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            head: hex,
-            probeErr,
-          });
-          toast.error(
-            `Couldn't read this file as a PDF, text, or image (type: ${file.type || "unknown"}, ${(file.size / 1024 / 1024).toFixed(1)} MB). Try saving the file to your Downloads or Files folder first, then upload from there.`,
-          );
-          setUploading(false);
-          setProgress("");
-          return;
+          break;
         }
-      } else {
-        toast.error("That file looks empty. Try a different one.");
-        setUploading(false);
-        setProgress("");
-        return;
       }
+    }
 
-      setStage("chunking");
-      setProgress("Preparing searchable chunks...");
-      const chunks = chunkDocumentText(extracted);
-
-      // Text-only mode: we don't upload the original PDF to storage (saves
-      // bandwidth and bypasses the 50 MB Supabase storage default limit for
-      // huge course materials). storage_path is a virtual marker.
-      const path = `text-only/${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-
-      setStage("opening-modal");
-      // Open assignment modal — defer DB insert until user confirms
-      setPendingAssign({
-        fileName: file.name,
-        storagePath: path,
-        extracted: documentPreview(extracted),
-        chunks,
-        pageCount: pageCount || 0,
-        fileType: isPdf ? "pdf" : file.type.startsWith("image/") ? "image" : "text",
-        fileSize: file.size,
+    if (isDocx) {
+      setStage("docx:extracting");
+      const { extractDocxText } = await import("@/lib/office");
+      extracted = await extractDocxText(file);
+    } else if (isPptx) {
+      setStage("pptx:extracting");
+      const { extractPptxText } = await import("@/lib/office");
+      const r = await extractPptxText(file);
+      extracted = r.text;
+      pageCount = r.slideCount;
+    } else if (isPdf) {
+      // Lazy-import pdf.js so the Library page stays lightweight until a file
+      // is actually being processed. Loading the heavy PDF engine up front
+      // made the page memory-heavy exactly when the Android file picker is
+      // open, which makes Android Chrome more likely to discard/kill the
+      // page (the "blank, stuck until reload" symptom).
+      setStage("pdf:importing-engine");
+      const { extractPdfText } = await import("@/lib/pdf");
+      setStage("pdf:engine-loaded");
+      const r = await extractPdfText(file, Number.POSITIVE_INFINITY, setStage);
+      extracted = r.text;
+      pageCount = r.pageCount;
+    } else if (isImage) {
+      setStage("image:importing-ocr");
+      setProgress("Loading OCR engine...");
+      // Lazy-import tesseract so PDF/text uploads don't pay the cost
+      // (and aren't blocked when the OCR bundle fails to load on flaky
+      // mobile networks).
+      const { extractImageText } = await import("@/lib/image-ocr");
+      setStage("image:ocr-loaded");
+      setProgress("Reading image text in your browser...");
+      const r = await extractImageText(file, (status, percent) => {
+        setProgress(percent === undefined ? status : `${status} (${percent}%)`);
       });
-      setChosenFolder("__none");
-      setNewFolderName("");
-    } catch (err) {
-      console.error("upload document", err);
-      toast.error(getUploadErrorMessage(err));
+      extracted = r.text;
+      pageCount = r.pageCount;
+    } else if (isText) {
+      setStage("text:reading");
+      extracted = await file.text();
+    } else if (file.size > 0) {
+      // Last-resort fallback for unknown binaries (e.g. iCloud Drive PDFs
+      // with no extension, no MIME, and leading bytes before %PDF). Let
+      // pdfjs decide — it throws a clean error if it isn't really a PDF.
+      try {
+        setStage("probe:importing-engine");
+        const { extractPdfText } = await import("@/lib/pdf");
+        const r = await extractPdfText(file, Number.POSITIVE_INFINITY, (s) =>
+          setStage(`probe:${s}`),
+        );
+        extracted = r.text;
+        pageCount = r.pageCount;
+        isPdf = true;
+      } catch (probeErr) {
+        const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+        const hex = Array.from(head)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(" ");
+        console.warn("Unrecognised upload", {
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          head: hex,
+          probeErr,
+        });
+        toast.error(
+          `Couldn't read "${file.name}" as a PDF, Word, PowerPoint, text, or image (type: ${file.type || "unknown"}, ${(file.size / 1024 / 1024).toFixed(1)} MB). Try saving it to your Downloads or Files folder first, then upload from there.`,
+        );
+        return null;
+      }
+    } else {
+      toast.error(`"${file.name}" looks empty. Try a different one.`);
+      return null;
+    }
+
+    // Office files with no text runs are almost always image-only decks/scans;
+    // reject them clearly. (PDFs/images keep their original behaviour: a scanned
+    // file with no OCR text can still be saved.)
+    if ((isDocx || isPptx) && !extracted.trim()) {
+      toast.error(`Couldn't find any text in "${file.name}". It may be image-only or empty.`);
+      return null;
+    }
+
+    setStage("chunking");
+    const chunks = chunkDocumentText(extracted);
+
+    // Text-only mode: we don't upload the original file to storage (saves
+    // bandwidth and bypasses the 50 MB Supabase storage default limit for
+    // huge course materials). storage_path is a virtual marker.
+    const path = `text-only/${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const fileType = isPdf
+      ? "pdf"
+      : isImage
+        ? "image"
+        : isDocx
+          ? "docx"
+          : isPptx
+            ? "pptx"
+            : "text";
+
+    return {
+      fileName: file.name,
+      storagePath: path,
+      extracted: documentPreview(extracted),
+      chunks,
+      pageCount: pageCount || 0,
+      fileType,
+      fileSize: file.size,
+    };
+  };
+
+  // Process one or more selected files in sequence, then open a single folder
+  // assignment modal for the whole batch.
+  const onUploadFiles = async (files: File[]) => {
+    if (!user || files.length === 0) return;
+    setUploading(true);
+    const processed: ProcessedFile[] = [];
+    try {
+      for (let i = 0; i < files.length; i += 1) {
+        const file = files[i];
+        setProgress(
+          files.length > 1
+            ? `Processing ${i + 1} of ${files.length}: ${file.name}`
+            : "Extracting text (large files may take a minute)...",
+        );
+        try {
+          const result = await processFile(file);
+          if (result) processed.push(result);
+        } catch (err) {
+          console.error("upload document", file.name, err);
+          toast.error(`Couldn't process "${file.name}": ${getUploadErrorMessage(err)}`);
+        }
+      }
     } finally {
       try {
         sessionStorage.removeItem("gd_upload_inflight");
@@ -316,10 +370,15 @@ export function LibraryPage() {
       setProgress("");
       if (fileRef.current) fileRef.current.value = "";
     }
+
+    if (processed.length === 0) return; // every file failed; toasts already shown
+    setPendingBatch(processed);
+    setChosenFolder("__none");
+    setNewFolderName("");
   };
 
   const confirmAssign = async (thenChat = false) => {
-    if (!user || !pendingAssign || saving) return;
+    if (!user || !pendingBatch || pendingBatch.length === 0 || saving) return;
     setSaving(true);
     let folderId: string | null = null;
     try {
@@ -348,59 +407,75 @@ export function LibraryPage() {
         folderId = chosenFolder;
       }
 
-      const { data: doc, error: dbErr } = await supabase
-        .from("documents")
-        .insert({
-          user_id: user.id,
-          file_name: pendingAssign.fileName,
-          storage_path: pendingAssign.storagePath,
-          file_type: pendingAssign.fileType,
-          file_size: pendingAssign.fileSize,
-          page_count: pendingAssign.pageCount || null,
-          extracted_text: pendingAssign.extracted,
-          folder_id: folderId,
-          suggested_subject: null,
-        })
-        .select("id")
-        .single();
-      if (dbErr) throw dbErr;
-
+      // Insert every file in the batch into the chosen folder. One file's
+      // failure is reported but doesn't abort the rest.
+      let firstDocId: string | null = null;
+      let savedCount = 0;
       let chunkSaveFailed = false;
-      if (pendingAssign.chunks.length > 0) {
-        const rows = pendingAssign.chunks.map((chunk) => ({
-          document_id: doc.id,
-          user_id: user.id,
-          chunk_index: chunk.chunk_index,
-          page_start: chunk.page_start,
-          page_end: chunk.page_end,
-          content: chunk.content,
-          token_estimate: chunk.token_estimate,
-        }));
+      for (const item of pendingBatch) {
+        const { data: doc, error: dbErr } = await supabase
+          .from("documents")
+          .insert({
+            user_id: user.id,
+            file_name: item.fileName,
+            storage_path: item.storagePath,
+            file_type: item.fileType,
+            file_size: item.fileSize,
+            page_count: item.pageCount || null,
+            extracted_text: item.extracted,
+            folder_id: folderId,
+            suggested_subject: null,
+          })
+          .select("id")
+          .single();
+        if (dbErr) {
+          console.error("save document", item.fileName, dbErr);
+          toast.error(`Couldn't save "${item.fileName}": ${dbErr.message}`);
+          continue;
+        }
+        savedCount += 1;
+        if (!firstDocId) firstDocId = doc.id;
 
-        for (let i = 0; i < rows.length; i += 100) {
-          const { error: chunkErr } = await supabase
-            .from("document_chunks")
-            .insert(rows.slice(i, i + 100));
-          if (chunkErr) {
-            console.error("save document chunks", chunkErr);
-            chunkSaveFailed = true;
-            break;
+        if (item.chunks.length > 0) {
+          const rows = item.chunks.map((chunk) => ({
+            document_id: doc.id,
+            user_id: user.id,
+            chunk_index: chunk.chunk_index,
+            page_start: chunk.page_start,
+            page_end: chunk.page_end,
+            content: chunk.content,
+            token_estimate: chunk.token_estimate,
+          }));
+
+          for (let i = 0; i < rows.length; i += 100) {
+            const { error: chunkErr } = await supabase
+              .from("document_chunks")
+              .insert(rows.slice(i, i + 100));
+            if (chunkErr) {
+              console.error("save document chunks", chunkErr);
+              chunkSaveFailed = true;
+              break;
+            }
           }
         }
       }
 
-      toast.success(`Added "${pendingAssign.fileName}"`);
-      if (chunkSaveFailed) {
-        toast.warning("Saved file, but searchable chunks need the database migration.");
+      if (savedCount > 0) {
+        toast.success(
+          savedCount === 1 ? `Added "${pendingBatch[0].fileName}"` : `Added ${savedCount} files`,
+        );
       }
-      setPendingAssign(null);
+      if (chunkSaveFailed) {
+        toast.warning("Saved, but searchable chunks need the database migration.");
+      }
+      setPendingBatch(null);
       setChosenFolder("");
       setNewFolderName("");
 
-      if (thenChat) {
+      if (thenChat && firstDocId && pendingBatch.length === 1) {
         // Hand the new document to the chat as its search context and jump
         // straight into a fresh conversation — "upload, then start chatting".
-        stageDocForChat(user.id, doc.id);
+        stageDocForChat(user.id, firstDocId);
         navigate({ to: "/app/chat", search: {} });
         return;
       }
@@ -413,12 +488,9 @@ export function LibraryPage() {
     }
   };
 
-  const cancelAssign = async () => {
-    if (pendingAssign && !pendingAssign.storagePath.startsWith("text-only/")) {
-      // clean up the orphaned storage object (only if we actually uploaded one)
-      await supabase.storage.from("documents").remove([pendingAssign.storagePath]);
-    }
-    setPendingAssign(null);
+  const cancelAssign = () => {
+    // Batches are processed as text-only, so there's no storage object to clean up.
+    setPendingBatch(null);
     setChosenFolder("");
     setNewFolderName("");
   };
@@ -554,8 +626,8 @@ export function LibraryPage() {
           onDrop={(e) => {
             e.preventDefault();
             e.currentTarget.classList.remove("border-primary", "bg-primary/10");
-            const f = e.dataTransfer.files?.[0];
-            if (f) onUpload(f);
+            const files = Array.from(e.dataTransfer.files ?? []);
+            if (files.length) onUploadFiles(files);
           }}
           className={`block cursor-pointer rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 p-5 text-center transition-all hover:border-primary hover:bg-primary/10 sm:p-8 ${
             uploading ? "pointer-events-none opacity-70" : ""
@@ -565,12 +637,13 @@ export function LibraryPage() {
             id="file-up"
             ref={fileRef}
             type="file"
-            accept="application/pdf,application/octet-stream,text/plain,image/png,image/jpeg,image/webp,.pdf,.txt,.png,.jpg,.jpeg,.webp"
+            multiple
+            accept="application/pdf,application/octet-stream,text/plain,image/png,image/jpeg,image/webp,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pdf,.txt,.png,.jpg,.jpeg,.webp,.docx,.pptx"
             className="sr-only"
             tabIndex={-1}
             onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) onUpload(f);
+              const files = Array.from(e.target.files ?? []);
+              if (files.length) onUploadFiles(files);
             }}
           />
           {uploading ? (
@@ -587,10 +660,11 @@ export function LibraryPage() {
                 <div className="text-base font-bold text-primary sm:text-lg">
                   {isOnboarding && docs.length === 0
                     ? "Tap here to upload your first file"
-                    : "Upload a file"}
+                    : "Upload files"}
                 </div>
                 <div className="mt-1 text-sm text-muted-foreground">
-                  PDF, text file, or image — drag & drop or tap to browse
+                  PDF, Word, PowerPoint, text, or image — pick several at once, drag & drop or tap to
+                  browse
                 </div>
               </div>
               <button
@@ -602,7 +676,7 @@ export function LibraryPage() {
                 className="inline-flex items-center gap-2 rounded-lg bg-gradient-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-glow"
               >
                 <Upload className="h-4 w-4" />
-                Upload file
+                Upload files
               </button>
             </div>
           )}
@@ -688,7 +762,7 @@ export function LibraryPage() {
       </div>
 
       {/* Folder assignment modal */}
-      {pendingAssign && (
+      {pendingBatch && pendingBatch.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 p-4">
           <div className="luxury-panel max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-lg p-5 shadow-elegant sm:p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
@@ -699,7 +773,9 @@ export function LibraryPage() {
                 <div>
                   <div className="font-display text-xl font-light">Save to folder</div>
                   <div className="max-w-[calc(100vw-8rem)] truncate text-xs text-muted-foreground sm:max-w-[260px]">
-                    {pendingAssign.fileName}
+                    {pendingBatch.length === 1
+                      ? pendingBatch[0].fileName
+                      : `${pendingBatch.length} files ready`}
                   </div>
                 </div>
               </div>
@@ -711,6 +787,17 @@ export function LibraryPage() {
                 <X className="h-4 w-4" />
               </button>
             </div>
+
+            {pendingBatch.length > 1 && (
+              <ul className="mb-4 max-h-32 space-y-1 overflow-y-auto rounded-lg border border-border bg-surface/30 p-2 text-xs">
+                {pendingBatch.map((item, index) => (
+                  <li key={index} className="flex items-center gap-1.5 text-muted-foreground">
+                    <FileText className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    <span className="min-w-0 flex-1 truncate">{item.fileName}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
 
             <label className="block text-xs font-semibold mb-1.5">Folder</label>
             <select
@@ -745,25 +832,42 @@ export function LibraryPage() {
               >
                 Cancel
               </button>
-              <button
-                onClick={() => void confirmAssign(false)}
-                disabled={saving}
-                className="px-4 py-2 text-sm rounded-lg border border-border font-medium hover:bg-surface-elevated transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Save to Library
-              </button>
-              <button
-                onClick={() => void confirmAssign(true)}
-                disabled={saving}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {saving ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <MessageSquare className="h-3.5 w-3.5" />
-                )}
-                {saving ? "Saving..." : "Start Chatting"}
-              </button>
+              {pendingBatch.length === 1 ? (
+                <>
+                  <button
+                    onClick={() => void confirmAssign(false)}
+                    disabled={saving}
+                    className="px-4 py-2 text-sm rounded-lg border border-border font-medium hover:bg-surface-elevated transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Save to Library
+                  </button>
+                  <button
+                    onClick={() => void confirmAssign(true)}
+                    disabled={saving}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {saving ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <MessageSquare className="h-3.5 w-3.5" />
+                    )}
+                    {saving ? "Saving..." : "Start Chatting"}
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => void confirmAssign(false)}
+                  disabled={saving}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {saving ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="h-3.5 w-3.5" />
+                  )}
+                  {saving ? "Saving..." : `Add ${pendingBatch.length} files to Library`}
+                </button>
+              )}
             </div>
           </div>
         </div>
