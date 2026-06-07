@@ -100,6 +100,17 @@ function AppLayout() {
     rememberRoute(location.pathname);
   }, [location.pathname]);
 
+  // My Coach and Practice are content-heavy — collapse the sidebar on entry so
+  // they get the full width. The user can still expand it with the toggle.
+  useEffect(() => {
+    if (
+      location.pathname.startsWith("/app/studybody") ||
+      location.pathname.startsWith("/app/practice")
+    ) {
+      setIsSidebarCollapsed(true);
+    }
+  }, [location.pathname]);
+
   const groupedMobileConvos = useMemo(() => {
     const today: ConversationRow[] = [];
     const older: ConversationRow[] = [];
@@ -324,7 +335,7 @@ function AppLayout() {
           {navItem("/app/chat", <MessageSquare className="h-4 w-4 shrink-0" />, "Chat")}
           {navItem("/app/library", <BookOpen className="h-4 w-4 shrink-0" />, "Library")}
           {navItem("/app/history", <Clock className="h-4 w-4 shrink-0" />, "History")}
-          {navItem("/app/studybody", <Map className="h-4 w-4 shrink-0" />, "StudyBody")}
+          {navItem("/app/studybody", <Map className="h-4 w-4 shrink-0" />, "My Coach")}
           {navItem("/app/feedback", <Heart className="h-4 w-4 shrink-0" />, "Feedback")}
           {navItem("/app/settings", <Settings className="h-4 w-4 shrink-0" />, "Settings")}
         </nav>
@@ -468,7 +479,7 @@ function AppLayout() {
               <MobileDrawerNavItem
                 active={location.pathname.includes("studybody")}
                 icon={<Map className="h-3.5 w-3.5" />}
-                label="StudyBody"
+                label="My Coach"
                 onPick={() => goToMobileRoute("/app/studybody")}
               />
               <MobileDrawerNavItem

@@ -266,6 +266,41 @@ html {
   animation: blink 1s infinite;
 }
 
+/* Indeterminate "preparing" loading bar shown while the AI reply is empty */
+@keyframes gdLoadingSlide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+.gd-loading-bar {
+  position: relative;
+  height: 4px;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+.gd-loading-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 25%;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--primary),
+    color-mix(in srgb, var(--primary) 40%, transparent)
+  );
+  animation: gdLoadingSlide 1.15s ease-in-out infinite;
+}
+html.gd-low-power .gd-loading-bar::after {
+  animation-duration: 2s;
+}
+
 /* Markdown prose styling */
 .medai-prose {
   color: var(--foreground);

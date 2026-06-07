@@ -10,6 +10,7 @@ const ALLOWED = [
   "/app/library",
   "/app/history",
   "/app/studybody",
+  "/app/practice",
   "/app/feedback",
   "/app/settings",
 ] as const;

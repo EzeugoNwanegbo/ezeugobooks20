@@ -5,13 +5,19 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const STUDYBODY_URL = `${SUPABASE_URL}/functions/v1/studybody`;
 const STUDYBODY_TIMEOUT_MS = 130_000;
 
-export type StudyQuestionType = "mcq" | "essay" | "mixed";
+export type StudyQuestionType = "mcq" | "essay" | "mixed" | "flashcard";
 
 export type StudyDocument = {
   id: string;
   file_name: string;
   folder?: string | null;
   excerpt: string;
+};
+
+export type GeneratedFlashcard = {
+  front: string;
+  back: string;
+  source_refs?: unknown[];
 };
 
 export type StudyRoadmapTopic = {
@@ -58,7 +64,7 @@ async function callStudyBody<T>(payload: Record<string, unknown>): Promise<T> {
   try {
     const { data: sess } = await supabase.auth.getSession();
     const token = sess.session?.access_token;
-    if (!token) throw new Error("Sign in again before using StudyBody.");
+    if (!token) throw new Error("Sign in again before using My Coach.");
 
     const response = await fetch(STUDYBODY_URL, {
       method: "POST",
@@ -71,7 +77,7 @@ async function callStudyBody<T>(payload: Record<string, unknown>): Promise<T> {
     });
 
     if (!response.ok) {
-      let message = "StudyBody AI request failed";
+      let message = "My Coach AI request failed";
       try {
         const json = await response.json();
         message = json.error ?? message;
@@ -117,6 +123,8 @@ export async function generateStudyQuestions({
   topic,
   questionType,
   count,
+  mcqCount,
+  essayCount,
   documents,
   excludePrompts,
   difficultyHint,
@@ -125,6 +133,9 @@ export async function generateStudyQuestions({
   topic: unknown;
   questionType: StudyQuestionType;
   count: number;
+  // For the "mixed" type, the caller specifies how many of each kind to make.
+  mcqCount?: number;
+  essayCount?: number;
   documents: StudyDocument[];
   excludePrompts?: string[];
   difficultyHint?: "easier" | "medium" | "harder";
@@ -135,9 +146,34 @@ export async function generateStudyQuestions({
     topic,
     questionType,
     count,
+    mcqCount,
+    essayCount,
     documents,
     excludePrompts,
     difficultyHint,
+  });
+}
+
+export async function generateFlashcards({
+  profile,
+  topic,
+  count,
+  documents,
+  excludeFronts,
+}: {
+  profile: Profile;
+  topic: unknown;
+  count: number;
+  documents: StudyDocument[];
+  excludeFronts?: string[];
+}) {
+  return callStudyBody<{ flashcards: GeneratedFlashcard[] }>({
+    action: "generate_flashcards",
+    profile,
+    topic,
+    count,
+    documents,
+    excludePrompts: excludeFronts,
   });
 }
 

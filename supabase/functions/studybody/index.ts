@@ -3,8 +3,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-type Action = "generate_plan" | "generate_questions" | "review_answers";
-type QuestionType = "mcq" | "essay" | "mixed";
+type Action = "generate_plan" | "generate_questions" | "generate_flashcards" | "review_answers";
+type QuestionType = "mcq" | "essay" | "mixed" | "flashcard";
 
 interface Profile {
   name?: string;
@@ -39,6 +39,9 @@ interface Body {
   };
   questionType?: QuestionType;
   count?: number;
+  // For "mixed" practice the caller asks for an explicit split.
+  mcqCount?: number;
+  essayCount?: number;
   questions?: unknown[];
   answers?: Record<string, string>;
   excludePrompts?: string[];
@@ -195,28 +198,33 @@ Use 5 to 10 roadmap topics. Keep it practical and exam-focused.`,
   };
 }
 
-async function generateQuestions(body: Body, deepSeekKey: string) {
-  const type = body.questionType || "mcq";
-  const count = Math.min(Math.max(body.count || 5, 1), 10);
-  const exclude = (body.excludePrompts || []).filter((p) => typeof p === "string" && p.trim());
-  const difficultyHint = body.difficultyHint || "medium";
-
-  const result = await callDeepSeekJson(
-    deepSeekKey,
-    `You are StudyBody's question generator. You write exam questions STRICTLY from the uploaded textbook excerpts and nothing else.
+const QUESTION_SYSTEM = `You are StudyBody's question generator. You write exam questions STRICTLY from the uploaded textbook excerpts and nothing else.
 Hard rules:
 - Every question, its correct answer, and its explanation must be fully answerable using ONLY the provided excerpts. Do not use outside knowledge.
 - Every question MUST include at least one source_refs entry that points to the excerpt it came from, using the file name and the exact [Page ...] / [Chunk ...] label shown in that excerpt.
 - NEVER fabricate or guess a page number or label. Only cite a [Page ...] / [Chunk ...] label that literally appears in the excerpts below. If you cannot point to a real label, do not produce that question.
 - If the excerpts do not contain enough material for the requested number of questions, return FEWER questions instead of inventing any. It is correct to return an empty list when the material does not cover the topic.
 - Never repeat or lightly reword a question listed under "Already asked".
-Return strict JSON only.`,
-    `${profileBlock(body.profile)}
+Return strict JSON only.`;
+
+function hasSourceRef(item: unknown): boolean {
+  const refs = (item as { source_refs?: unknown }).source_refs;
+  return Array.isArray(refs) && refs.length > 0;
+}
+
+function questionUserPrompt(
+  body: Body,
+  type: "mcq" | "essay",
+  count: number,
+  exclude: string[],
+  difficultyHint: string,
+): string {
+  return `${profileBlock(body.profile)}
 
 Topic:
 ${JSON.stringify(body.topic || {}, null, 2)}
 
-Question type requested: ${type}
+Question type requested: ${type} (ALL questions in this batch must be "${type}")
 Number of questions: ${count}
 Difficulty calibration: ${difficultyHint} (adjust how demanding the questions are accordingly).
 
@@ -230,7 +238,7 @@ Return JSON:
 {
   "questions": [
     {
-      "type": "mcq" | "essay",
+      "type": "${type}",
       "prompt": "question text grounded in the excerpts",
       "options": [{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."},{"id":"D","text":"..."}],
       "correct_answer": "A or ideal essay answer",
@@ -241,19 +249,132 @@ Return JSON:
     }
   ]
 }
-For MCQ, provide exactly four options and one correct option id. For essay, options must be [].`,
-  );
+For MCQ, provide exactly four options and one correct option id. For essay, options must be [].`;
+}
 
-  const raw = Array.isArray(result.questions) ? result.questions : [];
-  // Enforce on-source grounding: drop anything the model produced without a
-  // real source reference, so questions that drifted off the textbook do not
-  // reach the student.
-  const grounded = raw.filter((q) => {
-    const refs = (q as { source_refs?: unknown }).source_refs;
-    return Array.isArray(refs) && refs.length > 0;
-  });
-  const questions = (grounded.length ? grounded : raw).slice(0, count);
+// Large sets (e.g. 50 MCQs) overflow a single DeepSeek response, so generate in
+// batches and accumulate, feeding already-asked prompts forward each round so we
+// don't repeat. Stops early when the material is exhausted.
+async function generateOneType(
+  body: Body,
+  deepSeekKey: string,
+  type: "mcq" | "essay",
+  target: number,
+  seedExclude: string[],
+): Promise<Record<string, unknown>[]> {
+  if (target <= 0) return [];
+  const batchSize = 20;
+  const maxBatches = Math.ceil(target / batchSize) + 1;
+  const difficultyHint = body.difficultyHint || "medium";
+  const collected: Record<string, unknown>[] = [];
+  const exclude = [...seedExclude];
+
+  for (let batch = 0; batch < maxBatches && collected.length < target; batch += 1) {
+    const need = Math.min(batchSize, target - collected.length);
+    const result = await callDeepSeekJson(
+      deepSeekKey,
+      QUESTION_SYSTEM,
+      questionUserPrompt(body, type, need, exclude, difficultyHint),
+    );
+    const raw = Array.isArray(result.questions)
+      ? (result.questions as Record<string, unknown>[])
+      : [];
+    const grounded = raw.filter(hasSourceRef);
+    const picked = grounded.length ? grounded : raw;
+    if (picked.length === 0) break;
+
+    for (const question of picked) {
+      collected.push({ ...question, type });
+      const prompt = question.prompt;
+      if (typeof prompt === "string") exclude.push(prompt);
+    }
+  }
+
+  return collected.slice(0, target);
+}
+
+async function generateQuestions(body: Body, deepSeekKey: string) {
+  const type = body.questionType || "mcq";
+  const seedExclude = (body.excludePrompts || []).filter((p) => typeof p === "string" && p.trim());
+
+  if (type === "mixed") {
+    const mcqTarget = Math.min(Math.max(body.mcqCount || 0, 0), 60);
+    const essayTarget = Math.min(Math.max(body.essayCount || 0, 0), 60);
+    const mcqs = await generateOneType(body, deepSeekKey, "mcq", mcqTarget, seedExclude);
+    const essayExclude = [
+      ...seedExclude,
+      ...mcqs.map((q) => q.prompt).filter((p): p is string => typeof p === "string"),
+    ];
+    const essays = await generateOneType(body, deepSeekKey, "essay", essayTarget, essayExclude);
+    return { questions: [...mcqs, ...essays] };
+  }
+
+  const target = Math.min(Math.max(body.count || 5, 1), 60);
+  const onlyType = type === "essay" ? "essay" : "mcq";
+  const questions = await generateOneType(body, deepSeekKey, onlyType, target, seedExclude);
   return { questions };
+}
+
+const FLASHCARD_SYSTEM = `You are StudyBody's flashcard generator. You write study flashcards STRICTLY from the uploaded textbook excerpts and nothing else.
+Hard rules:
+- Each card's front (a question or prompt) and back (the answer) must be fully answerable using ONLY the provided excerpts. Do not use outside knowledge.
+- Every card MUST include at least one source_refs entry citing the file name and the exact [Page ...] / [Chunk ...] label shown in that excerpt. Never invent a label.
+- Keep the back concise (1-3 sentences) and self-contained.
+- If the excerpts do not cover enough for the requested number, return FEWER cards instead of inventing any.
+- Never repeat or lightly reword a card front listed under "Already made".
+Return strict JSON only.`;
+
+async function generateFlashcards(body: Body, deepSeekKey: string) {
+  const target = Math.min(Math.max(body.count || 10, 1), 60);
+  const batchSize = 30;
+  const maxBatches = Math.ceil(target / batchSize) + 1;
+  const collected: Record<string, unknown>[] = [];
+  const exclude = (body.excludePrompts || []).filter((p) => typeof p === "string" && p.trim());
+
+  for (let batch = 0; batch < maxBatches && collected.length < target; batch += 1) {
+    const need = Math.min(batchSize, target - collected.length);
+    const result = await callDeepSeekJson(
+      deepSeekKey,
+      FLASHCARD_SYSTEM,
+      `${profileBlock(body.profile)}
+
+Topic:
+${JSON.stringify(body.topic || {}, null, 2)}
+
+Number of flashcards: ${need}
+
+Already made (do NOT repeat or paraphrase these fronts):
+${exclude.length ? exclude.map((p, i) => `${i + 1}. ${p}`).join("\n") : "(none yet)"}
+
+Uploaded textbook excerpts (the ONLY allowed source):
+${documentContext(body.documents)}
+
+Return JSON:
+{
+  "flashcards": [
+    {
+      "front": "a question or prompt grounded in the excerpts",
+      "back": "the concise answer from the excerpts",
+      "source_refs": [{"file":"name", "page":"Page or chunk label"}]
+    }
+  ]
+}`,
+    );
+    const raw = Array.isArray(result.flashcards)
+      ? (result.flashcards as Record<string, unknown>[])
+      : [];
+    const grounded = raw.filter(hasSourceRef);
+    const picked = grounded.length ? grounded : raw;
+    if (picked.length === 0) break;
+
+    for (const card of picked) {
+      collected.push(card);
+      const front = card.front;
+      if (typeof front === "string") exclude.push(front);
+    }
+  }
+
+  return { flashcards: collected.slice(0, target) };
 }
 
 async function reviewAnswers(body: Body, deepSeekKey: string) {
@@ -337,6 +458,19 @@ Deno.serve(async (req: Request) => {
         );
       }
       return jsonResponse(await generateQuestions(body, deepSeekKey));
+    }
+
+    if (body.action === "generate_flashcards") {
+      if (!hasUsableDocuments(body.documents)) {
+        return jsonResponse(
+          {
+            error:
+              "My Coach can only build flashcards from your file's text, but no readable text was found. Re-upload the file (scanned PDFs need OCR).",
+          },
+          400,
+        );
+      }
+      return jsonResponse(await generateFlashcards(body, deepSeekKey));
     }
 
     if (body.action === "review_answers") {

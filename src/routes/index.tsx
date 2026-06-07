@@ -36,7 +36,7 @@ const features = [
   },
   {
     icon: "school",
-    title: "StudyBody Coach",
+    title: "My Coach",
     body: "Turn your material into a roadmap, get quizzed, and have your answers graded.",
     to: "/app/studybody" as const,
     cta: "Train with coach",

@@ -17,6 +17,7 @@ import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppStudybodyRouteImport } from './routes/app.studybody'
 import { Route as AppSettingsRouteImport } from './routes/app.settings'
+import { Route as AppPracticeRouteImport } from './routes/app.practice'
 import { Route as AppLibraryRouteImport } from './routes/app.library'
 import { Route as AppHistoryRouteImport } from './routes/app.history'
 import { Route as AppFeedbackRouteImport } from './routes/app.feedback'
@@ -62,6 +63,11 @@ const AppSettingsRoute = AppSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPracticeRoute = AppPracticeRouteImport.update({
+  id: '/practice',
+  path: '/practice',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppLibraryRoute = AppLibraryRouteImport.update({
   id: '/library',
   path: '/library',
@@ -94,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/app/feedback': typeof AppFeedbackRoute
   '/app/history': typeof AppHistoryRoute
   '/app/library': typeof AppLibraryRoute
+  '/app/practice': typeof AppPracticeRoute
   '/app/settings': typeof AppSettingsRoute
   '/app/studybody': typeof AppStudybodyRoute
 }
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/app/feedback': typeof AppFeedbackRoute
   '/app/history': typeof AppHistoryRoute
   '/app/library': typeof AppLibraryRoute
+  '/app/practice': typeof AppPracticeRoute
   '/app/settings': typeof AppSettingsRoute
   '/app/studybody': typeof AppStudybodyRoute
 }
@@ -123,6 +131,7 @@ export interface FileRoutesById {
   '/app/feedback': typeof AppFeedbackRoute
   '/app/history': typeof AppHistoryRoute
   '/app/library': typeof AppLibraryRoute
+  '/app/practice': typeof AppPracticeRoute
   '/app/settings': typeof AppSettingsRoute
   '/app/studybody': typeof AppStudybodyRoute
 }
@@ -139,6 +148,7 @@ export interface FileRouteTypes {
     | '/app/feedback'
     | '/app/history'
     | '/app/library'
+    | '/app/practice'
     | '/app/settings'
     | '/app/studybody'
   fileRoutesByTo: FileRoutesByTo
@@ -153,6 +163,7 @@ export interface FileRouteTypes {
     | '/app/feedback'
     | '/app/history'
     | '/app/library'
+    | '/app/practice'
     | '/app/settings'
     | '/app/studybody'
   id:
@@ -167,6 +178,7 @@ export interface FileRouteTypes {
     | '/app/feedback'
     | '/app/history'
     | '/app/library'
+    | '/app/practice'
     | '/app/settings'
     | '/app/studybody'
   fileRoutesById: FileRoutesById
@@ -238,6 +250,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/practice': {
+      id: '/app/practice'
+      path: '/practice'
+      fullPath: '/app/practice'
+      preLoaderRoute: typeof AppPracticeRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/library': {
       id: '/app/library'
       path: '/library'
@@ -274,6 +293,7 @@ interface AppRouteChildren {
   AppFeedbackRoute: typeof AppFeedbackRoute
   AppHistoryRoute: typeof AppHistoryRoute
   AppLibraryRoute: typeof AppLibraryRoute
+  AppPracticeRoute: typeof AppPracticeRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppStudybodyRoute: typeof AppStudybodyRoute
 }
@@ -283,6 +303,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppFeedbackRoute: AppFeedbackRoute,
   AppHistoryRoute: AppHistoryRoute,
   AppLibraryRoute: AppLibraryRoute,
+  AppPracticeRoute: AppPracticeRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppStudybodyRoute: AppStudybodyRoute,
 }

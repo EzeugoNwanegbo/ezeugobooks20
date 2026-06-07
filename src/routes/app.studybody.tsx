@@ -7,7 +7,7 @@ const StudyBodyPage = lazy(() =>
 );
 
 export const Route = createFileRoute("/app/studybody")({
-  head: () => ({ meta: [{ title: "StudyBody - G&D" }] }),
+  head: () => ({ meta: [{ title: "My Coach - G&D" }] }),
   component: StudyBodyRoute,
 });
 

@@ -41,6 +41,7 @@ import {
   Pause,
   Play,
   RotateCcw,
+  Layers,
 } from "lucide-react";
 
 type ChatSearch = { c?: string };
@@ -537,6 +538,7 @@ export function ChatPage() {
   const [libraryNotice, setLibraryNotice] = useState<LibraryNotice>(null);
   const [convos, setConvos] = useState<ConversationRow[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [flashPillDismissed, setFlashPillDismissed] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
@@ -1549,6 +1551,27 @@ export function ChatPage() {
         {/* Composer */}
         <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <div className="pointer-events-auto max-w-3xl mx-auto">
+            {messages.some((m) => m.role === "user") && !flashPillDismissed && (
+              <div className="mb-2 flex justify-center">
+                <div className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-background/85 py-1 pl-1 pr-1 text-xs shadow-elegant backdrop-blur-[2px]">
+                  <Link
+                    to="/app/studybody"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1.5 font-medium text-primary transition-colors hover:bg-primary/15"
+                  >
+                    <Layers className="h-3.5 w-3.5" />
+                    Learn with flash cards
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setFlashPillDismissed(true)}
+                    aria-label="Dismiss"
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="mb-1.5 flex overflow-x-auto rounded-2xl border border-border bg-background/65 p-0.5 backdrop-blur-[2px] [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden">
               {CHAT_MODES.map((m) => (
                 <button
@@ -2361,9 +2384,12 @@ function Message({ msg, streaming }: { msg: DisplayMessage; isLast: boolean; str
           {displayContent ? (
             <ReactMarkdown>{displayContent}</ReactMarkdown>
           ) : (
-            <span className="text-muted-foreground inline-flex items-center gap-2">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> thinking...
-            </span>
+            <div className="flex flex-col gap-2 py-0.5" aria-live="polite" aria-busy="true">
+              <span className="text-xs font-medium text-muted-foreground">
+                Preparing your answer
+              </span>
+              <span className="gd-loading-bar" />
+            </div>
           )}
         </div>
         {htmlAnimation && <VisualPreview html={htmlAnimation} />}
