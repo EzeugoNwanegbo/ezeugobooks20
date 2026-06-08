@@ -886,8 +886,12 @@ function ConfigView({ planId }: { planId: string }) {
                     {practiceLoading
                       ? "Building your set…"
                       : questionType === "flashcard"
-                        ? "Start flash cards"
-                        : "Start practice"}
+                        ? resumable
+                          ? "Start new flash cards"
+                          : "Start flash cards"
+                        : resumable
+                          ? "Start new practice"
+                          : "Start practice"}
                   </button>
                   {practiceLoading && (
                     <p className="mt-2 text-center text-xs text-muted-foreground">
