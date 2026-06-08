@@ -35,6 +35,7 @@ import {
   type SessionRow,
   type TopicRow,
 } from "@/lib/studybody-data";
+import { getCached, setCached } from "@/lib/data-cache";
 
 type PracticeSearch = { plan?: string; session?: string; mode?: PracticeMode };
 
@@ -210,6 +211,14 @@ function ConfigView({ planId }: { planId: string }) {
   const [practiceMode, setPracticeMode] = useState<PracticeMode>("learning");
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [practiceLoading, setPracticeLoading] = useState(false);
+  // An unfinished set for the selected topic, so the student can pick up where
+  // they stopped instead of generating (and paying for) a brand-new one.
+  const [resumable, setResumable] = useState<{
+    id: string;
+    answered: number;
+    total: number;
+    questionType: StudyQuestionType;
+  } | null>(null);
 
   // Learning/Exam modes only apply to question sets that contain MCQs.
   const supportsModes = questionType === "mcq" || questionType === "mixed";
@@ -229,7 +238,20 @@ function ConfigView({ planId }: { planId: string }) {
     if (!user) return;
     let active = true;
     (async () => {
-      setPlanLoading(true);
+      // Hydrate from the cached plan/topics first so revisiting doesn't flash a
+      // spinner; the fetch below revalidates.
+      const cached = getCached<{ plan: PlanRow; topics: TopicRow[] }>(`plan:${planId}`);
+      if (cached) {
+        setPlan(cached.plan);
+        setTopics(cached.topics);
+        setSelectedTopicId((current) =>
+          current && cached.topics.some((topic) => topic.id === current)
+            ? current
+            : cached.topics[0]?.id || "",
+        );
+      } else {
+        setPlanLoading(true);
+      }
       const { data: planData, error: planErr } = await db
         .from("study_plans")
         .select(
@@ -270,11 +292,61 @@ function ConfigView({ planId }: { planId: string }) {
           ? current
           : nextTopics[0]?.id || "",
       );
+      setCached(`plan:${planId}`, { plan: planData as PlanRow, topics: nextTopics });
     })();
     return () => {
       active = false;
     };
   }, [user, planId]);
+
+  // Look for the most recent unfinished set on the selected topic so we can
+  // offer "Continue" instead of forcing a regenerate.
+  useEffect(() => {
+    if (!user || !selectedTopicId) {
+      setResumable(null);
+      return;
+    }
+    let active = true;
+    (async () => {
+      const { data } = await db
+        .from("study_sessions")
+        .select("id, question_type, total_questions, feedback, created_at")
+        .eq("user_id", user.id)
+        .eq("topic_id", selectedTopicId)
+        .eq("status", "in_progress")
+        .order("created_at", { ascending: false });
+      if (!active) return;
+      const rows =
+        (data as
+          | {
+              id: string;
+              question_type: StudyQuestionType;
+              total_questions: number;
+              feedback: Record<string, unknown> | null;
+            }[]
+          | null) ?? [];
+      // Only sets that actually have questions saved are worth resuming.
+      const row = rows.find((item) => item.total_questions > 0);
+      if (!row) {
+        setResumable(null);
+        return;
+      }
+      const draft =
+        (row.feedback as { draftAnswers?: Record<string, string> } | null)?.draftAnswers ?? {};
+      const answered = Object.values(draft).filter(
+        (value) => typeof value === "string" && value.trim().length > 0,
+      ).length;
+      setResumable({
+        id: row.id,
+        answered,
+        total: row.total_questions,
+        questionType: row.question_type,
+      });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [user, selectedTopicId]);
 
   const changeType = (type: StudyQuestionType) => {
     setQuestionType(type);
@@ -378,6 +450,9 @@ function ConfigView({ planId }: { planId: string }) {
           question_type: questionType,
           requested_count: requestedCount,
           total_questions: generated.questions.length,
+          // Persist the mode up front so a resumed set keeps Learning/Exam even
+          // before the first answer is autosaved.
+          feedback: sessionMode ? { mode: sessionMode } : {},
         })
         .select("id")
         .single();
@@ -541,6 +616,34 @@ function ConfigView({ planId }: { planId: string }) {
                     <div className="text-sm font-semibold">{activeTopic.title}</div>
                     <p className="mt-1 text-sm text-muted-foreground">{activeTopic.summary}</p>
                   </div>
+
+                  {resumable && (
+                    <button
+                      onClick={() =>
+                        navigate({ to: "/app/practice", search: { plan: planId, session: resumable.id } })
+                      }
+                      className="mt-4 flex w-full items-center justify-between gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2.5 text-left transition-colors hover:bg-primary/15"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Play className="h-4 w-4 text-primary" />
+                        <span className="flex flex-col">
+                          <span className="text-sm font-semibold text-primary">
+                            Continue where you left off
+                          </span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {TYPE_LABEL[resumable.questionType]} ·{" "}
+                            {resumable.answered}/{resumable.total} answered — no new questions
+                          </span>
+                        </span>
+                      </span>
+                    </button>
+                  )}
+
+                  {resumable && (
+                    <div className="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Or start a new set
+                    </div>
+                  )}
 
                   <div className="mt-4 grid grid-cols-2 gap-1.5 sm:gap-2">
                     {(["mcq", "essay", "mixed", "flashcard"] as StudyQuestionType[]).map((type) => (
@@ -925,9 +1028,25 @@ function SessionView({
             | null;
           if (typeof fb?.time_taken_seconds === "number") setElapsedSec(fb.time_taken_seconds);
           if (fb?.review) setReview(fb.review);
-        } else if (modeSession) {
-          // Fresh attempt — start the timer used by Exam mode.
-          setStartedAt(Date.now());
+        } else if (sessionRow.status !== "completed") {
+          // Resuming an unfinished set — restore the autosaved draft so the
+          // student lands exactly where they stopped.
+          const fb = sessionRow.feedback as {
+            draftAnswers?: Record<string, string>;
+            draftGrades?: Record<string, Grade>;
+            draftRevealed?: Record<string, boolean>;
+          } | null;
+          if (fb?.draftAnswers && typeof fb.draftAnswers === "object") {
+            setAnswers(fb.draftAnswers);
+          }
+          if (modeSession) {
+            if (fb?.draftGrades && typeof fb.draftGrades === "object") setGrades(fb.draftGrades);
+            if (fb?.draftRevealed && typeof fb.draftRevealed === "object") {
+              setRevealedEssays(fb.draftRevealed);
+            }
+            // Start the timer used by Exam mode for this sitting.
+            setStartedAt(Date.now());
+          }
         }
       }
       setLoading(false);
@@ -936,6 +1055,33 @@ function SessionView({
       active = false;
     };
   }, [user, sessionId]);
+
+  // Autosave the in-progress answers (and Learning-mode grades) into the
+  // session's feedback JSONB so a student who leaves can resume in place. Runs
+  // only while the set is unfinished; the submit handlers overwrite feedback on
+  // completion, which clears the draft. Debounced to avoid hammering the DB.
+  useEffect(() => {
+    if (!session || completed || isFlashcards) return;
+    if (Object.keys(answers).length === 0) return;
+    const timer = window.setTimeout(() => {
+      const base = (session.feedback as Record<string, unknown> | null) ?? {};
+      db.from("study_sessions")
+        .update({
+          feedback: {
+            ...base,
+            mode,
+            draftAnswers: answers,
+            draftGrades: grades,
+            draftRevealed: revealedEssays,
+          },
+        })
+        .eq("id", session.id)
+        .then(({ error }) => {
+          if (error) console.warn("autosave practice progress failed", error);
+        });
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [answers, grades, revealedEssays, completed, isFlashcards, session, mode]);
 
   const backToTopics = () => navigate({ to: "/app/practice", search: { plan: planId } });
 

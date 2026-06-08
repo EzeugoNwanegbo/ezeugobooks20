@@ -12,6 +12,7 @@ import {
 } from "@/lib/chat-client";
 import { takePendingChatDoc } from "@/lib/chat-handoff";
 import { embedQuery } from "@/lib/embeddings";
+import { getCached, setCached } from "@/lib/data-cache";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -810,13 +811,18 @@ export function ChatPage() {
   // Load conversation list
   const refreshConvos = async () => {
     if (!user) return;
+    // Show the cached chat list instantly on revisit, then revalidate.
+    const cached = getCached<ConversationRow[]>(`convos:${user.id}`);
+    if (cached) setConvos(cached);
     const { data } = await supabase
       .from("conversations")
       .select("id, title, updated_at")
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false })
       .limit(100);
-    setConvos((data as ConversationRow[]) ?? []);
+    const rows = (data as ConversationRow[]) ?? [];
+    setConvos(rows);
+    setCached(`convos:${user.id}`, rows);
   };
   useEffect(() => {
     refreshConvos();

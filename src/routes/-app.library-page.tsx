@@ -4,6 +4,7 @@ import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { chunkDocumentText, documentPreview, type DocumentChunkInput } from "@/lib/document-chunks";
 import { embedChunkContents, backfillMissingEmbeddings } from "@/lib/embeddings";
+import { getCached, setCached } from "@/lib/data-cache";
 import { stageDocForChat } from "@/lib/chat-handoff";
 import { toast } from "sonner";
 import {
@@ -82,8 +83,27 @@ export function LibraryPage() {
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const applyLibraryData = (nextFolders: FolderRow[], nextDocs: DocRow[]) => {
+    setFolders(nextFolders);
+    setDocs(nextDocs);
+    // open all folders by default first time
+    setOpenFolders((cur) => {
+      const next = { ...cur };
+      for (const fo of nextFolders) {
+        if (!(fo.id in next)) next[fo.id] = true;
+      }
+      if (!("__none" in next)) next.__none = true;
+      return next;
+    });
+  };
+
   const refresh = async () => {
     if (!user) return;
+    // Show the last-known library instantly (no spinner on revisit), then
+    // revalidate in the background.
+    const cached = getCached<{ folders: FolderRow[]; docs: DocRow[] }>(`library:${user.id}`);
+    if (cached) applyLibraryData(cached.folders, cached.docs);
+
     const [{ data: f }, { data: d }] = await Promise.all([
       supabase.from("folders").select("id, name, color").eq("user_id", user.id).order("name"),
       supabase
@@ -94,17 +114,10 @@ export function LibraryPage() {
         .eq("user_id", user.id)
         .order("created_at", { ascending: false }),
     ]);
-    setFolders((f as FolderRow[]) ?? []);
-    setDocs((d as DocRow[]) ?? []);
-    // open all folders by default first time
-    setOpenFolders((cur) => {
-      const next = { ...cur };
-      for (const fo of (f as FolderRow[]) ?? []) {
-        if (!(fo.id in next)) next[fo.id] = true;
-      }
-      if (!("__none" in next)) next.__none = true;
-      return next;
-    });
+    const nextFolders = (f as FolderRow[]) ?? [];
+    const nextDocs = (d as DocRow[]) ?? [];
+    applyLibraryData(nextFolders, nextDocs);
+    setCached(`library:${user.id}`, { folders: nextFolders, docs: nextDocs });
   };
 
   useEffect(() => {
