@@ -573,19 +573,6 @@ function AppLayout() {
         >
           <Outlet />
         </main>
-
-        {!onChat && (
-          <button
-            type="button"
-            onClick={openNewChat}
-            aria-label="Start a new chat"
-            className="fixed right-4 z-30 inline-flex items-center gap-2 rounded-full bg-gradient-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-glow transition-transform active:scale-95 md:hidden"
-            style={{ bottom: "max(1rem, env(safe-area-inset-bottom))" }}
-          >
-            <Plus className="h-4 w-4" />
-            New Chat
-          </button>
-        )}
       </div>
     </div>
   );
