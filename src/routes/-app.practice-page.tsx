@@ -9,11 +9,11 @@ import {
   FileText,
   GraduationCap,
   Layers,
-  Loader2,
   Play,
   Trophy,
   XCircle,
 } from "lucide-react";
+import { LoadingDots } from "@/components/loading-dots";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -545,7 +545,7 @@ function ConfigView({ planId }: { planId: string }) {
 
         {planLoading && !plan ? (
           <div className="flex justify-center py-16">
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <LoadingDots size="md" className="text-primary" />
           </div>
         ) : (
           <section className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -877,7 +877,7 @@ function ConfigView({ planId }: { planId: string }) {
                     className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
                   >
                     {practiceLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <LoadingDots />
                     ) : questionType === "flashcard" ? (
                       <Layers className="h-4 w-4" />
                     ) : (
@@ -1405,7 +1405,7 @@ function SessionView({
 
         {loading ? (
           <div className="flex justify-center py-16">
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <LoadingDots size="md" className="text-primary" />
           </div>
         ) : (
           <div className="luxury-panel rounded-lg p-4 sm:p-5">
@@ -1689,7 +1689,7 @@ function SessionView({
                         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
                       >
                         {reviewLoading ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <LoadingDots />
                         ) : (
                           <GraduationCap className="h-4 w-4" />
                         )}
@@ -1702,7 +1702,7 @@ function SessionView({
                         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
                       >
                         {reviewLoading ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <LoadingDots />
                         ) : (
                           <CheckCircle2 className="h-4 w-4" />
                         )}
@@ -1796,7 +1796,7 @@ function SessionView({
                     className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
                   >
                     {reviewLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <LoadingDots />
                     ) : (
                       <CheckCircle2 className="h-4 w-4" />
                     )}

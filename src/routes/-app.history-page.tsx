@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Clock, Loader2, MessageSquare, Search, Trash2 } from "lucide-react";
+import { Clock, MessageSquare, Search, Trash2 } from "lucide-react";
+import { LoadingDots } from "@/components/loading-dots";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -97,7 +98,7 @@ export function HistoryPage() {
 
         {loading ? (
           <div className="flex justify-center py-16">
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <LoadingDots size="md" className="text-primary" />
           </div>
         ) : convos.length === 0 ? (
           <div className="luxury-panel rounded-lg px-6 py-12 text-center">

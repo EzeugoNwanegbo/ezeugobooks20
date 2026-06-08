@@ -11,7 +11,6 @@ import {
   Upload,
   FileText,
   Trash2,
-  Loader2,
   BookOpen,
   Folder,
   FolderPlus,
@@ -23,6 +22,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import { LoadingDots } from "@/components/loading-dots";
 
 type FolderRow = {
   id: string;
@@ -680,7 +680,7 @@ export function LibraryPage() {
           />
           {uploading ? (
             <div className="flex flex-col items-center gap-3 text-sm">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              <LoadingDots size="lg" className="text-primary" />
               <span className="text-muted-foreground">{progress || "Working..."}</span>
             </div>
           ) : (
@@ -879,7 +879,7 @@ export function LibraryPage() {
                     className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     {saving ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <LoadingDots />
                     ) : (
                       <MessageSquare className="h-3.5 w-3.5" />
                     )}
@@ -893,7 +893,7 @@ export function LibraryPage() {
                   className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {saving ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <LoadingDots />
                   ) : (
                     <Upload className="h-3.5 w-3.5" />
                   )}

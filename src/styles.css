@@ -1247,3 +1247,9 @@ html.gd-native-app .luxury-auth-page .animate-spin,
 html.gd-native-app .luxury-app-shell .animate-spin {
   display: none !important;
 }
+
+/* Three-dot loading indicator (replaces the spinning ring) — a bouncing wave. */
+@keyframes gd-dot-wave {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30% { transform: translateY(-65%); opacity: 1; }
+}

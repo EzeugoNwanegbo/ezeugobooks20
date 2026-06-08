@@ -26,7 +26,6 @@ import { toast } from "sonner";
 import {
   Send,
   BookOpen,
-  Loader2,
   Plus,
   MessageSquare,
   Trash2,
@@ -45,6 +44,7 @@ import {
   RotateCcw,
   Layers,
 } from "lucide-react";
+import { LoadingDots } from "@/components/loading-dots";
 
 type ChatSearch = { c?: string };
 type MessageSource = "library" | "general" | "interlink" | "visuals";
@@ -1563,7 +1563,7 @@ export function ChatPage() {
           >
             {loadingConvo && messages.length === 0 ? (
               <div className="flex justify-center py-12">
-                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                <LoadingDots size="md" className="text-primary" />
               </div>
             ) : messages.length === 0 ? (
               <EmptyState name={profile.name || "there"} onPick={(s) => send(s)} mode={mode} />
