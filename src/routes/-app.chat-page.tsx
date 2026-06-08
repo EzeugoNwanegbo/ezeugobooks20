@@ -541,7 +541,12 @@ export function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [flashPillDismissed, setFlashPillDismissed] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
+  // The composer is absolutely positioned and its height varies (mode tabs,
+  // library row, multi-line input). Track it so the message list can reserve
+  // exactly enough space and never hide the end of the last answer.
+  const [composerHeight, setComposerHeight] = useState(0);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
   const activeSendConversationRef = useRef<string | null>(null);
   const restoredOwnerRef = useRef<string | null>(null);
@@ -865,6 +870,18 @@ export function ChatPage() {
       behavior: "smooth",
     });
   }, [messages, streaming]);
+
+  // Keep the message list's bottom padding in sync with the composer's actual
+  // height (it grows with the mode tabs, library row, and multi-line input).
+  useEffect(() => {
+    const node = composerRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const measure = () => setComposerHeight(node.getBoundingClientRect().height);
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    measure();
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     return () => chatAbortRef.current?.abort();
@@ -1372,7 +1389,7 @@ export function ChatPage() {
     <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-background/50 min-w-0">
       {/* Conversations sidebar */}
       <aside
-        className={`hidden xl:flex min-h-0 flex-col border-r border-border bg-background/55 backdrop-blur transition-[width] duration-300 ${sidebarOpen ? "w-64" : "w-16"}`}
+        className={`hidden lg:flex min-h-0 flex-col border-r border-border bg-background/55 backdrop-blur transition-[width] duration-300 ${sidebarOpen ? "w-64" : "w-16"}`}
       >
         <div
           className={`p-3 border-b border-border flex justify-center ${sidebarOpen ? "" : "px-2"}`}
@@ -1435,7 +1452,7 @@ export function ChatPage() {
               <div className="flex min-w-0 items-center gap-2">
                 <button
                   onClick={() => setSidebarOpen((v) => !v)}
-                  className="hidden rounded-md p-2 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground xl:inline-flex"
+                  className="hidden rounded-md p-2 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground lg:inline-flex"
                   title={sidebarOpen ? "Hide chats" : "Show chats"}
                 >
                   {sidebarOpen ? (
@@ -1534,7 +1551,10 @@ export function ChatPage() {
 
         {/* Messages */}
         <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-3 pb-32 pt-4 sm:px-4 sm:pb-40 md:px-8 md:pt-8 lg:pb-36">
+          <div
+            className="mx-auto max-w-3xl px-3 pt-4 sm:px-4 md:px-8 md:pt-8"
+            style={{ paddingBottom: (composerHeight || 150) + 24 }}
+          >
             {loadingConvo && messages.length === 0 ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
@@ -1557,7 +1577,10 @@ export function ChatPage() {
         </div>
 
         {/* Composer */}
-        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div
+          ref={composerRef}
+          className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+        >
           <div className="pointer-events-auto max-w-3xl mx-auto">
             {messages.some((m) => m.role === "user") && !flashPillDismissed && (
               <div className="mb-2 flex justify-center">
