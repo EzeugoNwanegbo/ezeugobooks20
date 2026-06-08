@@ -2,6 +2,7 @@
 // (roadmap building + history) and the Practice page reuse these Supabase
 // helpers and row types, so the query logic lives in one place.
 import { supabase } from "@/integrations/supabase/client";
+import { embedQuery } from "@/lib/embeddings";
 import type { StudyDocument, StudyQuestionType } from "@/lib/studybody-client";
 
 type AnyDb = {
@@ -214,10 +215,12 @@ export async function loadStudyDocuments(
   if (!documentIds.length) return [];
 
   if (query) {
-    const { data } = await db.rpc("search_document_chunks", {
+    const queryEmbedding = await embedQuery(query);
+    const { data } = await db.rpc("search_document_chunks_hybrid", {
       query_terms: termsFrom(query),
+      query_embedding: queryEmbedding,
       match_document_ids: documentIds,
-      match_count: 18,
+      match_count: 24,
     });
     const chunks = (data as ChunkRow[]) ?? [];
     if (chunks.length) {

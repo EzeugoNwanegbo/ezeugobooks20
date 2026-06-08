@@ -208,10 +208,13 @@ function ConfigView({ planId }: { planId: string }) {
   const [mixedEssay, setMixedEssay] = useState(3);
   const [customMode, setCustomMode] = useState(false);
   const [practiceMode, setPracticeMode] = useState<PracticeMode>("learning");
+  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [practiceLoading, setPracticeLoading] = useState(false);
 
   // Learning/Exam modes only apply to question sets that contain MCQs.
   const supportsModes = questionType === "mcq" || questionType === "mixed";
+  // Difficulty applies to graded question sets, not flashcards.
+  const supportsDifficulty = questionType !== "flashcard";
 
   const activeTopic = useMemo(
     () => topics.find((topic) => topic.id === selectedTopicId) ?? null,
@@ -359,6 +362,7 @@ function ConfigView({ planId }: { planId: string }) {
         essayCount: isMixed ? mixedEssay : undefined,
         documents: studyDocs,
         difficultyHint: difficultyFromScore(Number(activeTopic.mastery_score || 0)),
+        difficulty,
       });
       if (!generated.questions.length) {
         toast.message("No questions could be built from this material. Try another topic.");
@@ -596,6 +600,47 @@ function ConfigView({ planId }: { planId: string }) {
                           );
                         })}
                       </div>
+                    </div>
+                  )}
+
+                  {supportsDifficulty && (
+                    <div className="mt-3">
+                      <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                        Difficulty
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+                        {(
+                          [
+                            { value: "easy" as const, label: "Easy", hint: "Recall the facts" },
+                            { value: "medium" as const, label: "Medium", hint: "Apply & understand" },
+                            { value: "hard" as const, label: "Hard", hint: "Exam-topper level" },
+                          ]
+                        ).map((option) => {
+                          const active = difficulty === option.value;
+                          return (
+                            <button
+                              key={option.value}
+                              onClick={() => setDifficulty(option.value)}
+                              className={`flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left ${
+                                active
+                                  ? "border-primary/40 bg-primary/10 text-primary"
+                                  : "border-border hover:border-primary/30"
+                              }`}
+                            >
+                              <span className="text-sm font-semibold">{option.label}</span>
+                              <span className="text-[11px] text-muted-foreground">
+                                {option.hint}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {difficulty === "hard" && (
+                        <p className="mt-1.5 text-[11px] text-muted-foreground">
+                          Hard pushes you with tough, multi-step questions — but every one stays
+                          answerable from your uploaded files.
+                        </p>
+                      )}
                     </div>
                   )}
 

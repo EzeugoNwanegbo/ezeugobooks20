@@ -46,6 +46,33 @@ interface Body {
   answers?: Record<string, string>;
   excludePrompts?: string[];
   difficultyHint?: "easier" | "medium" | "harder";
+  // Explicit level chosen by the student in the test setup. When present it
+  // overrides the adaptive difficultyHint.
+  difficulty?: "easy" | "medium" | "hard";
+}
+
+type DifficultyLevel = "easy" | "medium" | "hard";
+
+// Absolute, student-chosen difficulty. "hard" must be genuinely punishing while
+// staying 100% answerable from the excerpts — never reaching outside the files.
+function difficultyInstruction(level: DifficultyLevel): string {
+  if (level === "easy") {
+    return `DIFFICULTY: EASY.
+- Test direct recall and recognition of facts that are stated plainly in the excerpts.
+- One step to answer. Use clear, unambiguous wording.
+- For MCQ, make the three distractors clearly wrong to someone who read the material.`;
+  }
+  if (level === "hard") {
+    return `DIFFICULTY: HARD — make these EXTREMELY challenging, exam-topper level.
+- Demand multi-step reasoning: require combining and synthesising facts spread across SEVERAL excerpts, not a single sentence.
+- Target subtle distinctions, edge cases, exceptions, mechanisms, "why/how" reasoning, and commonly confused points.
+- For MCQ, every distractor must be highly plausible and drawn from the excerpts (e.g. a true-but-irrelevant fact, a near-miss, or a common misconception the material corrects). No giveaway options.
+- Use precise, demanding wording. The student should have to truly understand the material to answer.
+- ABSOLUTE GROUNDING RULE: despite the difficulty, every question, the correct answer, every distractor, and the explanation must remain fully verifiable from the provided excerpts ONLY. Do NOT pull in any fact, term, or scenario that is not in the files. Hard means deeper use of the material, never outside material.`;
+  }
+  return `DIFFICULTY: MEDIUM.
+- Test understanding and application, not just recall: require interpreting or applying a fact from the excerpts.
+- Two related ideas may be combined. Distractors should be plausible but resolvable from the material.`;
 }
 
 const MAX_DOC_CHARS_TOTAL = 100_000;
@@ -217,7 +244,7 @@ function questionUserPrompt(
   type: "mcq" | "essay",
   count: number,
   exclude: string[],
-  difficultyHint: string,
+  difficulty: DifficultyLevel,
 ): string {
   return `${profileBlock(body.profile)}
 
@@ -226,7 +253,9 @@ ${JSON.stringify(body.topic || {}, null, 2)}
 
 Question type requested: ${type} (ALL questions in this batch must be "${type}")
 Number of questions: ${count}
-Difficulty calibration: ${difficultyHint} (adjust how demanding the questions are accordingly).
+
+${difficultyInstruction(difficulty)}
+Set the "difficulty" field of every question in this batch to "${difficulty}".
 
 Already asked (do NOT repeat or paraphrase these):
 ${exclude.length ? exclude.map((p, i) => `${i + 1}. ${p}`).join("\n") : "(none yet)"}
@@ -265,7 +294,14 @@ async function generateOneType(
   if (target <= 0) return [];
   const batchSize = 20;
   const maxBatches = Math.ceil(target / batchSize) + 1;
-  const difficultyHint = body.difficultyHint || "medium";
+  // Prefer the student's explicit level; fall back to mapping the adaptive hint.
+  const difficulty: DifficultyLevel = body.difficulty
+    ? body.difficulty
+    : body.difficultyHint === "easier"
+      ? "easy"
+      : body.difficultyHint === "harder"
+        ? "hard"
+        : "medium";
   const collected: Record<string, unknown>[] = [];
   const exclude = [...seedExclude];
 
@@ -274,7 +310,7 @@ async function generateOneType(
     const result = await callDeepSeekJson(
       deepSeekKey,
       QUESTION_SYSTEM,
-      questionUserPrompt(body, type, need, exclude, difficultyHint),
+      questionUserPrompt(body, type, need, exclude, difficulty),
     );
     const raw = Array.isArray(result.questions)
       ? (result.questions as Record<string, unknown>[])

@@ -3,6 +3,9 @@ project_id = "ptditjhezxiwdeqqoezc"
 [functions.chat]
 verify_jwt = true
 
+[functions.embed]
+verify_jwt = true
+
 [functions.suggest-folder]
 verify_jwt = true
 

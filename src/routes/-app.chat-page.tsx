@@ -11,6 +11,7 @@ import {
   type WebSource,
 } from "@/lib/chat-client";
 import { takePendingChatDoc } from "@/lib/chat-handoff";
+import { embedQuery } from "@/lib/embeddings";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -918,6 +919,11 @@ export function ChatPage() {
       .join(" ");
     const terms = queryTerms(`${content} ${recentChat}`);
 
+    // Embed the question so retrieval ranks by meaning, not just shared words.
+    // Returns null if the embedding service is down — the hybrid RPC then falls
+    // back to keyword-only ranking, so search still works.
+    const queryEmbedding = await embedQuery(content);
+
     const controller = new AbortController();
     const abortFromCaller = () => controller.abort();
     const timeout = window.setTimeout(() => controller.abort(), CHUNK_SEARCH_TIMEOUT_MS);
@@ -925,10 +931,12 @@ export function ChatPage() {
     try {
       if (signal?.aborted) throw new Error(CHAT_CANCELLED);
       const { data, error } = await supabase
-        .rpc("search_document_chunks", {
+        .rpc("search_document_chunks_hybrid", {
           query_terms: terms,
+          query_embedding: queryEmbedding,
           match_document_ids: documentIds,
-          match_count: manuallySelected ? 24 : 12,
+          // Wider first-pass net so the right material reaches the AI up front.
+          match_count: manuallySelected ? 30 : 24,
         })
         .abortSignal(controller.signal);
 

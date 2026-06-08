@@ -128,6 +128,7 @@ export async function generateStudyQuestions({
   documents,
   excludePrompts,
   difficultyHint,
+  difficulty,
 }: {
   profile: Profile;
   topic: unknown;
@@ -139,6 +140,8 @@ export async function generateStudyQuestions({
   documents: StudyDocument[];
   excludePrompts?: string[];
   difficultyHint?: "easier" | "medium" | "harder";
+  // Explicit student-chosen level; overrides the adaptive difficultyHint.
+  difficulty?: "easy" | "medium" | "hard";
 }) {
   return callStudyBody<{ questions: GeneratedQuestion[] }>({
     action: "generate_questions",
@@ -151,6 +154,7 @@ export async function generateStudyQuestions({
     documents,
     excludePrompts,
     difficultyHint,
+    difficulty,
   });
 }
 

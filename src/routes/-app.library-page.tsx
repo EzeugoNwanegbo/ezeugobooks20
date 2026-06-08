@@ -3,6 +3,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { chunkDocumentText, documentPreview, type DocumentChunkInput } from "@/lib/document-chunks";
+import { embedChunkContents, backfillMissingEmbeddings } from "@/lib/embeddings";
 import { stageDocForChat } from "@/lib/chat-handoff";
 import { toast } from "sonner";
 import {
@@ -109,6 +110,19 @@ export function LibraryPage() {
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  // Quietly backfill embeddings for any chunks uploaded before semantic search
+  // existed (or whose embedding failed at upload). Idempotent and self-stopping:
+  // once everything is embedded this no-ops. Runs in the background; never blocks
+  // the UI and silently gives up on failure (keyword search still works).
+  useEffect(() => {
+    if (!user) return;
+    const controller = new AbortController();
+    backfillMissingEmbeddings(user.id, { signal: controller.signal }).catch((err) => {
+      console.warn("embedding backfill skipped", err);
+    });
+    return () => controller.abort();
   }, [user]);
 
   // If a previous upload left an "in-flight" breadcrumb, the tab died mid
@@ -437,7 +451,11 @@ export function LibraryPage() {
         if (!firstDocId) firstDocId = doc.id;
 
         if (item.chunks.length > 0) {
-          const rows = item.chunks.map((chunk) => ({
+          // Embed each chunk so it's semantically searchable. Failures fall
+          // through as null embeddings — the chunk stays keyword-searchable and
+          // the background backfill will pick it up later.
+          const embeddings = await embedChunkContents(item.chunks.map((chunk) => chunk.content));
+          const rows = item.chunks.map((chunk, idx) => ({
             document_id: doc.id,
             user_id: user.id,
             chunk_index: chunk.chunk_index,
@@ -445,6 +463,7 @@ export function LibraryPage() {
             page_end: chunk.page_end,
             content: chunk.content,
             token_estimate: chunk.token_estimate,
+            embedding: embeddings[idx],
           }));
 
           for (let i = 0; i < rows.length; i += 100) {

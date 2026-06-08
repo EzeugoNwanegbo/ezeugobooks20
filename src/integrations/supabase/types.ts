@@ -88,6 +88,7 @@ export type Database = {
           content: string;
           created_at: string | null;
           document_id: string;
+          embedding: string | null;
           id: string;
           page_end: number | null;
           page_start: number | null;
@@ -99,6 +100,7 @@ export type Database = {
           content: string;
           created_at?: string | null;
           document_id: string;
+          embedding?: string | null;
           id?: string;
           page_end?: number | null;
           page_start?: number | null;
@@ -110,6 +112,7 @@ export type Database = {
           content?: string;
           created_at?: string | null;
           document_id?: string;
+          embedding?: string | null;
           id?: string;
           page_end?: number | null;
           page_start?: number | null;
@@ -257,6 +260,25 @@ export type Database = {
         Args: {
           match_count?: number;
           match_document_ids?: string[] | null;
+          query_terms: string[];
+        };
+        Returns: {
+          chunk_index: number;
+          content: string;
+          document_id: string;
+          file_name: string;
+          folder: string | null;
+          id: string;
+          page_end: number | null;
+          page_start: number | null;
+          rank: number;
+        }[];
+      };
+      search_document_chunks_hybrid: {
+        Args: {
+          match_count?: number;
+          match_document_ids?: string[] | null;
+          query_embedding?: string | null;
           query_terms: string[];
         };
         Returns: {

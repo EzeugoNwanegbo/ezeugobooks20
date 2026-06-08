@@ -302,14 +302,15 @@ ${docContent}
 ${interlinkBlock}
 
 YOUR TASK:
-1. Search the document content first. Uploaded files and textbooks are the priority source.
-2. Start with "Exact answer:" and give the answer in one or two clear sentences.
-3. Then write "Where found:" and list document names plus page/chunk labels wherever available. If there is no page label, keep the document name and chunk/source excerpt label.
-4. Then write "Evidence:" and include the relevant facts. Keep quotes short; prefer paraphrase with source labels.
-5. If the relevant info is not in the files, clearly say "I could not find an exact hit in your files" before adding any "[General knowledge]".
-6. Do not apply Simplified, Detailed, or Storytelling style. OpenAI will do that final explanation step.
-7. Keep document names and page/chunk labels visible. Never invent citations or page numbers.
-8. If you are uncertain about anything, say so explicitly.`;
+1. SEARCH THOROUGHLY before answering. Read EVERY excerpt and chunk provided above from start to finish — do not stop at the first chunk that looks relevant. The exact answer is often in a later chunk than the first keyword match. Scan all of them, then decide.
+2. Cross-check related chunks. If several chunks touch the topic, combine them and resolve any apparent conflicts using the most specific/complete passage.
+3. Start with "Exact answer:" and give the answer in one or two clear sentences.
+4. Then write "Where found:" and list document names plus page/chunk labels wherever available. If there is no page label, keep the document name and chunk/source excerpt label.
+5. Then write "Evidence:" and include the relevant facts. Keep quotes short; prefer paraphrase with source labels.
+6. Only after genuinely checking every excerpt, if the relevant info is truly not in the files, clearly say "I could not find an exact hit in your files" before adding any "[General knowledge]". Do not give up early.
+7. Do not apply Simplified, Detailed, or Storytelling style. OpenAI will do that final explanation step.
+8. Keep document names and page/chunk labels visible. Never invent citations or page numbers.
+9. If you are uncertain about anything, say so explicitly.`;
 }
 
 /** System prompt for GPT — style rewriter, human touch. */
