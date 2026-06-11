@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { Plus, Send, Sparkles } from "lucide-react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Paperclip, Plus, Send, Sparkles, X } from "lucide-react-native";
 import {
   ActivityIndicator,
   Alert,
@@ -13,11 +13,27 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ChatDocPicker } from "@/components/chat-doc-picker";
 import { Eyebrow, Tag } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
-import { type ChatMode, type ChatTurn, streamChat } from "@/lib/chat-client";
+import {
+  type ChatMode,
+  type ChatTurn,
+  type DocumentMode,
+  looksCasualMessage,
+  retrieveChatContext,
+  streamChat,
+} from "@/lib/chat-client";
+import { type LinkDocument, listDocuments } from "@/lib/links-client";
 import { colors, fonts, radius } from "@/lib/theme";
-import { BOTTOM_NAV_HEIGHT, ScreenContainer, TopBar, useDrawer, useHaptics } from "@/platform";
+import {
+  BOTTOM_NAV_HEIGHT,
+  ScreenContainer,
+  TopBar,
+  useDrawer,
+  useHaptics,
+  useModal,
+} from "@/platform";
 
 const MODES: ChatMode[] = ["Detailed", "Simplified", "Storytelling", "Visuals"];
 
@@ -40,12 +56,41 @@ export default function ChatScreen() {
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
   const { profile } = useAuth();
+  const { present } = useModal();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [mode, setMode] = useState<ChatMode>("Detailed");
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [libraryDocs, setLibraryDocs] = useState<LinkDocument[]>([]);
+  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
   const scrollRef = useRef<ScrollView>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Indexed library docs power the attach picker; only "ready" files have the
+  // chunks retrieval needs, so others can't be grounded on yet.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const docs = await listDocuments();
+        setLibraryDocs(docs.filter((d) => d.extract_status === "ready"));
+      } catch {
+        /* picker just shows an empty state if the library can't load */
+      }
+    })();
+  }, []);
+
+  const attachedDocs = libraryDocs.filter((d) => selectedDocIds.includes(d.id));
+
+  const openPicker = useCallback(() => {
+    present((close) => (
+      <ChatDocPicker
+        docs={libraryDocs}
+        initial={selectedDocIds}
+        onConfirm={setSelectedDocIds}
+        close={close}
+      />
+    ));
+  }, [present, libraryDocs, selectedDocIds]);
 
   const scrollToEnd = () =>
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
@@ -83,10 +128,26 @@ export default function ChatScreen() {
         cur.map((m) => (m.id === assistantId && m.role === "assistant" ? fn(m) : m)),
       );
 
+    // Retrieve grounding excerpts before streaming. Attached files scope the
+    // search; otherwise we search the whole library, skipping casual greetings.
+    const manuallySelected = selectedDocIds.length > 0;
+    let documents: Awaited<ReturnType<typeof retrieveChatContext>> = [];
+    if (manuallySelected || !looksCasualMessage(text)) {
+      const recentText = messages.slice(-6).map((m) => m.text).join(" ");
+      documents = await retrieveChatContext(text, selectedDocIds, recentText);
+    }
+    const documentMode: DocumentMode = manuallySelected
+      ? "selected"
+      : documents.length > 0
+        ? "smart"
+        : "none";
+
     await streamChat({
       messages: history,
       profile,
       mode,
+      documents,
+      documentMode,
       signal: controller.signal,
       onDelta: (chunk) => patch((m) => ({ ...m, text: m.text + chunk })),
       onSources: (sources) =>
@@ -194,7 +255,34 @@ export default function ChatScreen() {
             })}
           </View>
 
+          {attachedDocs.length > 0 ? (
+            <View style={styles.chipRow}>
+              {attachedDocs.map((doc) => (
+                <Pressable
+                  key={doc.id}
+                  onPress={() => {
+                    haptics.selection();
+                    setSelectedDocIds((cur) => cur.filter((id) => id !== doc.id));
+                  }}
+                  style={styles.chip}
+                >
+                  <Paperclip size={11} color={colors.accent} />
+                  <Text style={styles.chipText} numberOfLines={1}>
+                    {doc.file_name}
+                  </Text>
+                  <X size={12} color={colors.mutedDim} />
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
           <View style={styles.inputBar}>
+            <Pressable onPress={openPicker} hitSlop={8} style={styles.attachBtn}>
+              <Paperclip
+                size={19}
+                color={attachedDocs.length > 0 ? colors.accent : colors.mutedDim}
+              />
+            </Pressable>
             <TextInput
               value={draft}
               onChangeText={setDraft}
@@ -348,15 +436,44 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 0.3,
   },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    maxWidth: "100%",
+    backgroundColor: colors.surface,
+    borderRadius: radius.full,
+    paddingLeft: 10,
+    paddingRight: 8,
+    paddingVertical: 6,
+  },
+  chipText: {
+    flexShrink: 1,
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    color: colors.muted,
+  },
   inputBar: {
     flexDirection: "row",
     alignItems: "flex-end",
-    gap: 8,
+    gap: 6,
     backgroundColor: colors.surface,
     borderRadius: radius.full,
-    paddingLeft: 18,
+    paddingLeft: 6,
     paddingRight: 6,
     paddingVertical: 6,
+  },
+  attachBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
   },
   input: {
     flex: 1,

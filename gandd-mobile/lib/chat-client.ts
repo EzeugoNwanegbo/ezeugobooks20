@@ -8,6 +8,8 @@
 
 import { fetch as expoFetch } from "expo/fetch";
 import { supabase, SUPABASE_ANON_KEY_VALUE, SUPABASE_URL_VALUE } from "./supabase";
+import { embedQuery } from "./embeddings";
+import { db, termsFrom } from "./studybody-data";
 import type { Profile } from "./auth";
 
 const CHAT_URL = `${SUPABASE_URL_VALUE}/functions/v1/chat`;
@@ -17,10 +19,88 @@ export type ChatMode = "Simplified" | "Detailed" | "Storytelling" | "Visuals";
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 export type WebSource = { title: string; url: string };
 
+// A grounded excerpt the chat function styles its answer from. The function does
+// no retrieval itself — it answers from the documents the client passes here, so
+// this is what makes mobile chat cite the user's actual material (web parity).
+export type ChatDocument = { id: string; file_name: string; folder: string | null; excerpt: string };
+export type DocumentMode = "none" | "smart" | "selected";
+
+type ChunkRow = {
+  document_id: string;
+  file_name: string;
+  folder: string | null;
+  chunk_index: number;
+  page_start: number | null;
+  page_end: number | null;
+  content: string;
+};
+
+function chunkLabel(c: { page_start: number | null; page_end: number | null; chunk_index: number }): string {
+  return c.page_start || c.page_end
+    ? `[Page ${c.page_start ?? "?"}${c.page_end && c.page_end !== c.page_start ? `-${c.page_end}` : ""}]`
+    : `[Chunk ${c.chunk_index + 1}]`;
+}
+
+// Greetings / thanks / one-word replies shouldn't trigger a library search — it
+// just adds latency and risks dragging in irrelevant excerpts. Mirrors the web's
+// looksCasualMessage guard.
+const CASUAL = /^(hi|hey|hello|yo|sup|thanks|thank you|thx|ok|okay|cool|nice|great|got it|lol|yes|no|yep|nope|sure)\b/i;
+export function looksCasualMessage(text: string): boolean {
+  const t = text.trim();
+  return t.length <= 3 || (t.length < 40 && CASUAL.test(t));
+}
+
+/**
+ * Hybrid (embedding + keyword) retrieval over the user's document_chunks, grouped
+ * per document into excerpts the chat function can ground on. Pass selected doc
+ * ids to scope to attached files; pass [] to search the whole library. Fails soft
+ * to [] so chat still answers (un-grounded) if retrieval is unavailable.
+ */
+export async function retrieveChatContext(
+  query: string,
+  selectedDocIds: string[],
+  recentText = "",
+): Promise<ChatDocument[]> {
+  const manuallySelected = selectedDocIds.length > 0;
+  try {
+    const queryEmbedding = await embedQuery(query);
+    const { data } = await db.rpc("search_document_chunks_hybrid", {
+      query_terms: termsFrom(`${query} ${recentText}`),
+      query_embedding: queryEmbedding,
+      // null = whole library (RLS scopes it to this user); ids = attached files.
+      match_document_ids: manuallySelected ? selectedDocIds : null,
+      match_count: manuallySelected ? 30 : 24,
+    });
+    const chunks = (data as ChunkRow[]) ?? [];
+    if (!chunks.length) return [];
+    const grouped = new Map<string, ChatDocument>();
+    for (const chunk of chunks) {
+      const text = `${chunkLabel(chunk)}\n${chunk.content}`;
+      const existing = grouped.get(chunk.document_id);
+      if (existing) {
+        existing.excerpt = `${existing.excerpt}\n\n${text}`.slice(0, 24000);
+      } else {
+        grouped.set(chunk.document_id, {
+          id: chunk.document_id,
+          file_name: chunk.file_name,
+          folder: chunk.folder,
+          excerpt: text,
+        });
+      }
+    }
+    return [...grouped.values()];
+  } catch (err) {
+    console.warn("chat retrieval failed; answering without grounding", err);
+    return [];
+  }
+}
+
 export type StreamChatHandlers = {
   messages: ChatTurn[];
   profile: Profile;
   mode: ChatMode;
+  documents?: ChatDocument[];
+  documentMode?: DocumentMode;
   onDelta: (chunk: string) => void;
   onSources?: (sources: WebSource[]) => void;
   onDone: () => void;
@@ -52,6 +132,8 @@ export async function streamChat({
   messages,
   profile,
   mode,
+  documents = [],
+  documentMode = "none",
   onDelta,
   onSources,
   onDone,
@@ -89,9 +171,11 @@ export async function streamChat({
         messages,
         profile,
         mode,
-        // "smart" lets the function retrieve from the user's uploaded library
-        // when it's relevant, and answer generally otherwise.
-        documentMode: "smart",
+        // The function grounds its answer on these client-retrieved excerpts.
+        // "selected" = attached files, "smart" = whole-library match, "none" =
+        // general answer (no excerpts found / casual message).
+        documents,
+        documentMode,
       }),
     });
 
