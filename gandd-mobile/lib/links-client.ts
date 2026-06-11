@@ -101,6 +101,9 @@ export type UploadOutcome = {
   documentId?: string;
   status?: ExtractStatus;
   error?: string;
+  // Set when the file was rejected purely for exceeding the size cap, so the UI
+  // can offer a shortcut to the web app where large PDFs upload fine.
+  oversize?: boolean;
 };
 
 /**
@@ -121,7 +124,8 @@ export async function uploadAndExtract(
     const mb = Math.round(maxBytes / (1024 * 1024));
     return {
       ok: false,
-      error: `${asset.name} is over ${mb} MB. Large PDFs are best uploaded on the web for now — or split the file into smaller parts.`,
+      oversize: true,
+      error: `${asset.name} is over ${mb} MB. Large PDFs are best uploaded on the web at gd1.online — or split the file into smaller parts.`,
     };
   }
 

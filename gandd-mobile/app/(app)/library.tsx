@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -91,13 +92,28 @@ export default function LibraryScreen() {
     haptics.success();
     setUploading(true);
     const failures: string[] = [];
+    let anyOversize = false;
     for (const asset of assets) {
       const res = await uploadAndExtract(asset, { maxBytes: LIBRARY_MAX_FILE_BYTES });
       if (!res.ok && res.status !== "rejected" && res.error) failures.push(res.error);
+      if (res.oversize) anyOversize = true;
       await refresh();
     }
     setUploading(false);
-    if (failures.length > 0) Alert.alert("Some files had problems", failures.join("\n\n"));
+    if (failures.length > 0) {
+      // When something was just too big, offer a one-tap jump to the web app,
+      // which parses PDFs in-browser and handles much larger files.
+      Alert.alert(
+        "Some files had problems",
+        failures.join("\n\n"),
+        anyOversize
+          ? [
+              { text: "Open gd1.online", onPress: () => void Linking.openURL("https://gd1.online") },
+              { text: "OK", style: "cancel" },
+            ]
+          : undefined,
+      );
+    }
   }, [haptics, refresh]);
 
   const onDelete = useCallback(

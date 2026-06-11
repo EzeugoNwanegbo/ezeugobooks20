@@ -10,7 +10,7 @@ import {
   Zap,
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button, Eyebrow, Tag } from "@/components/ui";
 import {
@@ -99,9 +99,11 @@ export default function LinksScreen() {
 
     setUploading(true);
     const failures: string[] = [];
+    let anyOversize = false;
     for (const asset of chosen) {
       const res = await uploadAndExtract(asset);
       if (!res.ok && res.status !== "rejected" && res.error) failures.push(res.error);
+      if (res.oversize) anyOversize = true;
       await refresh();
     }
     setUploading(false);
@@ -109,7 +111,16 @@ export default function LinksScreen() {
     setSynth(null);
 
     if (failures.length > 0) {
-      Alert.alert("Some files had problems", failures.join("\n\n"));
+      Alert.alert(
+        "Some files had problems",
+        failures.join("\n\n"),
+        anyOversize
+          ? [
+              { text: "Open gd1.online", onPress: () => void Linking.openURL("https://gd1.online") },
+              { text: "OK", style: "cancel" },
+            ]
+          : undefined,
+      );
     }
   }, [docs.length, refresh]);
 
