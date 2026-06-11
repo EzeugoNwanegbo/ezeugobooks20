@@ -2,8 +2,9 @@
 // temporary selection so the parent only hears the final set on "Attach" — this
 // avoids stale-closure issues with the modal system's captured render function.
 import { Check, FileText, Search } from "lucide-react-native";
-import { useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { LinkDocument } from "@/lib/links-client";
 import { colors, fonts, radius } from "@/lib/theme";
 
@@ -18,8 +19,24 @@ export function ChatDocPicker({
   onConfirm: (ids: string[]) => void;
   close: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState<string[]>(initial);
   const [query, setQuery] = useState("");
+  const [kbHeight, setKbHeight] = useState(0);
+
+  // The sheet is anchored to the bottom, so the search keyboard would cover the
+  // document list. Pad the content up by the keyboard height (the panel already
+  // accounts for the safe-area inset) so the list stays visible while typing.
+  useEffect(() => {
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const show = Keyboard.addListener(showEvt, (e) => setKbHeight(e.endCoordinates?.height ?? 0));
+    const hide = Keyboard.addListener(hideEvt, () => setKbHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -30,7 +47,9 @@ export function ChatDocPicker({
     setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
 
   return (
-    <View style={styles.wrap}>
+    <View
+      style={[styles.wrap, kbHeight > 0 && { paddingBottom: Math.max(0, kbHeight - insets.bottom) }]}
+    >
       <Text style={styles.title}>Attach documents</Text>
       <Text style={styles.sub}>Answers will be grounded in the files you pick and cite their pages.</Text>
 
@@ -45,7 +64,11 @@ export function ChatDocPicker({
         />
       </View>
 
-      <ScrollView style={styles.list} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={[styles.list, kbHeight > 0 && { maxHeight: 220 }]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {filtered.length === 0 ? (
           <Text style={styles.empty}>
             {docs.length === 0 ? "No indexed documents yet. Upload PDFs in the Library tab." : "No files match your search."}

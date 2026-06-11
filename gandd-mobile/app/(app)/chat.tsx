@@ -3,6 +3,7 @@ import { Paperclip, Plus, Send, Sparkles, X } from "lucide-react-native";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -63,8 +64,23 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [libraryDocs, setLibraryDocs] = useState<LinkDocument[]>([]);
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
+  const [keyboardShown, setKeyboardShown] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // While the keyboard is up the composer is lifted, so we drop the reserved
+  // bottom-nav + safe-area padding — otherwise the input floats far above the
+  // keyboard with a large empty gap.
+  useEffect(() => {
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const show = Keyboard.addListener(showEvt, () => setKeyboardShown(true));
+    const hide = Keyboard.addListener(hideEvt, () => setKeyboardShown(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   // Indexed library docs power the attach picker; only "ready" files have the
   // chunks retrieval needs, so others can't be grounded on yet.
@@ -234,7 +250,12 @@ export default function ChatScreen() {
           ) : null}
         </ScrollView>
 
-        <View style={[styles.footer, { paddingBottom: BOTTOM_NAV_HEIGHT + insets.bottom + 8 }]}>
+        <View
+          style={[
+            styles.footer,
+            { paddingBottom: keyboardShown ? 8 : BOTTOM_NAV_HEIGHT + insets.bottom + 8 },
+          ]}
+        >
           <View style={styles.modeRow}>
             {MODES.map((mm) => {
               const active = mm === mode;
