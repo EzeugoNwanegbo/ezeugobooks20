@@ -18,6 +18,9 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# EAS credentials export — contains plaintext keystore passwords
+credentials.json
+
 # Metro
 .metro-health-check*
 
