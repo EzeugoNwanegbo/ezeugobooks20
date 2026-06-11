@@ -13,10 +13,14 @@ import { supabase, SUPABASE_URL_VALUE } from "./supabase";
 export const LINK_MAX_DOCS = 10;
 export const LINK_MAX_FILE_BYTES = 30 * 1024 * 1024; // 30 MB
 export const LINK_MAX_PAGES = 100;
-// The main Document Library is unrestricted in count and accepts large files.
-// (The LINK_* caps above are specific to the Links / "connect the dots" feature
-// and must not bleed into the Library.)
-export const LIBRARY_MAX_FILE_BYTES = 500 * 1024 * 1024; // 500 MB
+// The main Document Library is unrestricted in count. The per-file cap is 50 MB:
+// unlike the website (which parses PDFs in-browser and stores text only), the
+// native app uploads the raw PDF to Supabase Storage — whose default object
+// limit is 50 MB — and then extracts server-side, where huge files would time
+// out / OOM anyway. So we reject early with a clear message instead. Bigger
+// files belong on the web for now. (The LINK_* caps are tighter still and
+// specific to the Links / "connect the dots" feature.)
+export const LIBRARY_MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB
 
 const EXTRACT_URL = `${SUPABASE_URL_VALUE}/functions/v1/extract-pdf`;
 const CONNECT_URL = `${SUPABASE_URL_VALUE}/functions/v1/connect-dots`;
@@ -115,7 +119,10 @@ export async function uploadAndExtract(
   }
   if (typeof asset.size === "number" && asset.size > maxBytes) {
     const mb = Math.round(maxBytes / (1024 * 1024));
-    return { ok: false, error: `${asset.name} is over ${mb} MB. Upload a smaller PDF.` };
+    return {
+      ok: false,
+      error: `${asset.name} is over ${mb} MB. Large PDFs are best uploaded on the web for now — or split the file into smaller parts.`,
+    };
   }
 
   const userId = await currentUserId();

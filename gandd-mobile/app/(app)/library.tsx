@@ -161,7 +161,7 @@ export default function LibraryScreen() {
           <Text style={styles.addNewLabel}>{uploading ? "UPLOADING" : "ADD NEW"}</Text>
         </Pressable>
         <Text style={styles.maxSize}>
-          {docs.length} {docs.length === 1 ? "DOCUMENT" : "DOCUMENTS"} · PDF · MAX 500MB
+          {docs.length} {docs.length === 1 ? "DOCUMENT" : "DOCUMENTS"} · PDF · MAX 50MB
         </Text>
 
         {loading ? (
