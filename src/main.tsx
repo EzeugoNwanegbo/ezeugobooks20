@@ -4,7 +4,14 @@ import { RouterProvider } from "@tanstack/react-router";
 import { getRouter } from "./router";
 import { AppErrorBoundary } from "./components/error-boundary";
 import { initNativeShell } from "./lib/native";
+import posthog from "posthog-js";
+import { PostHogProvider } from "@posthog/react";
 import "./styles.css";
+
+posthog.init(import.meta.env.VITE_POSTHOG_PROJECT_TOKEN, {
+  api_host: import.meta.env.VITE_POSTHOG_HOST,
+  defaults: "2026-01-30",
+});
 
 // Mark the document as the native app and configure the status bar before the
 // first paint, so safe-area styling and native auth behavior apply from the
@@ -38,8 +45,10 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <AppErrorBoundary>
-      <RouterProvider router={getRouter()} />
-    </AppErrorBoundary>
+    <PostHogProvider client={posthog}>
+      <AppErrorBoundary>
+        <RouterProvider router={getRouter()} />
+      </AppErrorBoundary>
+    </PostHogProvider>
   </StrictMode>,
 );

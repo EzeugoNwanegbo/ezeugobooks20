@@ -1,14 +1,18 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
+import { LoadingDots } from "@/components/loading-dots";
 import { useAuth } from "@/lib/auth-context";
 import { isNativeApp } from "@/lib/native";
 import { lastRoute } from "@/lib/last-route";
 import { signInWithGoogleNative } from "@/lib/native-auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 
-type AuthSearch = { mode?: "signup" | "signin" };
+// "upgrade" = a guest (anonymous) session attaching a real identity. The page
+// must NOT bounce them to the app, and must link credentials to the existing
+// user instead of signing up fresh — otherwise their guest work is orphaned.
+type AuthSearch = { mode?: "signup" | "signin" | "upgrade" };
 const AUTH_ACTION_TIMEOUT_MS = 20_000;
 const AUTH_CONFIG_ERROR =
   "Authentication is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your hosting environment, then redeploy.";
@@ -51,7 +55,7 @@ function withAuthTimeout<T>(promise: PromiseLike<T>, label: string): Promise<T> 
 
 export const Route = createFileRoute("/auth")({
   validateSearch: (s: Record<string, unknown>): AuthSearch => ({
-    mode: s.mode === "signup" ? "signup" : "signin",
+    mode: s.mode === "signup" ? "signup" : s.mode === "upgrade" ? "upgrade" : "signin",
   }),
   head: () => ({
     meta: [
@@ -78,6 +82,9 @@ function AuthFlow() {
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const native = isNativeApp();
+  // Guest session attaching a real identity — only valid while the anonymous
+  // session is alive; otherwise fall back to the normal sign-in form.
+  const isUpgrade = mode === "upgrade" && Boolean(user?.is_anonymous);
 
   useEffect(() => {
     // Navigate as soon as the session + profile are ready. This deliberately
@@ -85,8 +92,10 @@ function AuthFlow() {
     // `submitting` true to avoid flashing the bare form, so gating navigation
     // on it would deadlock here.
     if (loading || !user || !profile) return;
+    // Guests upgrading stay here to attach an email/Google identity.
+    if (isUpgrade) return;
     navigate({ to: profile?.onboarded ? lastRoute() : "/onboarding", replace: true });
-  }, [loading, user, profile, navigate]);
+  }, [loading, user, profile, navigate, isUpgrade]);
 
   if (user && authError && !profile) {
     return (
@@ -117,7 +126,7 @@ function AuthFlow() {
     );
   }
 
-  if (loading || user) {
+  if (loading || (user && !isUpgrade)) {
     return (
       <div className="luxury-auth-page flex min-h-dvh items-center justify-center bg-background">
         <div className="symbiote-blob auth-blob-one" />
@@ -146,7 +155,24 @@ function AuthFlow() {
       const trimmedEmail = email.trim();
       const supabase = await loadSupabase();
 
-      if (isSignup) {
+      if (isUpgrade) {
+        // Attach the email + password to the existing anonymous user — same
+        // auth.uid(), so every document/chat the guest made stays theirs. The
+        // email lands as "pending" until they click the confirmation link.
+        const { error } = await withAuthTimeout(
+          supabase.auth.updateUser(
+            { email: trimmedEmail, password },
+            { emailRedirectTo: `${window.location.origin}/auth` },
+          ),
+          "Saving your account",
+        );
+        if (error) throw error;
+        setPassword("");
+        setAuthNotice(
+          `Almost done — we sent a confirmation link to ${trimmedEmail}. Click it to finish creating your account. Everything you made as a guest stays with you.`,
+        );
+        toast.success("Check your email to confirm your account.");
+      } else if (isSignup) {
         const { data, error } = await withAuthTimeout(
           supabase.auth.signUp({
             email: trimmedEmail,
@@ -191,6 +217,22 @@ function AuthFlow() {
     setGoogleSubmitting(true);
     setAuthNotice(null);
     try {
+      if (isUpgrade) {
+        // Link Google to the existing anonymous user (manual linking must be
+        // enabled in the Supabase dashboard). A plain OAuth sign-in here would
+        // create/switch accounts and orphan the guest's work.
+        const supabase = await loadSupabase();
+        const { error } = await withAuthTimeout(
+          supabase.auth.linkIdentity({
+            provider: "google",
+            options: { redirectTo: `${window.location.origin}/auth` },
+          }),
+          "Connecting Google",
+        );
+        if (error) throw error;
+        return; // browser redirects to Google; spinner holds until then
+      }
+
       if (native) {
         // System-browser flow: Google blocks OAuth inside embedded webviews,
         // and the deep-link listener finishes the session on redirect back.
@@ -233,12 +275,14 @@ function AuthFlow() {
         <div className="w-full max-w-md">
           <div className="luxury-panel rounded-lg p-5 shadow-elegant backdrop-blur sm:p-8">
             <h1 className="font-display text-3xl font-light leading-none sm:text-4xl">
-              {isSignup ? "Create your account" : "Welcome back"}
+              {isUpgrade ? "Keep your work" : isSignup ? "Create your account" : "Welcome back"}
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {isSignup
-                ? "Join G&D and start studying smarter."
-                : "Sign in to continue your studies."}
+              {isUpgrade
+                ? "Add an email or Google account — everything from your guest session stays with you."
+                : isSignup
+                  ? "Join G&D and start studying smarter."
+                  : "Sign in to continue your studies."}
             </p>
             {authNotice && (
               <div className="mt-4 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 text-sm text-foreground">
@@ -246,27 +290,33 @@ function AuthFlow() {
               </div>
             )}
 
-            <>
-              <button
-                onClick={handleGoogle}
-                type="button"
-                disabled={googleSubmitting}
-                className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background/70 hover:bg-surface-elevated transition-colors text-sm font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {googleSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
-                {googleSubmitting
-                  ? "Opening Google..."
-                  : isSignup
-                    ? "Create account with Google"
-                    : "Sign in with Google"}
-              </button>
+            {/* Native upgrade hides Google: the native flow signs into a separate
+                account instead of linking, which would orphan the guest's work. */}
+            {!(isUpgrade && native) && (
+              <>
+                <button
+                  onClick={handleGoogle}
+                  type="button"
+                  disabled={googleSubmitting}
+                  className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background/70 hover:bg-surface-elevated transition-colors text-sm font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {googleSubmitting ? <LoadingDots /> : <GoogleIcon />}
+                  {googleSubmitting
+                    ? "Opening Google..."
+                    : isUpgrade
+                      ? "Continue with Google"
+                      : isSignup
+                        ? "Create account with Google"
+                        : "Sign in with Google"}
+                </button>
 
-              <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
-                <div className="h-px flex-1 bg-border" />
-                or use email
-                <div className="h-px flex-1 bg-border" />
-              </div>
-            </>
+                <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
+                  <div className="h-px flex-1 bg-border" />
+                  or use email
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+              </>
+            )}
 
             <form onSubmit={handleEmail} className="space-y-3">
               <div>
@@ -311,30 +361,47 @@ function AuthFlow() {
                 disabled={submitting}
                 className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {submitting && <LoadingDots />}
                 {submitting
-                  ? isSignup
-                    ? "Creating..."
-                    : "Signing in..."
-                  : isSignup
-                    ? "Create account"
-                    : "Sign in"}
+                  ? isUpgrade
+                    ? "Saving..."
+                    : isSignup
+                      ? "Creating..."
+                      : "Signing in..."
+                  : isUpgrade
+                    ? "Save my account"
+                    : isSignup
+                      ? "Create account"
+                      : "Sign in"}
               </button>
             </form>
 
-            <p className="text-xs text-muted-foreground text-center mt-5">
-              {isSignup ? "Already have an account?" : "New here?"}{" "}
-              <button
-                type="button"
-                className="text-primary hover:underline font-medium"
-                onClick={() => {
-                  setAuthNotice(null);
-                  setIsSignup(!isSignup);
-                }}
-              >
-                {isSignup ? "Sign in" : "Create one"}
-              </button>
-            </p>
+            {isUpgrade ? (
+              <p className="text-xs text-muted-foreground text-center mt-5">
+                Not ready yet?{" "}
+                <button
+                  type="button"
+                  className="text-primary hover:underline font-medium"
+                  onClick={() => navigate({ to: lastRoute() })}
+                >
+                  Keep exploring as a guest
+                </button>
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground text-center mt-5">
+                {isSignup ? "Already have an account?" : "New here?"}{" "}
+                <button
+                  type="button"
+                  className="text-primary hover:underline font-medium"
+                  onClick={() => {
+                    setAuthNotice(null);
+                    setIsSignup(!isSignup);
+                  }}
+                >
+                  {isSignup ? "Sign in" : "Create one"}
+                </button>
+              </p>
+            )}
           </div>
         </div>
       </main>

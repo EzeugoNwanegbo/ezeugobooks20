@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRight, FileText, History, Loader2, Map as MapIcon, Sparkles } from "lucide-react";
+import { ChevronRight, FileText, History, Map as MapIcon, Sparkles } from "lucide-react";
+import { LoadingDots } from "@/components/loading-dots";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { generateStudyPlan, type StudyRoadmapTopic } from "@/lib/studybody-client";
@@ -305,11 +306,7 @@ export function StudyBodyPage() {
               disabled={loading}
               className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-60"
             >
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
+              {loading ? <LoadingDots /> : <Sparkles className="h-4 w-4" />}
               Build roadmap
             </button>
           </div>

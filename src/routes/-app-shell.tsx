@@ -29,6 +29,7 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AppShellSkeleton } from "@/components/app-skeletons";
 import { useAuth } from "@/lib/auth-context";
+import { isGuestUser } from "@/lib/guest-session";
 import { rememberRoute } from "@/lib/last-route";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -44,6 +45,7 @@ export function AppShell() {
 
 function AppLayout() {
   const { user, profile, loading, authError, refreshProfile, signOut, deleteAccount } = useAuth();
+  const isGuest = isGuestUser(user);
   const navigate = useNavigate();
   const location = useLocation();
   const search = useSearch({ strict: false }) as { c?: string };
@@ -246,6 +248,21 @@ function AppLayout() {
     );
   };
 
+  // Guests have no way back into an anonymous session once it's gone, so warn
+  // before signing out orphans everything they made. Returns false on cancel.
+  const confirmAndSignOut = async () => {
+    if (
+      isGuest &&
+      !window.confirm(
+        "You're in a guest session — signing out permanently loses your documents and chats. Create a free account first to keep them.\n\nSign out anyway?",
+      )
+    ) {
+      return false;
+    }
+    await signOut();
+    return true;
+  };
+
   const handleDeleteAccount = async () => {
     setDeletingAccount(true);
     try {
@@ -357,8 +374,7 @@ function AppLayout() {
           </div>
           <button
             onClick={async () => {
-              await signOut();
-              navigate({ to: "/" });
+              if (await confirmAndSignOut()) navigate({ to: "/" });
             }}
             className={`flex items-center text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground ${
               isSidebarCollapsed
@@ -542,7 +558,7 @@ function AppLayout() {
               <button
                 type="button"
                 onClick={async () => {
-                  await signOut();
+                  if (!(await confirmAndSignOut())) return;
                   setMobileMenuOpen(false);
                   navigate({ to: "/" });
                 }}
@@ -571,6 +587,16 @@ function AppLayout() {
           onTouchEnd={onContentTouchEnd}
           className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:pb-0"
         >
+          {isGuest && (
+            <Link
+              to="/auth"
+              search={{ mode: "upgrade" }}
+              className="z-10 block shrink-0 border-b border-primary/20 bg-primary/10 px-4 py-2 text-center text-xs font-medium text-foreground transition-colors hover:bg-primary/15"
+            >
+              You're exploring as a guest — <span className="underline">create a free account</span>{" "}
+              to keep your documents and chats.
+            </Link>
+          )}
           <Outlet />
         </main>
       </div>

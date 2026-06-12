@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Loader2, LogOut, Trash2 } from "lucide-react";
+import { LogOut, Trash2 } from "lucide-react";
+import { LoadingDots } from "@/components/loading-dots";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -214,7 +215,7 @@ export function SettingsPage() {
               disabled={saving}
               className="inline-flex items-center gap-2 rounded-lg bg-gradient-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-glow disabled:opacity-60"
             >
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {saving && <LoadingDots />}
               {saving ? "Saving…" : "Save changes"}
             </button>
           </div>

@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
+import { LoadingDots } from "@/components/loading-dots";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -304,7 +305,7 @@ function OnboardingFlow() {
                   disabled={saving}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-primary px-4 py-2.5 font-medium text-primary-foreground shadow-glow hover:opacity-90 disabled:opacity-50 sm:px-5"
                 >
-                  {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {saving && <LoadingDots />}
                   Start studying
                   <ArrowRight className="h-4 w-4" />
                 </button>

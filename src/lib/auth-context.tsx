@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
+import { usePostHog } from "@posthog/react";
 import { supabase } from "@/integrations/supabase/client";
 
 export type Profile = {
@@ -67,6 +68,7 @@ function getAuthErrorMessage(error: unknown) {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const posthog = usePostHog();
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -94,7 +96,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const fallbackName =
-        currentUser.user_metadata?.name ?? currentUser.user_metadata?.full_name ?? "";
+        currentUser.user_metadata?.name ??
+        currentUser.user_metadata?.full_name ??
+        // Anonymous (guest) sessions have no identity to derive a name from.
+        (currentUser.is_anonymous ? "Guest" : "");
       const { data: created, error: createError } = await withTimeout(
         supabase
           .from("user_profiles")
@@ -173,6 +178,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // profile behind the full-screen splash.
           if (loadedUserIdRef.current === sess.user.id) return;
           loadedUserIdRef.current = sess.user.id;
+          posthog?.identify(sess.user.id, {
+            email: sess.user.email,
+            name: sess.user.user_metadata?.name ?? sess.user.user_metadata?.full_name,
+          });
           // defer to avoid deadlock with supabase client
           setLoading(true);
           setTimeout(() => {
@@ -183,6 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }, 0);
         } else {
           loadedUserIdRef.current = null;
+          posthog?.reset();
           setProfile(null);
           setLoading(false);
         }

@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { chunkDocumentText, documentPreview, type DocumentChunkInput } from "@/lib/document-chunks";
 import { embedChunkContents, backfillMissingEmbeddings } from "@/lib/embeddings";
 import { getCached, setCached } from "@/lib/data-cache";
+import { GUEST_DOCUMENT_LIMIT, isGuestUser } from "@/lib/guest-session";
 import { stageDocForChat } from "@/lib/chat-handoff";
 import { toast } from "sonner";
 import {
@@ -368,6 +369,24 @@ export function LibraryPage() {
   // assignment modal for the whole batch.
   const onUploadFiles = async (files: File[]) => {
     if (!user || files.length === 0) return;
+    // Guests get a small trial library; processing + embeddings cost real money,
+    // so the full library needs an account.
+    if (isGuestUser(user)) {
+      const remaining = GUEST_DOCUMENT_LIMIT - docs.length;
+      if (remaining <= 0) {
+        toast.error(
+          `Guest sessions can hold ${GUEST_DOCUMENT_LIMIT} documents. Create a free account to add more — everything you've made stays with you.`,
+        );
+        navigate({ to: "/auth", search: { mode: "upgrade" } });
+        return;
+      }
+      if (files.length > remaining) {
+        toast.warning(
+          `Guest sessions can hold ${GUEST_DOCUMENT_LIMIT} documents — uploading the first ${remaining} of ${files.length}.`,
+        );
+        files = files.slice(0, remaining);
+      }
+    }
     setUploading(true);
     const processed: ProcessedFile[] = [];
     try {

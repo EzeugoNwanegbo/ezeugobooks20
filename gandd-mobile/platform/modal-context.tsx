@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Keyboard, Platform, Pressable, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   Easing,
@@ -111,6 +111,34 @@ function SheetContainer({
   const insets = useSafeAreaInsets();
   const ty = useSharedValue(HIDDEN);
   const height = useSharedValue(HIDDEN);
+  // How far to lift the sheet so the keyboard doesn't cover it. Driven by JS
+  // Keyboard events, which fire reliably in Expo Go / edge-to-edge Android where
+  // Reanimated's useAnimatedKeyboard reports nothing. The panel already pads its
+  // bottom by the safe-area inset, so we reuse that as the gap above the keyboard.
+  const lift = useSharedValue(0);
+
+  useEffect(() => {
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const show = Keyboard.addListener(showEvt, (e) => {
+      const h = e.endCoordinates?.height ?? 0;
+      lift.value = withTiming(Math.max(0, h - insets.bottom), { duration: 220 });
+    });
+    const hide = Keyboard.addListener(hideEvt, () => {
+      lift.value = withTiming(0, { duration: 180 });
+    });
+    // The sheet can be presented while the keyboard is ALREADY up (e.g. tapping
+    // "attach" mid-typing) — no show event fires then, so seed the lift from the
+    // current keyboard state instead of waiting for one.
+    const current = Keyboard.isVisible() ? Keyboard.metrics()?.height ?? 0 : 0;
+    if (current > 0) {
+      lift.value = withTiming(Math.max(0, current - insets.bottom), { duration: 220 });
+    }
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [lift, insets.bottom]);
 
   const animateClose = useCallback(() => {
     ty.value = withTiming(height.value || HIDDEN, EXIT, (finished) => {
@@ -145,7 +173,9 @@ function SheetContainer({
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: interpolate(ty.value, [0, height.value], [0.6, 0], Extrapolation.CLAMP),
   }));
-  const panelStyle = useAnimatedStyle(() => ({ transform: [{ translateY: ty.value }] }));
+  const panelStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: ty.value - lift.value }],
+  }));
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">

@@ -1,64 +1,169 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
+import { startGuestSession } from "@/lib/guest-session";
+import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "G&D — pinpoint answers from large files" },
+      { title: "G&D — read a whole textbook in minutes, not hours" },
       {
         name: "description",
         content:
-          "Upload huge PDFs, notes, and scans, then ask one precise question. G&D returns the exact answer, the source page, and the evidence — in seconds.",
+          "Upload any textbook in under 15 seconds, ask anything, and get exact answers from your own pages — nothing made up. Then master it with practice questions built from your book.",
       },
     ],
   }),
   component: Landing,
 });
 
-// Landing / hub for "/" — the first screen users see. Symbiote Organicism
-// aesthetic (deep black + warm beige, pill shapes, Sora / Hanken Grotesk /
-// JetBrains Mono) but built as a real responsive web page: two-column hero on
-// desktop, single-column stack on mobile. Self-contained styles + Google Fonts
-// (React 19 hoists the <link>/<style> into <head>); no new deps.
-const features = [
-  {
-    icon: "target",
-    title: "Pinpoint Chat",
-    body: "Ask huge files one question and get the exact passage back, with the page it came from.",
-    to: "/app/chat" as const,
-    cta: "Start asking",
-  },
-  {
-    icon: "folder_open",
-    title: "Document Library",
-    body: "Drop in PDFs, lecture notes, slide decks, and scans. Everything becomes searchable.",
-    to: "/app/library" as const,
-    cta: "Open library",
-  },
-  {
-    icon: "school",
-    title: "My Coach",
-    body: "Turn your material into a roadmap, get quizzed, and have your answers graded.",
-    to: "/app/studybody" as const,
-    cta: "Train with coach",
-  },
-  {
-    icon: "hub",
-    title: "Find Connections",
-    body: "Link ideas across subjects and folders so concepts actually stick together.",
-    to: "/app/chat" as const,
-    cta: "Connect ideas",
-  },
-];
+// Landing for "/" — Symbiote Organicism aesthetic (deep black + warm beige,
+// pill shapes, Sora / Hanken Grotesk / JetBrains Mono), self-contained styles
+// + Google Fonts (React 19 hoists <link>/<style> into <head>). Motion is pure
+// CSS keyframes + one IntersectionObserver for scroll reveals — no new deps.
 
-const steps = [
-  { n: "01", label: "Upload", body: "Add your files. G&D extracts the text so every page is searchable." },
-  { n: "02", label: "Pinpoint", body: "Ask for the exact thing. We find the passage, page, and file." },
-  { n: "03", label: "Answer", body: "Evidence first, then a clear explanation in your chosen style." },
-];
+/* ----------------------------------------------------------------- */
+/* Try for free — starts a no-signup guest session, falls back to     */
+/* /auth signup when anonymous sign-ins are unavailable.              */
+/* ----------------------------------------------------------------- */
+function TryForFreeButton({
+  className = "",
+  label = "Try for free",
+  icon = "bolt",
+}: {
+  className?: string;
+  label?: string;
+  icon?: string;
+}) {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [busy, setBusy] = useState(false);
 
-function Landing() {
+  const onClick = async () => {
+    if (busy) return;
+    if (user) {
+      // Already signed in (or already a guest) — straight to the workspace.
+      navigate({ to: "/app" });
+      return;
+    }
+    try {
+      setBusy(true);
+      await startGuestSession();
+      navigate({ to: "/app" }); // shell routes new users to onboarding
+    } catch {
+      // anonymous sign-ins disabled or network error → fall back to signup
+      navigate({ to: "/auth", search: { mode: "signup" } });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <div className="gd-root">
+    <button
+      type="button"
+      className={`gd-btn gd-btn-primary ${className}`}
+      onClick={onClick}
+      disabled={busy}
+      aria-busy={busy}
+    >
+      {busy ? (
+        <span className="gd-spinner" aria-hidden="true" />
+      ) : (
+        <span className="material-symbols-outlined" aria-hidden="true">
+          {icon}
+        </span>
+      )}
+      {busy ? "Starting…" : label}
+    </button>
+  );
+}
+
+/* ----------------------------------------------------------------- */
+/* Count-up number — animates when scrolled into view; respects       */
+/* prefers-reduced-motion by rendering the final value immediately.   */
+/* ----------------------------------------------------------------- */
+function CountUp({ to, duration = 1400 }: { to: number; duration?: number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const formatted = to.toLocaleString("en-US");
+    const reduced =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced || typeof IntersectionObserver === "undefined") {
+      el.textContent = formatted;
+      return;
+    }
+    let raf = 0;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        io.disconnect();
+        const start = performance.now();
+        const tick = (now: number) => {
+          const p = Math.min(1, (now - start) / duration);
+          const eased = 1 - Math.pow(1 - p, 3);
+          el.textContent = Math.round(to * eased).toLocaleString("en-US");
+          if (p < 1) raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+      },
+      { threshold: 0.6 },
+    );
+    io.observe(el);
+    return () => {
+      io.disconnect();
+      cancelAnimationFrame(raf);
+    };
+  }, [to, duration]);
+
+  return <span ref={ref}>0</span>;
+}
+
+/* ----------------------------------------------------------------- */
+/* Landing                                                            */
+/* ----------------------------------------------------------------- */
+function Landing() {
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // One observer for every scroll-reveal element. Elements are only hidden
+  // under (prefers-reduced-motion: no-preference), so this is purely additive.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const els = Array.from(root.querySelectorAll<HTMLElement>(".gd-r"));
+    if (typeof IntersectionObserver === "undefined") {
+      els.forEach((el) => el.classList.add("gd-in"));
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            e.target.classList.add("gd-in");
+            io.unobserve(e.target);
+          }
+        }
+      },
+      { threshold: 0.16, rootMargin: "0px 0px -6% 0px" },
+    );
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
+
+  const scrollToHow = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    const el = document.getElementById("how-it-works");
+    const reduced =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el?.scrollIntoView({ behavior: reduced ? "auto" : "smooth" });
+  };
+
+  return (
+    <div className="gd-root" ref={rootRef}>
       <link
         rel="stylesheet"
         href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
@@ -76,124 +181,293 @@ function Landing() {
       {/* Nav */}
       <header className="gd-nav">
         <Link to="/" className="gd-logo">G&amp;D</Link>
-        <nav className="gd-nav-links">
+        <nav className="gd-nav-links" aria-label="Product">
           <Link to="/app/chat" className="gd-nav-link">Chat</Link>
           <Link to="/app/library" className="gd-nav-link">Library</Link>
           <Link to="/app/studybody" className="gd-nav-link">Coach</Link>
         </nav>
-        <Link to="/auth" search={{ mode: "signup" }} className="gd-btn gd-btn-primary gd-nav-cta">
-          Get started
-        </Link>
+        <TryForFreeButton className="gd-nav-cta" icon="bolt" />
       </header>
 
       <main>
-        {/* Hero */}
+        {/* ------------------------------------------------------- */}
+        {/* Hero                                                      */}
+        {/* ------------------------------------------------------- */}
         <section className="gd-hero">
           <div className="gd-hero-copy">
-            <span className="gd-eyebrow">Precision search for your study files</span>
-            <h1 className="gd-h1">
-              Ask huge files one&nbsp;question. Get the <span className="gd-accent">exact answer</span> back.
+            <span className="gd-eyebrow gd-rise gd-rise-1">From textbook to mastery</span>
+            <h1 className="gd-h1 gd-rise gd-rise-2">
+              The textbook takes hours. G&amp;D takes <span className="gd-accent">minutes</span>.
             </h1>
-            <p className="gd-lead">
-              Upload notes, PDFs, and slide decks, then ask for the detail buried inside. G&amp;D
-              pins down the right passage, shows where it came from, and explains only after the
-              evidence is locked.
+            <p className="gd-lead gd-rise gd-rise-3">
+              Upload any textbook in seconds. Ask it anything and get exact answers from your
+              own pages — nothing made up. Then master it with practice questions built from
+              your book.
             </p>
-            <div className="gd-actions">
-              <Link to="/auth" search={{ mode: "signup" }} className="gd-btn gd-btn-primary">
+            <div className="gd-actions gd-rise gd-rise-4">
+              <TryForFreeButton className="gd-btn-lg" />
+              <a
+                href="#how-it-works"
+                onClick={scrollToHow}
+                className="gd-btn gd-btn-ghost gd-btn-lg"
+              >
+                See how it works
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  arrow_downward
+                </span>
+              </a>
+            </div>
+            <div className="gd-trust gd-rise gd-rise-5">
+              <span className="material-symbols-outlined" aria-hidden="true">verified</span>
+              No account needed · every answer cites its page
+            </div>
+          </div>
+
+          {/* Showstopper: textbook dropping in, racing to "Done in 12s" */}
+          <div
+            className="gd-hero-visual"
+            role="img"
+            aria-label="Animated demo: a 48 megabyte, 512-page textbook PDF is dropped in, a progress bar races to the end, and the upload finishes in 12 seconds — every page ready to search."
+          >
+            <div className="gd-mock">
+              <div className="gd-mock-head">
+                <span className="gd-mock-dot" />
+                <span className="gd-mock-dot" />
+                <span className="gd-mock-dot" />
+                <span className="gd-mock-title">g&amp;d · upload</span>
+              </div>
+              <div className="gd-mock-file">
+                <span className="gd-mock-file-icon material-symbols-outlined">
+                  picture_as_pdf
+                </span>
+                <span className="gd-mock-file-meta">
+                  <strong>biology_textbook.pdf</strong>
+                  <em>48 MB · 512 pages</em>
+                </span>
+              </div>
+              <div className="gd-mock-track">
+                <span className="gd-mock-fill" />
+              </div>
+              <div className="gd-mock-status">
+                <span className="gd-mock-s gd-mock-s1">Uploading — 48 MB…</span>
+                <span className="gd-mock-s gd-mock-s2">Indexing 512 pages…</span>
+                <span className="gd-mock-s gd-mock-done">
+                  <span className="material-symbols-outlined">check_circle</span>
+                  Done in 12s
+                </span>
+              </div>
+              <div className="gd-mock-ready">
                 <span className="material-symbols-outlined">search</span>
-                Search your files
-              </Link>
-              <Link to="/auth" className="gd-btn gd-btn-ghost">
-                Enter workspace
-                <span className="material-symbols-outlined">arrow_forward</span>
-              </Link>
+                Ask anything — every page is now searchable.
+              </div>
             </div>
-            <div className="gd-trust">
-              <span className="material-symbols-outlined">verified</span>
-              Source-backed answers, page-aware citations
+          </div>
+        </section>
+
+        {/* ------------------------------------------------------- */}
+        {/* 01 · Speed                                                */}
+        {/* ------------------------------------------------------- */}
+        <section className="gd-section" id="how-it-works">
+          <div className="gd-section-head gd-r">
+            <span className="gd-eyebrow">01 · Upload</span>
+            <h2 className="gd-h2">
+              Any textbook. Any size. Ready in under <span className="gd-accent">15 seconds</span>.
+            </h2>
+            <p className="gd-lead">
+              Drop in the whole book — not a chapter, not a summary. G&amp;D makes every page
+              searchable before you've found the right highlighter.
+            </p>
+          </div>
+
+          <div className="gd-race gd-r" role="img" aria-label="Comparison: reading a textbook yourself takes about six hours; G&D is ready to answer in twelve seconds.">
+            <div className="gd-race-row">
+              <span className="gd-race-label">Reading it yourself</span>
+              <div className="gd-race-track">
+                <span className="gd-race-fill gd-race-fill-slow" />
+              </div>
+              <span className="gd-race-time">~6 hrs</span>
+            </div>
+            <div className="gd-race-row">
+              <span className="gd-race-label gd-race-label-us">G&amp;D</span>
+              <div className="gd-race-track">
+                <span className="gd-race-fill gd-race-fill-fast" />
+              </div>
+              <span className="gd-race-time gd-race-time-us">12 s</span>
             </div>
           </div>
 
-          {/* Product preview card */}
-          <div className="gd-preview" aria-hidden="true">
-            <div className="gd-preview-q">
-              <span className="material-symbols-outlined">person</span>
-              <p>Where does the text define synaptic pruning?</p>
+          <div className="gd-stats">
+            <div className="gd-stat gd-r">
+              <span className="gd-stat-n">
+                <CountUp to={15} />
+                <span className="gd-stat-unit">s</span>
+              </span>
+              <span className="gd-stat-label">from upload to ready — any size</span>
             </div>
-            <div className="gd-preview-a">
-              <span className="gd-pill-label">Exact answer</span>
-              <p>
-                Synaptic pruning is the elimination of weaker synaptic connections while
-                frequently-used ones are strengthened — refining neural networks during
-                adolescence.
+            <div className="gd-stat gd-r" style={{ "--rd": "0.12s" } as React.CSSProperties}>
+              <span className="gd-stat-n">
+                <CountUp to={1000} />
+                <span className="gd-stat-unit">+</span>
+              </span>
+              <span className="gd-stat-label">pages handled without slowing down</span>
+            </div>
+            <div className="gd-stat gd-r" style={{ "--rd": "0.24s" } as React.CSSProperties}>
+              <span className="gd-stat-n">
+                <CountUp to={1} />
+              </span>
+              <span className="gd-stat-label">question away from the exact answer</span>
+            </div>
+          </div>
+        </section>
+
+        {/* ------------------------------------------------------- */}
+        {/* 02 · Grounded answers                                     */}
+        {/* ------------------------------------------------------- */}
+        <section className="gd-section">
+          <div className="gd-split">
+            <div className="gd-split-copy gd-r">
+              <span className="gd-eyebrow">02 · Ask</span>
+              <h2 className="gd-h2">
+                Answers from <span className="gd-accent">your pages</span>. Nowhere else.
+              </h2>
+              <p className="gd-lead">
+                G&amp;D answers only from the file you uploaded. No made-up facts, no internet
+                noise — every answer carries the page it came from, so you can check it
+                yourself. And when something isn't in your material, it says so.
               </p>
-              <div className="gd-sources">
-                <span className="gd-source-chip">
-                  <span className="material-symbols-outlined">description</span>
-                  p. 142 · neuroscience_v3.pdf
-                </span>
-                <span className="gd-source-chip">
-                  <span className="material-symbols-outlined">link</span>
-                  Fig 4.2 · Structural Maturation
-                </span>
+              <ul className="gd-points">
+                <li>
+                  <span className="material-symbols-outlined" aria-hidden="true">description</span>
+                  Every answer cites the exact page in your file
+                </li>
+                <li>
+                  <span className="material-symbols-outlined" aria-hidden="true">verified</span>
+                  Grounded in your upload — nothing invented
+                </li>
+                <li>
+                  <span className="material-symbols-outlined" aria-hidden="true">search_off</span>
+                  Not in your book? It tells you, instead of guessing
+                </li>
+              </ul>
+            </div>
+
+            <div className="gd-split-visual" aria-hidden="true">
+              <div className="gd-preview gd-r">
+                <div className="gd-preview-q">
+                  <span className="material-symbols-outlined">person</span>
+                  <p>What actually limits the rate of glycolysis?</p>
+                </div>
+                <div className="gd-preview-a">
+                  <span className="gd-pill-label">Exact answer</span>
+                  <p>
+                    Phosphofructokinase-1 (PFK-1) catalyzes the committed, rate-limiting step.
+                    It's allosterically inhibited by ATP and citrate, so glycolysis slows when
+                    energy is already plentiful.
+                  </p>
+                  <div className="gd-sources">
+                    <span className="gd-source-chip">
+                      <span className="material-symbols-outlined">description</span>
+                      Your upload · p. 87
+                    </span>
+                    <span className="gd-source-chip">
+                      <span className="material-symbols-outlined">verified</span>
+                      Quoted, not guessed
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="gd-preview gd-preview-honest gd-r" style={{ "--rd": "0.18s" } as React.CSSProperties}>
+                <div className="gd-preview-q">
+                  <span className="material-symbols-outlined">person</span>
+                  <p>What does chapter 12 say about CRISPR?</p>
+                </div>
+                <div className="gd-preview-na">
+                  <span className="material-symbols-outlined">search_off</span>
+                  <p>
+                    Not found in your material — this file has no chapter 12, and nothing was
+                    made up to fill the gap.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
         </section>
 
-        {/* Feature grid */}
+        {/* ------------------------------------------------------- */}
+        {/* 03 · My Coach                                             */}
+        {/* ------------------------------------------------------- */}
         <section className="gd-section">
-          <div className="gd-section-head">
-            <span className="gd-eyebrow">One workspace</span>
-            <h2 className="gd-h2">Everything points back to your sources.</h2>
-          </div>
-          <div className="gd-grid">
-            {features.map((f) => (
-              <Link key={f.title} to={f.to} className="gd-card">
-                <span className="gd-card-icon material-symbols-outlined">{f.icon}</span>
-                <h3 className="gd-card-title">{f.title}</h3>
-                <p className="gd-card-body">{f.body}</p>
-                <span className="gd-card-cta">
-                  {f.cta}
-                  <span className="material-symbols-outlined">arrow_forward</span>
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
+          <div className="gd-split gd-split-flip">
+            <div className="gd-split-copy gd-r">
+              <span className="gd-eyebrow">03 · Master</span>
+              <h2 className="gd-h2">
+                Don't just read it. <span className="gd-accent">Master it.</span>
+              </h2>
+              <p className="gd-lead">
+                My Coach turns your book into the world's best practice questions — generated
+                from your own pages, graded instantly, and tuned from easy to brutal until it
+                actually sticks.
+              </p>
+              <ul className="gd-points">
+                <li>
+                  <span className="material-symbols-outlined" aria-hidden="true">school</span>
+                  Questions built from your chapters — not a generic bank
+                </li>
+                <li>
+                  <span className="material-symbols-outlined" aria-hidden="true">task_alt</span>
+                  Instant grading, with the page to revisit
+                </li>
+                <li>
+                  <span className="material-symbols-outlined" aria-hidden="true">speed</span>
+                  Easy, medium, hard — climb until exam day feels easy
+                </li>
+              </ul>
+            </div>
 
-        {/* How it works */}
-        <section className="gd-section">
-          <div className="gd-section-head">
-            <span className="gd-eyebrow">How it works</span>
-            <h2 className="gd-h2">Three steps from file to answer.</h2>
-          </div>
-          <div className="gd-steps">
-            {steps.map((s) => (
-              <div key={s.n} className="gd-step">
-                <span className="gd-step-n">{s.n}</span>
-                <h3 className="gd-step-label">{s.label}</h3>
-                <p className="gd-step-body">{s.body}</p>
+            <div className="gd-split-visual gd-coach-stack" aria-hidden="true">
+              <div className="gd-quiz-card gd-r">
+                <span className="gd-quiz-tag">MCQ · from your chapter 2</span>
+                <p className="gd-quiz-q">Which step commits glucose to glycolysis?</p>
+                <div className="gd-quiz-opt">Hexokinase reaction</div>
+                <div className="gd-quiz-opt gd-quiz-opt-right">
+                  <span className="material-symbols-outlined">check_circle</span>
+                  PFK-1 reaction
+                </div>
+                <div className="gd-quiz-opt">Pyruvate kinase reaction</div>
               </div>
-            ))}
+              <div className="gd-quiz-card gd-r" style={{ "--rd": "0.16s" } as React.CSSProperties}>
+                <span className="gd-quiz-tag">Short answer · graded instantly</span>
+                <p className="gd-quiz-q">Explain why glycolysis speeds up when ATP runs low.</p>
+                <div className="gd-quiz-grade">
+                  <span className="material-symbols-outlined">task_alt</span>
+                  9/10 — revisit p. 87 for the citrate detail
+                </div>
+              </div>
+              <div className="gd-quiz-diff gd-r" style={{ "--rd": "0.32s" } as React.CSSProperties}>
+                <span>Easy</span>
+                <span>Medium</span>
+                <span className="gd-quiz-diff-on">Hard</span>
+              </div>
+            </div>
           </div>
         </section>
 
-        {/* CTA banner */}
-        <section className="gd-cta-banner">
-          <h2 className="gd-h2">Stop scrolling. Start pinpointing.</h2>
-          <p className="gd-lead">Bring your hardest file and ask it the question that matters.</p>
-          <Link to="/auth" search={{ mode: "signup" }} className="gd-btn gd-btn-primary">
-            <span className="material-symbols-outlined">bolt</span>
-            Get started free
-          </Link>
+        {/* ------------------------------------------------------- */}
+        {/* Closing CTA                                               */}
+        {/* ------------------------------------------------------- */}
+        <section className="gd-cta-banner gd-r">
+          <h2 className="gd-h2">Tonight's reading, done in minutes.</h2>
+          <p className="gd-lead">
+            Bring your hardest textbook. Ask it the question that matters.
+          </p>
+          <TryForFreeButton className="gd-btn-lg" />
+          <span className="gd-cta-micro">Free · no signup · answers from your own pages</span>
         </section>
       </main>
 
       <footer className="gd-footer">
         <span className="gd-logo gd-logo-sm">G&amp;D</span>
-        <span className="gd-footer-meta">Precision answers from your own material</span>
+        <span className="gd-footer-meta">From textbook to mastery, in minutes</span>
         <span className="gd-footer-meta">© {new Date().getFullYear()} G&amp;D</span>
       </footer>
     </div>
@@ -215,7 +489,10 @@ const GD_CSS = `
   --on-beige: #1b1d0e;
   position: relative;
   min-height: 100dvh;
+  /* clip (not hidden) keeps the sticky nav working — overflow-x: hidden would
+     turn .gd-root into a scroll container and detach position: sticky. */
   overflow-x: hidden;
+  overflow-x: clip;
   background: var(--bg);
   color: var(--on);
   font-family: "Hanken Grotesk", system-ui, sans-serif;
@@ -278,15 +555,31 @@ const GD_CSS = `
 .gd-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
   border-radius: 9999px; padding: 0.85rem 1.5rem;
+  border: 1px solid transparent;
   font-family: "Hanken Grotesk", sans-serif; font-weight: 600; font-size: 0.98rem;
   text-decoration: none; cursor: pointer; white-space: nowrap;
-  transition: transform 0.2s ease, background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+  min-height: 44px;
+  transition: transform 0.2s ease, background 0.25s ease, border-color 0.25s ease,
+    color 0.25s ease, box-shadow 0.3s ease;
 }
 .gd-btn .material-symbols-outlined { font-size: 20px; }
+.gd-btn:focus-visible { outline: 2px solid var(--beige); outline-offset: 3px; }
 .gd-btn-primary { background: var(--beige); color: var(--on-beige); }
-.gd-btn-primary:hover { background: var(--beige-dim); transform: translateY(-2px); }
+.gd-btn-primary:hover {
+  background: var(--beige-dim); transform: translateY(-2px);
+  box-shadow: 0 12px 36px rgba(228,228,204,0.22);
+}
+.gd-btn-primary:active { transform: translateY(0); }
+.gd-btn-primary:disabled { opacity: 0.75; cursor: progress; transform: none; box-shadow: none; }
 .gd-btn-ghost { background: transparent; color: var(--on); border: 1px solid var(--outline); }
-.gd-btn-ghost:hover { border-color: var(--beige); color: var(--beige); }
+.gd-btn-ghost:hover { border-color: var(--beige); color: var(--beige); transform: translateY(-2px); }
+.gd-btn-lg { padding: 1rem 1.9rem; font-size: 1.05rem; }
+.gd-spinner {
+  width: 18px; height: 18px; border-radius: 9999px;
+  border: 2px solid rgba(27,29,14,0.25); border-top-color: var(--on-beige);
+  animation: gd-spin 0.7s linear infinite;
+}
+@keyframes gd-spin { to { transform: rotate(360deg); } }
 
 /* Shared type */
 .gd-eyebrow {
@@ -295,28 +588,28 @@ const GD_CSS = `
 }
 .gd-h1 {
   font-family: "Sora", sans-serif; font-weight: 600;
-  font-size: clamp(2.4rem, 5.5vw, 4.4rem); line-height: 1.04;
+  font-size: clamp(2.5rem, 5.6vw, 4.5rem); line-height: 1.04;
   letter-spacing: -0.035em; margin: 1rem 0 0;
 }
 .gd-h2 {
   font-family: "Sora", sans-serif; font-weight: 600;
-  font-size: clamp(1.7rem, 3.5vw, 2.6rem); line-height: 1.1;
+  font-size: clamp(1.75rem, 3.5vw, 2.7rem); line-height: 1.1;
   letter-spacing: -0.025em; margin: 0.75rem 0 0;
 }
 .gd-accent { color: var(--beige); }
 .gd-lead {
-  font-size: clamp(1rem, 1.3vw, 1.18rem); line-height: 1.6;
-  color: var(--on-dim); margin: 1.25rem 0 0; max-width: 42ch;
+  font-size: clamp(1rem, 1.3vw, 1.18rem); line-height: 1.65;
+  color: var(--on-dim); margin: 1.25rem 0 0; max-width: 46ch;
 }
 
 /* Hero */
 .gd-hero {
   display: grid; grid-template-columns: 1.05fr 0.95fr; align-items: center;
   gap: clamp(2rem, 5vw, 5rem);
-  padding: clamp(3rem, 7vw, 6rem) clamp(1.25rem, 5vw, 4rem);
+  padding: clamp(3.5rem, 8vw, 7rem) clamp(1.25rem, 5vw, 4rem);
   max-width: 1240px; margin: 0 auto;
 }
-.gd-actions { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 2rem; }
+.gd-actions { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 2.25rem; }
 .gd-trust {
   display: inline-flex; align-items: center; gap: 0.5rem; margin-top: 1.75rem;
   font-family: "JetBrains Mono", monospace; font-size: 0.72rem;
@@ -324,14 +617,258 @@ const GD_CSS = `
 }
 .gd-trust .material-symbols-outlined { font-size: 18px; color: var(--beige-dim); }
 
-/* Product preview */
+/* Hero upload mock — the showstopper. One shared 8s timeline, looping.
+   Base styles are the FINISHED state, so reduced-motion users see a calm,
+   completed upload instead of a blank card. */
+.gd-hero-visual { display: flex; justify-content: center; }
+.gd-mock {
+  width: 100%; max-width: 480px;
+  background: var(--surface);
+  border: 1px solid var(--outline-2);
+  border-radius: 2rem; padding: 1.5rem;
+  display: flex; flex-direction: column; gap: 1.1rem;
+  box-shadow: 0 40px 120px rgba(0,0,0,0.6);
+}
+.gd-mock-head { display: flex; align-items: center; gap: 0.45rem; }
+.gd-mock-dot {
+  width: 9px; height: 9px; border-radius: 9999px;
+  background: var(--outline);
+}
+.gd-mock-title {
+  margin-left: auto;
+  font-family: "JetBrains Mono", monospace; font-size: 0.66rem;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--on-dim);
+}
+.gd-mock-file {
+  display: flex; align-items: center; gap: 0.9rem;
+  background: var(--surface-3); border: 1px solid var(--outline-2);
+  border-radius: 1.25rem; padding: 1rem 1.2rem;
+}
+.gd-mock-file-icon {
+  font-size: 26px; color: var(--beige);
+  width: 48px; height: 48px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(228,228,204,0.08); border-radius: 9999px;
+}
+.gd-mock-file-meta { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.gd-mock-file-meta strong {
+  font-weight: 600; font-size: 0.98rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.gd-mock-file-meta em {
+  font-style: normal;
+  font-family: "JetBrains Mono", monospace; font-size: 0.68rem;
+  letter-spacing: 0.06em; color: var(--on-dim);
+}
+.gd-mock-track {
+  height: 8px; border-radius: 9999px; overflow: hidden;
+  background: var(--surface-3); border: 1px solid var(--outline-2);
+}
+.gd-mock-fill {
+  display: block; height: 100%; border-radius: 9999px;
+  background: linear-gradient(90deg, var(--beige-dim), var(--beige));
+  transform-origin: left center;
+}
+.gd-mock-status { display: grid; min-height: 1.6rem; align-items: center; }
+.gd-mock-s {
+  grid-area: 1 / 1;
+  font-family: "JetBrains Mono", monospace; font-size: 0.74rem;
+  letter-spacing: 0.08em; color: var(--on-dim);
+  display: inline-flex; align-items: center; gap: 0.45rem;
+}
+.gd-mock-s1, .gd-mock-s2 { opacity: 0; }
+.gd-mock-done { color: var(--beige); font-weight: 500; }
+.gd-mock-done .material-symbols-outlined {
+  font-size: 18px;
+  font-variation-settings: "FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+.gd-mock-ready {
+  display: flex; align-items: center; gap: 0.6rem;
+  background: var(--beige); color: var(--on-beige);
+  border-radius: 1.25rem 1.25rem 1.25rem 0.4rem;
+  padding: 0.9rem 1.1rem;
+  font-size: 0.92rem; font-weight: 500;
+}
+.gd-mock-ready .material-symbols-outlined { font-size: 19px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .gd-mock-file { animation: gd-mk-file 8s ease-in-out infinite both; }
+  .gd-mock-track { animation: gd-mk-show 8s ease-in-out infinite both; }
+  .gd-mock-fill { animation: gd-mk-fill 8s cubic-bezier(0.4, 0.05, 0.2, 1) infinite both; }
+  .gd-mock-s1 { animation: gd-mk-s1 8s linear infinite both; }
+  .gd-mock-s2 { animation: gd-mk-s2 8s linear infinite both; }
+  .gd-mock-done { animation: gd-mk-done 8s cubic-bezier(0.34, 1.56, 0.64, 1) infinite both; }
+  .gd-mock-ready { animation: gd-mk-ready 8s ease-out infinite both; }
+  .gd-hero-visual { animation: gd-drift 9s ease-in-out 1.2s infinite; }
+}
+@keyframes gd-drift { 50% { transform: translateY(-7px); } }
+@keyframes gd-mk-file {
+  0% { opacity: 0; transform: translateY(-26px) scale(0.97); }
+  7% { opacity: 1; transform: none; }
+  93% { opacity: 1; }
+  98%, 100% { opacity: 0; transform: translateY(-26px) scale(0.97); }
+}
+@keyframes gd-mk-show {
+  0%, 6% { opacity: 0; }
+  10% { opacity: 1; }
+  93% { opacity: 1; }
+  98%, 100% { opacity: 0; }
+}
+@keyframes gd-mk-fill {
+  0%, 10% { transform: scaleX(0); }
+  26% { transform: scaleX(0.55); }
+  33% { transform: scaleX(0.62); }
+  42% { transform: scaleX(1); }
+  100% { transform: scaleX(1); }
+}
+@keyframes gd-mk-s1 {
+  0%, 9% { opacity: 0; }
+  12%, 24% { opacity: 1; }
+  27%, 100% { opacity: 0; }
+}
+@keyframes gd-mk-s2 {
+  0%, 27% { opacity: 0; }
+  30%, 40% { opacity: 1; }
+  43%, 100% { opacity: 0; }
+}
+@keyframes gd-mk-done {
+  0%, 44% { opacity: 0; transform: scale(0.7); }
+  50% { opacity: 1; transform: scale(1); }
+  93% { opacity: 1; transform: scale(1); }
+  98%, 100% { opacity: 0; transform: scale(0.9); }
+}
+@keyframes gd-mk-ready {
+  0%, 54% { opacity: 0; transform: translateY(14px); }
+  61% { opacity: 1; transform: none; }
+  93% { opacity: 1; }
+  98%, 100% { opacity: 0; transform: translateY(8px); }
+}
+
+/* Hero entrance — staggered rise on first paint */
+@media (prefers-reduced-motion: no-preference) {
+  .gd-rise { animation: gd-rise 0.85s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .gd-rise-1 { animation-delay: 0.05s; }
+  .gd-rise-2 { animation-delay: 0.15s; }
+  .gd-rise-3 { animation-delay: 0.28s; }
+  .gd-rise-4 { animation-delay: 0.4s; }
+  .gd-rise-5 { animation-delay: 0.52s; }
+}
+@keyframes gd-rise {
+  from { opacity: 0; transform: translateY(26px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Scroll reveals — hidden only when motion is allowed */
+@media (prefers-reduced-motion: no-preference) {
+  .gd-r {
+    opacity: 0; transform: translateY(28px);
+    transition: opacity 0.7s ease, transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: var(--rd, 0s);
+  }
+  .gd-r.gd-in { opacity: 1; transform: none; }
+}
+
+/* Sections */
+.gd-section {
+  max-width: 1240px; margin: 0 auto;
+  padding: clamp(3rem, 6vw, 5.5rem) clamp(1.25rem, 5vw, 4rem);
+  scroll-margin-top: 84px;
+}
+.gd-section-head { max-width: 52ch; margin-bottom: 2.75rem; }
+
+/* Race — hours vs seconds */
+.gd-race {
+  display: flex; flex-direction: column; gap: 1.1rem;
+  background: var(--surface); border: 1px solid var(--outline-2);
+  border-radius: 1.75rem; padding: clamp(1.25rem, 3vw, 2rem);
+  margin-bottom: 2.75rem;
+}
+.gd-race-row {
+  display: grid; grid-template-columns: minmax(110px, 160px) 1fr 72px;
+  align-items: center; gap: 1rem;
+}
+.gd-race-label {
+  font-family: "JetBrains Mono", monospace; font-size: 0.72rem;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--on-dim);
+}
+.gd-race-label-us { color: var(--beige); }
+.gd-race-track {
+  height: 12px; border-radius: 9999px; overflow: hidden;
+  background: var(--surface-3); border: 1px solid var(--outline-2);
+}
+.gd-race-fill {
+  display: block; height: 100%; border-radius: 9999px;
+  transform-origin: left center; transform: scaleX(1);
+}
+.gd-race-fill-slow { background: var(--outline); width: 100%; }
+.gd-race-fill-fast {
+  background: linear-gradient(90deg, var(--beige-dim), var(--beige));
+  width: 7%; min-width: 34px;
+}
+.gd-race-time {
+  font-family: "JetBrains Mono", monospace; font-size: 0.82rem;
+  color: var(--on-dim); text-align: right; white-space: nowrap;
+}
+.gd-race-time-us { color: var(--beige); font-weight: 500; }
+@media (prefers-reduced-motion: no-preference) {
+  .gd-race .gd-race-fill-slow { transform: scaleX(0); transition: transform 2.4s cubic-bezier(0.3, 0.6, 0.3, 1) 0.2s; }
+  .gd-race .gd-race-fill-fast { transform: scaleX(0); transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1) 2.5s; }
+  .gd-race .gd-race-time { opacity: 0; transition: opacity 0.5s ease; }
+  .gd-race-row:first-child .gd-race-time { transition-delay: 2.5s; }
+  .gd-race-row:last-child .gd-race-time { transition-delay: 2.9s; }
+  .gd-race.gd-in .gd-race-fill-slow,
+  .gd-race.gd-in .gd-race-fill-fast { transform: scaleX(1); }
+  .gd-race.gd-in .gd-race-time { opacity: 1; }
+}
+
+/* Stats */
+.gd-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.25rem;
+}
+.gd-stat {
+  border-top: 1px solid var(--outline); padding-top: 1.25rem;
+  display: flex; flex-direction: column; gap: 0.4rem;
+}
+.gd-stat-n {
+  font-family: "Sora", sans-serif; font-weight: 600;
+  font-size: clamp(2.4rem, 4.5vw, 3.4rem); line-height: 1;
+  letter-spacing: -0.03em; color: var(--beige);
+  font-variant-numeric: tabular-nums;
+}
+.gd-stat-unit { font-size: 0.55em; color: var(--beige-dim); margin-left: 0.1em; }
+.gd-stat-label { color: var(--on-dim); font-size: 0.95rem; line-height: 1.5; max-width: 26ch; }
+
+/* Split sections */
+.gd-split {
+  display: grid; grid-template-columns: 1fr 1fr; align-items: center;
+  gap: clamp(2rem, 5vw, 5rem);
+}
+.gd-split-visual { display: flex; flex-direction: column; gap: 1.1rem; }
+.gd-split-flip .gd-split-copy { order: 2; }
+.gd-split-flip .gd-split-visual { order: 1; }
+.gd-points {
+  list-style: none; margin: 1.75rem 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 0.9rem;
+}
+.gd-points li {
+  display: flex; align-items: flex-start; gap: 0.7rem;
+  color: var(--on); font-size: 0.98rem; line-height: 1.5; font-weight: 500;
+}
+.gd-points .material-symbols-outlined {
+  font-size: 20px; color: var(--beige); flex: none; margin-top: 0.1rem;
+}
+
+/* Chat preview (grounded answers) */
 .gd-preview {
   background: var(--surface);
   border: 1px solid var(--outline-2);
   border-radius: 2rem; padding: 1.5rem;
   display: flex; flex-direction: column; gap: 1rem;
   box-shadow: 0 40px 120px rgba(0,0,0,0.6);
+  transition: transform 0.3s ease, border-color 0.3s ease;
 }
+.gd-preview:hover { transform: translateY(-4px); border-color: var(--outline); }
 .gd-preview-q {
   display: flex; align-items: flex-start; gap: 0.75rem;
   background: var(--surface-3); border-radius: 1.25rem 1.25rem 1.25rem 0.4rem;
@@ -359,57 +896,86 @@ const GD_CSS = `
   font-family: "JetBrains Mono", monospace; font-size: 0.66rem; letter-spacing: 0.03em;
 }
 .gd-source-chip .material-symbols-outlined { font-size: 14px; }
+.gd-preview-honest { padding-bottom: 1.4rem; }
+.gd-preview-na {
+  display: flex; align-items: flex-start; gap: 0.7rem;
+  border: 1px dashed var(--outline);
+  border-radius: 1.25rem 1.25rem 0.4rem 1.25rem; padding: 1.1rem 1.25rem;
+  color: var(--on-dim);
+}
+.gd-preview-na .material-symbols-outlined { font-size: 20px; color: var(--beige-dim); flex: none; }
+.gd-preview-na p { margin: 0; font-size: 0.92rem; line-height: 1.55; }
 
-/* Sections */
-.gd-section { max-width: 1240px; margin: 0 auto; padding: clamp(2.5rem, 5vw, 4.5rem) clamp(1.25rem, 5vw, 4rem); }
-.gd-section-head { max-width: 40ch; margin-bottom: 2.5rem; }
-.gd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem; }
-.gd-card {
-  display: flex; flex-direction: column; gap: 0.75rem;
+/* Coach quiz cards */
+.gd-coach-stack { gap: 1rem; }
+.gd-quiz-card {
   background: var(--surface); border: 1px solid var(--outline-2);
-  border-radius: 1.75rem; padding: 1.75rem;
-  text-decoration: none; color: var(--on);
-  transition: transform 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+  border-radius: 1.75rem; padding: 1.4rem 1.5rem;
+  display: flex; flex-direction: column; gap: 0.7rem;
+  transition: transform 0.3s ease, border-color 0.3s ease;
 }
-.gd-card:hover { transform: translateY(-4px); border-color: var(--outline); background: var(--surface-3); }
-.gd-card-icon {
-  font-size: 30px; color: var(--beige);
-  width: 56px; height: 56px; display: flex; align-items: center; justify-content: center;
-  background: rgba(228,228,204,0.08); border-radius: 9999px; margin-bottom: 0.25rem;
+.gd-quiz-card:hover { transform: translateY(-4px); border-color: var(--outline); }
+.gd-quiz-tag {
+  font-family: "JetBrains Mono", monospace; font-size: 0.64rem;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--beige-dim);
 }
-.gd-card-title { font-family: "Sora", sans-serif; font-weight: 500; font-size: 1.2rem; margin: 0; }
-.gd-card-body { margin: 0; color: var(--on-dim); font-size: 0.95rem; line-height: 1.55; flex: 1; }
-.gd-card-cta {
-  display: inline-flex; align-items: center; gap: 0.4rem; margin-top: 0.5rem;
-  color: var(--beige); font-weight: 600; font-size: 0.9rem;
+.gd-quiz-q {
+  margin: 0; font-family: "Sora", sans-serif; font-weight: 500;
+  font-size: 1.02rem; line-height: 1.4;
 }
-.gd-card-cta .material-symbols-outlined { font-size: 18px; transition: transform 0.2s ease; }
-.gd-card:hover .gd-card-cta .material-symbols-outlined { transform: translateX(4px); }
-
-/* Steps */
-.gd-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; }
-.gd-step {
-  border-top: 1px solid var(--outline); padding-top: 1.25rem;
-  display: flex; flex-direction: column; gap: 0.5rem;
+.gd-quiz-opt {
+  border: 1px solid var(--outline-2); border-radius: 9999px;
+  padding: 0.6rem 1.1rem; font-size: 0.9rem; color: var(--on-dim);
+  display: flex; align-items: center; gap: 0.5rem;
 }
-.gd-step-n {
-  font-family: "JetBrains Mono", monospace; font-size: 0.8rem;
-  letter-spacing: 0.1em; color: var(--beige-dim);
+.gd-quiz-opt-right {
+  background: var(--beige); border-color: var(--beige);
+  color: var(--on-beige); font-weight: 600;
 }
-.gd-step-label { font-family: "Sora", sans-serif; font-weight: 500; font-size: 1.35rem; margin: 0; }
-.gd-step-body { margin: 0; color: var(--on-dim); font-size: 0.95rem; line-height: 1.55; }
+.gd-quiz-opt-right .material-symbols-outlined {
+  font-size: 18px;
+  font-variation-settings: "FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+.gd-quiz-grade {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  align-self: flex-start;
+  background: rgba(228,228,204,0.08); border-radius: 9999px;
+  padding: 0.5rem 1rem;
+  font-family: "JetBrains Mono", monospace; font-size: 0.72rem;
+  letter-spacing: 0.04em; color: var(--beige);
+}
+.gd-quiz-grade .material-symbols-outlined { font-size: 17px; }
+.gd-quiz-diff {
+  display: flex; gap: 0.5rem; justify-content: center;
+}
+.gd-quiz-diff span {
+  font-family: "JetBrains Mono", monospace; font-size: 0.68rem;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  border: 1px solid var(--outline-2); border-radius: 9999px;
+  padding: 0.45rem 1rem; color: var(--on-dim);
+}
+.gd-quiz-diff .gd-quiz-diff-on {
+  background: var(--beige); border-color: var(--beige);
+  color: var(--on-beige); font-weight: 500;
+}
 
 /* CTA banner */
 .gd-cta-banner {
   max-width: 1240px; margin: 0 auto clamp(2rem, 5vw, 4rem);
-  padding: clamp(2.5rem, 5vw, 4rem) clamp(1.5rem, 5vw, 4rem);
+  padding: clamp(3rem, 6vw, 5rem) clamp(1.5rem, 5vw, 4rem);
   background:
-    radial-gradient(circle at 80% 20%, rgba(228,228,204,0.1), transparent 60%),
+    radial-gradient(circle at 80% 15%, rgba(228,228,204,0.12), transparent 55%),
+    radial-gradient(circle at 15% 90%, rgba(120,130,110,0.1), transparent 55%),
     var(--surface);
   border: 1px solid var(--outline-2); border-radius: 2.5rem;
   text-align: center; display: flex; flex-direction: column; align-items: center;
 }
-.gd-cta-banner .gd-lead { margin-bottom: 1.75rem; }
+.gd-cta-banner .gd-lead { margin-bottom: 2rem; }
+.gd-cta-micro {
+  margin-top: 1.25rem;
+  font-family: "JetBrains Mono", monospace; font-size: 0.68rem;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--on-dim);
+}
 
 /* Footer */
 .gd-footer {
@@ -426,9 +992,15 @@ const GD_CSS = `
 
 /* Responsive */
 @media (max-width: 880px) {
-  .gd-hero { grid-template-columns: 1fr; }
-  .gd-preview { order: -1; }
+  .gd-hero { grid-template-columns: 1fr; padding-top: 2.5rem; }
+  .gd-hero-visual { order: 2; }
   .gd-nav-links { display: none; }
+  .gd-nav .gd-nav-cta { margin-left: auto; }
+  .gd-split { grid-template-columns: 1fr; }
+  .gd-split-flip .gd-split-copy { order: 1; }
+  .gd-split-flip .gd-split-visual { order: 2; }
+  .gd-race-row { grid-template-columns: 1fr; gap: 0.45rem; }
+  .gd-race-time { text-align: left; }
 }
 @media (max-width: 480px) {
   .gd-actions .gd-btn { flex: 1; }
@@ -436,5 +1008,7 @@ const GD_CSS = `
 }
 @media (prefers-reduced-motion: reduce) {
   .gd-blob { animation: none; }
+  .gd-preview:hover, .gd-quiz-card:hover,
+  .gd-btn-primary:hover, .gd-btn-ghost:hover { transform: none; }
 }
 `;

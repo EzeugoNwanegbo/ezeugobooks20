@@ -82,31 +82,38 @@ export default function ChatScreen() {
     };
   }, []);
 
-  // Indexed library docs power the attach picker; only "ready" files have the
-  // chunks retrieval needs, so others can't be grounded on yet.
-  useEffect(() => {
-    void (async () => {
-      try {
-        const docs = await listDocuments();
-        setLibraryDocs(docs.filter((d) => d.extract_status === "ready"));
-      } catch {
-        /* picker just shows an empty state if the library can't load */
-      }
-    })();
+  // Load the whole library so the attach picker can list every file. Only
+  // "ready" files have the chunks retrieval needs, so the picker shows the
+  // others with a status label but keeps them non-selectable. Exposed as a
+  // callback so the picker can refresh after uploading a new PDF in place.
+  const reloadDocs = useCallback(async () => {
+    const docs = await listDocuments();
+    setLibraryDocs(docs);
+    return docs;
   }, []);
+
+  useEffect(() => {
+    void reloadDocs().catch(() => {
+      /* picker just shows an empty state if the library can't load */
+    });
+  }, [reloadDocs]);
 
   const attachedDocs = libraryDocs.filter((d) => selectedDocIds.includes(d.id));
 
   const openPicker = useCallback(() => {
+    // The composer keyboard may be up when the paperclip is tapped; dismiss it
+    // so the sheet isn't presented behind it.
+    Keyboard.dismiss();
     present((close) => (
       <ChatDocPicker
         docs={libraryDocs}
         initial={selectedDocIds}
         onConfirm={setSelectedDocIds}
+        reload={reloadDocs}
         close={close}
       />
     ));
-  }, [present, libraryDocs, selectedDocIds]);
+  }, [present, libraryDocs, selectedDocIds, reloadDocs]);
 
   const scrollToEnd = () =>
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
