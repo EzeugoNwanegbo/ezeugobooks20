@@ -64,7 +64,12 @@ function AppLayout() {
     if (loading) return;
     if (!user) navigate({ to: "/auth", replace: true });
     else if (profile && !profile.onboarded) navigate({ to: "/onboarding", replace: true });
-  }, [loading, user, profile, navigate]);
+    // Bare /app has no child route — the shell renders with an empty Outlet
+    // ("incomplete chat page"). Land such visits on the chat screen.
+    else if (location.pathname === "/app" || location.pathname === "/app/") {
+      navigate({ to: "/app/chat", replace: true });
+    }
+  }, [loading, user, profile, navigate, location.pathname]);
 
   useEffect(() => {
     if (!user) {

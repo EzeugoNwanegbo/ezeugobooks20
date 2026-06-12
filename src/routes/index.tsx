@@ -43,13 +43,15 @@ function TryForFreeButton({
     if (busy) return;
     if (user) {
       // Already signed in (or already a guest) — straight to the workspace.
-      navigate({ to: "/app" });
+      // Bare /app has no child route and renders an empty shell, so always
+      // land on the chat screen.
+      navigate({ to: "/app/chat" });
       return;
     }
     try {
       setBusy(true);
       await startGuestSession();
-      navigate({ to: "/app" }); // shell routes new users to onboarding
+      navigate({ to: "/app/chat" }); // shell routes new users to onboarding
     } catch {
       // anonymous sign-ins disabled or network error → fall back to signup
       navigate({ to: "/auth", search: { mode: "signup" } });
