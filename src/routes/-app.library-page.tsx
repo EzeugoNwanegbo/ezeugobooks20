@@ -77,6 +77,12 @@ export function LibraryPage() {
   const [query, setQuery] = useState("");
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<string>("");
+  // Determinate progress for the upload bar: percent + a "page 12 of 230"
+  // style count. Null percent renders the bar as an indeterminate pulse for
+  // stages with no measurable progress (engine load, embedding, saving).
+  const [uploadBar, setUploadBar] = useState<{ percent: number | null; label: string } | null>(
+    null,
+  );
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
   const [pendingBatch, setPendingBatch] = useState<ProcessedFile[] | null>(null);
   const [chosenFolder, setChosenFolder] = useState<string>("");
@@ -274,9 +280,15 @@ export function LibraryPage() {
       setStage("pdf:importing-engine");
       const { extractPdfText } = await import("@/lib/pdf");
       setStage("pdf:engine-loaded");
-      const r = await extractPdfText(file, Number.POSITIVE_INFINITY, setStage);
+      const r = await extractPdfText(file, Number.POSITIVE_INFINITY, setStage, (page, total) =>
+        setUploadBar({
+          percent: Math.round((page / total) * 100),
+          label: `Reading page ${page} of ${total}`,
+        }),
+      );
       extracted = r.text;
       pageCount = r.pageCount;
+      setUploadBar(null); // chunk/embed/save stages have no page meter
     } else if (isImage) {
       setStage("image:importing-ocr");
       setProgress("Loading OCR engine...");
@@ -288,7 +300,9 @@ export function LibraryPage() {
       setProgress("Reading image text in your browser...");
       const r = await extractImageText(file, (status, percent) => {
         setProgress(percent === undefined ? status : `${status} (${percent}%)`);
+        setUploadBar({ percent: percent ?? null, label: status });
       });
+      setUploadBar(null);
       extracted = r.text;
       pageCount = r.pageCount;
     } else if (isText) {
@@ -301,12 +315,20 @@ export function LibraryPage() {
       try {
         setStage("probe:importing-engine");
         const { extractPdfText } = await import("@/lib/pdf");
-        const r = await extractPdfText(file, Number.POSITIVE_INFINITY, (s) =>
-          setStage(`probe:${s}`),
+        const r = await extractPdfText(
+          file,
+          Number.POSITIVE_INFINITY,
+          (s) => setStage(`probe:${s}`),
+          (page, total) =>
+            setUploadBar({
+              percent: Math.round((page / total) * 100),
+              label: `Reading page ${page} of ${total}`,
+            }),
         );
         extracted = r.text;
         pageCount = r.pageCount;
         isPdf = true;
+        setUploadBar(null);
       } catch (probeErr) {
         const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
         const hex = Array.from(head)
@@ -392,6 +414,7 @@ export function LibraryPage() {
     try {
       for (let i = 0; i < files.length; i += 1) {
         const file = files[i];
+        setUploadBar(null);
         setProgress(
           files.length > 1
             ? `Processing ${i + 1} of ${files.length}: ${file.name}`
@@ -414,6 +437,7 @@ export function LibraryPage() {
       }
       setUploading(false);
       setProgress("");
+      setUploadBar(null);
       if (fileRef.current) fileRef.current.value = "";
     }
 
@@ -698,9 +722,32 @@ export function LibraryPage() {
             }}
           />
           {uploading ? (
-            <div className="flex flex-col items-center gap-3 text-sm">
-              <LoadingDots size="lg" className="text-primary" />
-              <span className="text-muted-foreground">{progress || "Working..."}</span>
+            <div className="flex w-full max-w-sm flex-col items-center gap-2.5 text-sm">
+              <div
+                className="h-2 w-full overflow-hidden rounded-full bg-primary/15"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={uploadBar?.percent ?? undefined}
+                aria-label="Upload progress"
+              >
+                <div
+                  className={`h-full rounded-full bg-primary transition-[width] duration-200 ease-out ${
+                    uploadBar?.percent == null ? "w-full animate-pulse" : ""
+                  }`}
+                  style={uploadBar?.percent != null ? { width: `${uploadBar.percent}%` } : undefined}
+                />
+              </div>
+              {uploadBar?.percent != null && (
+                <span className="font-semibold tabular-nums text-foreground">
+                  {uploadBar.label} · {uploadBar.percent}%
+                </span>
+              )}
+              <span className="text-muted-foreground">
+                {uploadBar?.percent == null && uploadBar?.label
+                  ? uploadBar.label
+                  : progress || "Working..."}
+              </span>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3">

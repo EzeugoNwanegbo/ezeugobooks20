@@ -21,6 +21,8 @@ export async function extractPdfText(
   // Diagnostic hook: reports the current step so the caller can record where a
   // crash happened (Android Chrome can kill the tab mid-parse with no error).
   onStage?: (stage: string) => void,
+  // Progress hook: fired per page so the UI can show a real progress bar.
+  onPage?: (page: number, total: number) => void,
 ): Promise<{ text: string; pageCount: number }> {
   let pdf: Awaited<ReturnType<typeof getDocument>["promise"]> | null = null;
   try {
@@ -42,6 +44,7 @@ export async function extractPdfText(
 
     for (let i = 1; i <= pageCount; i++) {
       onStage?.(`pdf:reading-page-${i}/${pageCount}`);
+      onPage?.(i, pageCount);
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
       const pageText = content.items

@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, ArrowRight } from "lucide-react";
+import { FounderStory } from "@/components/founder-story";
 import { LoadingDots } from "@/components/loading-dots";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -312,6 +313,8 @@ function OnboardingFlow() {
               )}
             </div>
           </div>
+
+          <FounderStory className="mt-4" />
         </div>
       </main>
     </div>

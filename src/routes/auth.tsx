@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Eye, EyeOff } from "lucide-react";
+import { FounderStory } from "@/components/founder-story";
 import { LoadingDots } from "@/components/loading-dots";
 import { useAuth } from "@/lib/auth-context";
 import { isNativeApp } from "@/lib/native";
@@ -403,6 +404,8 @@ function AuthFlow() {
               </p>
             )}
           </div>
+
+          <FounderStory className="mt-4" />
         </div>
       </main>
     </div>
