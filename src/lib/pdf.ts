@@ -34,6 +34,12 @@ export async function extractPdfText(
       cMapUrl: CMAP_URL,
       cMapPacked: true,
       standardFontDataUrl: STANDARD_FONT_URL,
+      // Security (CVE-2024-4367): a malicious PDF can smuggle JavaScript through
+      // the font path and have pdf.js execute it via eval/Function in the app's
+      // origin. We're pinned to pdfjs 3.x for old-iOS-Safari support, so disable
+      // the eval-backed code paths instead of relying on a newer release. Text
+      // extraction does not need them; pdf.js falls back to its safe interpreter.
+      isEvalSupported: false,
       // Don't auto-prompt for passwords — surface a clear error instead.
       password: "",
     }).promise;
