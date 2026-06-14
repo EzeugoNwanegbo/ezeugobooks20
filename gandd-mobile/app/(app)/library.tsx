@@ -1,4 +1,3 @@
-import { router } from "expo-router";
 import { FileText, Plus, Search, Trash2, Upload } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -25,7 +24,7 @@ import {
 import { colors, fonts, radius } from "@/lib/theme";
 import {
   BOTTOM_NAV_HEIGHT,
-  ScreenContainer,
+  MainTabContainer,
   TopBar,
   useDrawer,
   useHaptics,
@@ -138,7 +137,7 @@ export default function LibraryScreen() {
   );
 
   return (
-    <ScreenContainer swipeBack onBack={() => router.replace("/chat")}>
+    <MainTabContainer>
       <TopBar onMenu={open} right={<View style={{ width: 40 }} />} />
 
       <ScrollView
@@ -231,7 +230,7 @@ export default function LibraryScreen() {
           <Text style={styles.loadingText}>No documents match "{query}".</Text>
         ) : null}
       </ScrollView>
-    </ScreenContainer>
+    </MainTabContainer>
   );
 }
 

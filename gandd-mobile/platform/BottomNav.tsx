@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, fonts, radius } from "@/lib/theme";
 import { haptics } from "./useHaptics";
 import { isMainRoute } from "./useBackNavigation";
+import { setPendingDir, tabIndex } from "./tab-transition";
 
 export const BOTTOM_NAV_HEIGHT = 62;
 
@@ -45,6 +46,8 @@ export function BottomNav() {
             onPress={() => {
               if (active) return;
               haptics.selection();
+              // Slide in the same direction the tab sits relative to the current one.
+              setPendingDir(tabIndex(route) > tabIndex(pathname) ? 1 : -1);
               router.replace(route as never);
             }}
           >

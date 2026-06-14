@@ -42,11 +42,12 @@ function AppShell() {
           animationDuration: 160,
         }}
       >
-        {/* Main tabs — fade between them (the BottomNav switches via replace). */}
-        <Stack.Screen name="chat" />
-        <Stack.Screen name="library" />
-        <Stack.Screen name="links" />
-        <Stack.Screen name="coach" />
+        {/* Main tabs — MainTabContainer owns the directional slide, so the stack
+            itself does no transition (avoids a fade fighting the slide). */}
+        <Stack.Screen name="chat" options={{ animation: "none" }} />
+        <Stack.Screen name="library" options={{ animation: "none" }} />
+        <Stack.Screen name="links" options={{ animation: "none" }} />
+        <Stack.Screen name="coach" options={{ animation: "none" }} />
         {/* Secondary (drawer) screens — slide in, swipe-back to return. */}
         <Stack.Screen name="history" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="settings" options={{ animation: "slide_from_right" }} />

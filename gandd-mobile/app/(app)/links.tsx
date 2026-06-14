@@ -1,4 +1,3 @@
-import { router } from "expo-router";
 import {
   Activity,
   FileText,
@@ -25,7 +24,7 @@ import {
   uploadAndExtract,
 } from "@/lib/links-client";
 import { colors, fonts, radius } from "@/lib/theme";
-import { BOTTOM_NAV_HEIGHT, ScreenContainer, TopBar, useDrawer } from "@/platform";
+import { BOTTOM_NAV_HEIGHT, MainTabContainer, TopBar, useDrawer } from "@/platform";
 
 function formatBytes(bytes: number | null): string {
   if (!bytes) return "";
@@ -169,7 +168,7 @@ export default function LinksScreen() {
   const nodes = (synth?.nodes ?? []).slice(0, 5);
 
   return (
-    <ScreenContainer swipeBack onBack={() => router.replace("/chat")}>
+    <MainTabContainer>
       <TopBar
         onMenu={open}
         right={
@@ -419,7 +418,7 @@ export default function LinksScreen() {
           </>
         ) : null}
       </ScrollView>
-    </ScreenContainer>
+    </MainTabContainer>
   );
 }
 

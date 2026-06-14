@@ -25,7 +25,7 @@
     },
     "android": {
       "package": "com.gandd.mobile",
-      "versionCode": 9,
+      "versionCode": 12,
       "permissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_IMAGES"

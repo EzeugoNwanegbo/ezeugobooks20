@@ -8,7 +8,7 @@
 // All AI runs server-side in the studybody edge function; retrieval is grounded
 // via studybody-data (hybrid embedding + keyword search over document_chunks).
 
-import { Link, router } from "expo-router";
+import { Link } from "expo-router";
 import {
   AlertTriangle,
   Brain,
@@ -58,7 +58,7 @@ import {
   type StudyReview,
 } from "@/lib/studybody-client";
 import { colors, fonts, radius } from "@/lib/theme";
-import { BOTTOM_NAV_HEIGHT, ScreenContainer, TopBar, useDrawer, useHaptics } from "@/platform";
+import { BOTTOM_NAV_HEIGHT, MainTabContainer, ScreenContainer, TopBar, useDrawer, useHaptics } from "@/platform";
 
 const QUESTION_TYPES: { value: StudyQuestionType; label: string }[] = [
   { value: "mcq", label: "MCQ" },
@@ -694,7 +694,7 @@ export default function CoachScreen() {
   }
 
   return (
-    <ScreenContainer swipeBack onBack={() => router.replace("/chat")}>
+    <MainTabContainer>
       <TopBar
         title="My Coach"
         onMenu={view === "config" ? open : undefined}
@@ -1076,7 +1076,7 @@ export default function CoachScreen() {
           </>
         )}
       </ScrollView>
-    </ScreenContainer>
+    </MainTabContainer>
   );
 }
 

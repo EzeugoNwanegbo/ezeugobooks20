@@ -10,7 +10,8 @@ import { colors, fonts, radius } from "@/lib/theme";
 import { useDrawer } from "./drawer-context";
 import { useDrawerGestures } from "./useDrawerGestures";
 
-const WIDTH = 304;
+export const DRAWER_WIDTH = 304;
+const WIDTH = DRAWER_WIDTH;
 
 const ITEMS: { label: string; icon: LucideIcon; route: string }[] = [
   { label: "History", icon: Clock, route: "/history" },

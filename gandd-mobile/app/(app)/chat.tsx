@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Paperclip, Plus, Send, Sparkles, X } from "lucide-react-native";
+import { Paperclip, Plus, Send, X } from "lucide-react-native";
 import {
   ActivityIndicator,
   Alert,
@@ -13,8 +13,16 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChatDocPicker } from "@/components/chat-doc-picker";
+import { Markdown } from "@/components/markdown";
+import { SymbioteOrb } from "@/components/symbiote";
 import { Eyebrow, Tag } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import {
@@ -29,7 +37,7 @@ import { type LinkDocument, listDocuments } from "@/lib/links-client";
 import { colors, fonts, radius } from "@/lib/theme";
 import {
   BOTTOM_NAV_HEIGHT,
-  ScreenContainer,
+  MainTabContainer,
   TopBar,
   useDrawer,
   useHaptics,
@@ -37,6 +45,13 @@ import {
 } from "@/platform";
 
 const MODES: ChatMode[] = ["Detailed", "Simplified", "Storytelling", "Visuals"];
+
+// Shown above the answer whenever the user asks a real question without attaching
+// a file — tells them to add one for a grounded answer, then the AI's own answer
+// streams in underneath.
+const ATTACH_TIP =
+  "📎 **Add a file for a grounded answer.** Tap the paperclip below to attach a PDF, or upload one in **Library**, then ask again and I'll answer from your material with page citations.\n\n" +
+  "_Here's a general answer in the meantime:_\n\n";
 
 type Msg =
   | { id: string; role: "user"; text: string }
@@ -165,6 +180,12 @@ export default function ChatScreen() {
         ? "smart"
         : "none";
 
+    // No file attached (whether or not the library auto-matched): tell the user
+    // to add one, then let the AI answer right below the tip. Skip pure greetings.
+    if (!manuallySelected && !looksCasualMessage(text)) {
+      patch((m) => ({ ...m, text: ATTACH_TIP }));
+    }
+
     await streamChat({
       messages: history,
       profile,
@@ -196,7 +217,7 @@ export default function ChatScreen() {
   };
 
   return (
-    <ScreenContainer>
+    <MainTabContainer>
       <TopBar
         onMenu={open}
         right={
@@ -225,14 +246,14 @@ export default function ChatScreen() {
             ) : (
               <View key={m.id} style={styles.assistantBubble}>
                 <View style={styles.assistantHead}>
-                  <Sparkles size={12} color={colors.accent} />
+                  <SymbioteOrb size={14} />
                   <Eyebrow>{`Assistant · ${m.mode}`}</Eyebrow>
                   {m.streaming ? (
                     <ActivityIndicator size="small" color={colors.mutedDim} style={{ marginLeft: 2 }} />
                   ) : null}
                 </View>
                 {m.text ? (
-                  <Text style={styles.assistantText}>{m.text}</Text>
+                  <Markdown content={m.text} />
                 ) : m.streaming ? (
                   <Text style={[styles.assistantText, { color: colors.mutedDim }]}>Thinking…</Text>
                 ) : null}
@@ -248,7 +269,7 @@ export default function ChatScreen() {
           )}
           {messages.length === 0 ? (
             <View style={styles.emptyChat}>
-              <Sparkles size={26} color={colors.accent} />
+              <SymbioteOrb size={44} />
               <Text style={styles.emptyTitle}>Ask anything about your material</Text>
               <Text style={styles.emptySub}>
                 Answers are grounded in your loaded documents with page-level citations.
@@ -263,25 +284,7 @@ export default function ChatScreen() {
             { paddingBottom: keyboardShown ? 8 : BOTTOM_NAV_HEIGHT + insets.bottom + 8 },
           ]}
         >
-          <View style={styles.modeRow}>
-            {MODES.map((mm) => {
-              const active = mm === mode;
-              return (
-                <Pressable
-                  key={mm}
-                  onPress={() => {
-                    haptics.selection();
-                    setMode(mm);
-                  }}
-                  style={[styles.modeChip, active && styles.modeChipActive]}
-                >
-                  <Text style={[styles.modeLabel, { color: active ? colors.primaryFg : colors.mutedDim }]}>
-                    {mm}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+          <ModeSelector value={mode} onChange={setMode} />
 
           {attachedDocs.length > 0 ? (
             <View style={styles.chipRow}>
@@ -334,7 +337,54 @@ export default function ChatScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
-    </ScreenContainer>
+    </MainTabContainer>
+  );
+}
+
+// The four answer styles, with an indicator pill that slides to the active one
+// instead of a hard colour swap. The row measures itself so the segment width
+// (and the slide distance) stays correct on any device width.
+function ModeSelector({ value, onChange }: { value: ChatMode; onChange: (m: ChatMode) => void }) {
+  const haptics = useHaptics();
+  const [rowWidth, setRowWidth] = useState(0);
+  const gap = 6;
+  const seg = rowWidth > 0 ? (rowWidth - gap * (MODES.length - 1)) / MODES.length : 0;
+  const index = Math.max(0, MODES.indexOf(value));
+  const x = useSharedValue(0);
+
+  useEffect(() => {
+    x.value = withTiming(index * (seg + gap), {
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [index, seg, x]);
+
+  const indicatorStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: x.value }],
+    width: seg,
+  }));
+
+  return (
+    <View style={styles.modeRow} onLayout={(e) => setRowWidth(e.nativeEvent.layout.width)}>
+      {seg > 0 ? <Animated.View style={[styles.modeIndicator, indicatorStyle]} /> : null}
+      {MODES.map((mm) => {
+        const active = mm === value;
+        return (
+          <Pressable
+            key={mm}
+            onPress={() => {
+              haptics.selection();
+              onChange(mm);
+            }}
+            style={styles.modeChip}
+          >
+            <Text style={[styles.modeLabel, { color: active ? colors.primaryFg : colors.mutedDim }]}>
+              {mm}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
@@ -446,17 +496,25 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   modeRow: {
+    position: "relative",
     flexDirection: "row",
     gap: 6,
+    backgroundColor: colors.surface,
+    borderRadius: radius.full,
+    padding: 0,
   },
   modeChip: {
     flex: 1,
     alignItems: "center",
     paddingVertical: 8,
     borderRadius: radius.full,
-    backgroundColor: colors.surface,
   },
-  modeChipActive: {
+  modeIndicator: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: radius.full,
     backgroundColor: colors.primary,
   },
   modeLabel: {
