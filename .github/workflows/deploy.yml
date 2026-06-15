@@ -42,7 +42,8 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           protocol: ftps
+          port: 21
           local-dir: dist/
-          # The FTP account should be created with public_html as its root
-          # (Hostinger hPanel → Files → FTP Accounts → directory: public_html).
-          server-dir: ./
+          # The main Hostinger FTP account lands in the home directory and the
+          # live site is served from the public_html subfolder, so publish there.
+          server-dir: public_html/
