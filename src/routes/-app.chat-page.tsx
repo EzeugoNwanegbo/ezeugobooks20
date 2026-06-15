@@ -2100,23 +2100,54 @@ function SourceBadge({ source }: { source?: MessageSource }) {
   return null;
 }
 
+function sourceHostname(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+/** Single source chip showing the site's favicon, falling back to its initial. */
+function SourceFavicon({ source, index }: { source: WebSource; index: number }) {
+  const [failed, setFailed] = useState(false);
+  const host = sourceHostname(source.url);
+  const initial = (host || source.title || "?").charAt(0).toUpperCase();
+  const label = source.title || host || source.url;
+
+  return (
+    <a
+      href={source.url}
+      target="_blank"
+      rel="noreferrer"
+      title={label}
+      aria-label={`Open web source ${index + 1}: ${label}`}
+      className="inline-flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border border-border bg-background/45 text-muted-foreground backdrop-blur-[2px] transition-colors hover:border-primary/35 hover:text-primary"
+    >
+      {host && !failed ? (
+        <img
+          src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`}
+          alt=""
+          width={16}
+          height={16}
+          loading="lazy"
+          className="h-4 w-4 rounded-sm"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span className="text-[11px] font-semibold leading-none">{initial}</span>
+      )}
+    </a>
+  );
+}
+
 function WebSourceIcons({ sources }: { sources?: WebSource[] }) {
   if (!sources?.length) return null;
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5">
       {sources.slice(0, 6).map((source, index) => (
-        <a
-          key={`${source.url}-${index}`}
-          href={source.url}
-          target="_blank"
-          rel="noreferrer"
-          title={source.title || source.url}
-          aria-label={`Open web source ${index + 1}: ${source.title || source.url}`}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border bg-background/45 text-muted-foreground backdrop-blur-[2px] transition-colors hover:border-primary/35 hover:text-primary"
-        >
-          <span className="text-[11px] font-semibold leading-none">{index + 1}</span>
-        </a>
+        <SourceFavicon key={`${source.url}-${index}`} source={source} index={index} />
       ))}
     </div>
   );
