@@ -3,7 +3,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { chunkDocumentText, documentPreview, type DocumentChunkInput } from "@/lib/document-chunks";
-import { embedChunkContents, backfillMissingEmbeddings } from "@/lib/embeddings";
+import { backfillMissingEmbeddings } from "@/lib/embeddings";
 import { getCached, setCached } from "@/lib/data-cache";
 import { GUEST_DOCUMENT_LIMIT, isGuestUser } from "@/lib/guest-session";
 import { stageDocForChat } from "@/lib/chat-handoff";
@@ -450,6 +450,14 @@ export function LibraryPage() {
   const confirmAssign = async (thenChat = false) => {
     if (!user || !pendingBatch || pendingBatch.length === 0 || saving) return;
     setSaving(true);
+    // TEMP diagnostic timing: find which save phase is slow. Remove once fixed.
+    const t0 = performance.now();
+    const timings: string[] = [];
+    const mark = (label: string, since: number) => {
+      const ms = Math.round(performance.now() - since);
+      timings.push(`${label} ${ms}ms`);
+      console.log(`[save-timing] ${label}: ${ms}ms`);
+    };
     let folderId: string | null = null;
     try {
       if (chosenFolder === "__new") {
@@ -477,12 +485,14 @@ export function LibraryPage() {
         folderId = chosenFolder;
       }
 
+      mark("folder", t0);
       // Insert every file in the batch into the chosen folder. One file's
       // failure is reported but doesn't abort the rest.
       let firstDocId: string | null = null;
       let savedCount = 0;
       let chunkSaveFailed = false;
       for (const item of pendingBatch) {
+        const tDoc = performance.now();
         const { data: doc, error: dbErr } = await supabase
           .from("documents")
           .insert({
@@ -498,6 +508,7 @@ export function LibraryPage() {
           })
           .select("id")
           .single();
+        mark(`doc-insert(${item.chunks.length}ch)`, tDoc);
         if (dbErr) {
           console.error("save document", item.fileName, dbErr);
           toast.error(`Couldn't save "${item.fileName}": ${dbErr.message}`);
@@ -507,11 +518,13 @@ export function LibraryPage() {
         if (!firstDocId) firstDocId = doc.id;
 
         if (item.chunks.length > 0) {
-          // Embed each chunk so it's semantically searchable. Failures fall
-          // through as null embeddings — the chunk stays keyword-searchable and
-          // the background backfill will pick it up later.
-          const embeddings = await embedChunkContents(item.chunks.map((chunk) => chunk.content));
-          const rows = item.chunks.map((chunk, idx) => ({
+          // Save chunks immediately with no embedding. Embedding each chunk means
+          // a round trip to OpenAI per 96-chunk batch — on a big textbook that's
+          // the bulk of the "saving" wait. We skip it here so saving is just the
+          // DB inserts (near-instant), and let the background backfill below add
+          // the vectors a few seconds later. Chunks stay keyword-searchable in
+          // the meantime, so search never breaks while embeddings catch up.
+          const rows = item.chunks.map((chunk) => ({
             document_id: doc.id,
             user_id: user.id,
             chunk_index: chunk.chunk_index,
@@ -519,9 +532,10 @@ export function LibraryPage() {
             page_end: chunk.page_end,
             content: chunk.content,
             token_estimate: chunk.token_estimate,
-            embedding: embeddings[idx],
+            embedding: null,
           }));
 
+          const tChunks = performance.now();
           for (let i = 0; i < rows.length; i += 100) {
             const { error: chunkErr } = await supabase
               .from("document_chunks")
@@ -532,12 +546,22 @@ export function LibraryPage() {
               break;
             }
           }
+          mark(`chunk-insert(${rows.length})`, tChunks);
         }
       }
 
       if (savedCount > 0) {
         toast.success(
           savedCount === 1 ? `Added "${pendingBatch[0].fileName}"` : `Added ${savedCount} files`,
+          // TEMP: show where the save time went. Remove with the timing code.
+          { description: `${Math.round(performance.now() - t0)}ms — ${timings.join(", ")}` },
+        );
+        // Embed the just-saved chunks in the background so semantic search lights
+        // up shortly after, without making the user wait for it. Fire-and-forget:
+        // it's idempotent, self-stopping, and keeps running even if we navigate
+        // away to the chat below.
+        backfillMissingEmbeddings(user.id).catch((err) =>
+          console.warn("post-save embedding backfill skipped", err),
         );
       }
       if (chunkSaveFailed) {
@@ -555,7 +579,9 @@ export function LibraryPage() {
         return;
       }
 
+      const tRefresh = performance.now();
       await refresh();
+      mark("refresh", tRefresh);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Save failed");
     } finally {

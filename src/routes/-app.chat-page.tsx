@@ -1844,7 +1844,15 @@ function FilePickerDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="luxury-panel flex max-h-[88dvh] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg p-0 sm:max-h-[85vh] sm:max-w-2xl">
+      <DialogContent
+        // On mobile, letting Radix auto-focus the search input pops the on-screen
+        // keyboard the instant the picker opens — it shrinks the viewport and
+        // buries the file list (and its scroll area) behind the keyboard. Keep
+        // focus off the input so the list opens full-height; the keyboard only
+        // appears if the user deliberately taps Search.
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        className="luxury-panel flex max-h-[88dvh] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg p-0 sm:max-h-[85vh] sm:max-w-2xl"
+      >
         <DialogHeader className="shrink-0 border-b border-border px-5 pb-3 pt-5">
           <DialogTitle>Choose files to search</DialogTitle>
           <DialogDescription>
@@ -1876,7 +1884,7 @@ function FilePickerDialog({
             )}
           </div>
 
-          <div className="min-h-[220px] flex-1 overflow-y-auto rounded-lg border border-border bg-surface/40">
+          <div className="min-h-[120px] flex-1 overflow-y-auto overscroll-contain rounded-lg border border-border bg-surface/40 [-webkit-overflow-scrolling:touch]">
             {docs.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground">
                 {totalDocs === 0 ? (

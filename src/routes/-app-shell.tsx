@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Clock,
   Heart,
+  Link2,
   LogOut,
   Map,
   Menu,
@@ -186,6 +187,7 @@ function AppLayout() {
     to:
       | "/app/chat"
       | "/app/library"
+      | "/app/links"
       | "/app/history"
       | "/app/studybody"
       | "/app/feedback"
@@ -356,6 +358,7 @@ function AppLayout() {
         <nav className="flex-1 space-y-1 p-3">
           {navItem("/app/chat", <MessageSquare className="h-4 w-4 shrink-0" />, "Chat")}
           {navItem("/app/library", <BookOpen className="h-4 w-4 shrink-0" />, "Library")}
+          {navItem("/app/links", <Link2 className="h-4 w-4 shrink-0" />, "Links")}
           {navItem("/app/history", <Clock className="h-4 w-4 shrink-0" />, "History")}
           {navItem("/app/studybody", <Map className="h-4 w-4 shrink-0" />, "My Coach")}
           {navItem("/app/feedback", <Heart className="h-4 w-4 shrink-0" />, "Feedback")}
@@ -490,6 +493,12 @@ function AppLayout() {
                 icon={<BookOpen className="h-3.5 w-3.5" />}
                 label="Library"
                 onPick={() => goToMobileRoute("/app/library")}
+              />
+              <MobileDrawerNavItem
+                active={location.pathname.includes("links")}
+                icon={<Link2 className="h-3.5 w-3.5" />}
+                label="Links"
+                onPick={() => goToMobileRoute("/app/links")}
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("history")}
