@@ -500,6 +500,48 @@ function looksCasualMessage(content: string): boolean {
   );
 }
 
+// Not every message is a "search my textbook" request. Greetings, chit-chat,
+// and follow-ups about the previous answer should be handled like a normal
+// conversation — the chat history is already in context, so there's no need to
+// run a fresh document search. We still search whenever the user explicitly
+// points at their material (see explicitlyNeedsLibrary) or hand-picks files.
+function looksConversational(content: string, messages: DisplayMessage[]): boolean {
+  const text = content.trim();
+  if (!text) return true;
+  if (looksCasualMessage(text)) return true;
+
+  // If the message clearly references study material, treat it as a search.
+  if (explicitlyNeedsLibrary(text)) return false;
+
+  const normalized = text.toLowerCase();
+  const hasPriorAnswer = messages.some(
+    (m) => m.role === "assistant" && m.content.trim().length > 0,
+  );
+
+  // Talking to the assistant itself / small talk / opinions.
+  const chitChat =
+    /\b(how are you|how'?s it going|who are you|what are you|what can you do|what do you do|your name|good (morning|afternoon|evening)|let'?s (chat|talk)|just (chatting|talking|curious|wondering)|what do you think|in your opinion|do you think|can we (chat|talk))\b/i;
+  if (chitChat.test(normalized)) return true;
+
+  // Follow-ups that lean on the previous answer rather than new material.
+  const followUp =
+    /^(and|but|so|then|also|why|why not|how so|how come|really|continue|go on|keep going|more|tell me more|expand|elaborate|explain (that|it|this)|simpler|simplify|shorter|in short|tl;?dr|summari[sz]e|recap|rephrase|reword|repeat that|say that again|what do you mean|i (don'?t|do not) (get|understand)|can you (explain|clarify|rephrase|simplify|shorten))\b/i;
+  if (hasPriorAnswer && followUp.test(normalized)) return true;
+
+  // Short pronoun-led follow-ups ("why is that?", "what about it?") that carry
+  // no new subject of their own rely on prior context, not a new search.
+  if (
+    hasPriorAnswer &&
+    text.length <= 48 &&
+    /\b(it|that|this|those|these|them|they)\b/i.test(normalized) &&
+    queryTerms(text).length <= 2
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function explicitlyNeedsLibrary(content: string): boolean {
   return (
     /\b(materials?|pdf|file|document|doc|notes?|library|selected|uploaded|book|chapter|page|quote|complete|finish|continue|based on|according to)\b/i.test(
@@ -931,7 +973,10 @@ export function ChatPage() {
       return { docs: [], noLibraryMatch: false, noMatchScope: null };
     }
 
-    if (!manuallySelected && looksCasualMessage(content)) {
+    // Only search the library when the message actually calls for study
+    // material. Greetings, small talk, and follow-ups about the previous answer
+    // are handled conversationally (the chat history is already in context).
+    if (!manuallySelected && looksConversational(content, messages)) {
       return { docs: [], noLibraryMatch: false, noMatchScope: null };
     }
 
@@ -2452,11 +2497,7 @@ function Message({ msg, streaming }: { msg: DisplayMessage; isLast: boolean; str
             {msg.webSources?.length ? <WebSourceBadge count={msg.webSources.length} /> : null}
           </div>
         )}
-        <div
-          className={`medai-prose luxury-panel rounded-lg px-3.5 py-3 text-sm sm:px-4 ${
-            streaming ? "streaming-caret" : ""
-          }`}
-        >
+        <div className="medai-prose luxury-panel rounded-lg px-3.5 py-3 text-sm sm:px-4">
           {displayContent ? (
             <ReactMarkdown>{displayContent}</ReactMarkdown>
           ) : (
