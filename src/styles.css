@@ -305,13 +305,15 @@ html.gd-low-power .gd-loading-bar::after {
 .medai-prose {
   color: var(--foreground);
   line-height: 1.7;
+  /* AI replies read a touch bolder than the thin 300 body weight for legibility. */
+  font-weight: 400;
 }
 .medai-prose p {
   margin: 0.5rem 0;
 }
 .medai-prose strong {
   color: var(--foreground);
-  font-weight: 400;
+  font-weight: 600;
 }
 .medai-prose ul,
 .medai-prose ol {
