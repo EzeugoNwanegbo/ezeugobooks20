@@ -17,3 +17,7 @@ services:
         sync: false
       - key: SUPABASE_PUBLISHABLE_KEY
         sync: false
+      - key: VITE_POSTHOG_PROJECT_TOKEN
+        sync: false
+      - key: VITE_POSTHOG_HOST
+        value: https://us.i.posthog.com

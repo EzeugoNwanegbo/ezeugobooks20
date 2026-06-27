@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import type { Session, User } from "@supabase/supabase-js";
 import { usePostHog } from "@posthog/react";
 import { supabase } from "@/integrations/supabase/client";
+import { isAnalyticsEnabled } from "@/lib/analytics";
 
 export type Profile = {
   id: string;
@@ -178,10 +179,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // profile behind the full-screen splash.
           if (loadedUserIdRef.current === sess.user.id) return;
           loadedUserIdRef.current = sess.user.id;
-          posthog?.identify(sess.user.id, {
-            email: sess.user.email,
-            name: sess.user.user_metadata?.name ?? sess.user.user_metadata?.full_name,
-          });
+          if (isAnalyticsEnabled()) {
+            posthog?.identify(sess.user.id, {
+              email: sess.user.email,
+              name: sess.user.user_metadata?.name ?? sess.user.user_metadata?.full_name,
+            });
+          }
           // defer to avoid deadlock with supabase client
           setLoading(true);
           setTimeout(() => {
@@ -192,7 +195,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }, 0);
         } else {
           loadedUserIdRef.current = null;
-          posthog?.reset();
+          if (isAnalyticsEnabled()) {
+            posthog?.reset();
+          }
           setProfile(null);
           setLoading(false);
         }

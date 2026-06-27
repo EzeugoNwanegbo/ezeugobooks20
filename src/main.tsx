@@ -3,20 +3,16 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import { getRouter } from "./router";
 import { AppErrorBoundary } from "./components/error-boundary";
-import { initNativeShell } from "./lib/native";
-import posthog from "posthog-js";
+import { initNativeShell, isNativeApp } from "./lib/native";
 import { PostHogProvider } from "@posthog/react";
+import { capturePageview, initAnalytics, posthog } from "./lib/analytics";
 import "./styles.css";
-
-posthog.init(import.meta.env.VITE_POSTHOG_PROJECT_TOKEN, {
-  api_host: import.meta.env.VITE_POSTHOG_HOST,
-  defaults: "2026-01-30",
-});
 
 // Mark the document as the native app and configure the status bar before the
 // first paint, so safe-area styling and native auth behavior apply from the
 // very first frame.
 initNativeShell();
+initAnalytics({ autocapture: !isNativeApp() });
 
 // Stamp the build id so you can verify which build is actually live: open the
 // console (BUILD ...) or inspect <html data-build="...">.
@@ -43,11 +39,19 @@ if (!root) {
   throw new Error("Root element #root was not found.");
 }
 
+const router = getRouter();
+capturePageview();
+router.subscribe("onResolved", (event) => {
+  if (event.hrefChanged) {
+    capturePageview(event.toLocation.href);
+  }
+});
+
 createRoot(root).render(
   <StrictMode>
     <PostHogProvider client={posthog}>
       <AppErrorBoundary>
-        <RouterProvider router={getRouter()} />
+        <RouterProvider router={router} />
       </AppErrorBoundary>
     </PostHogProvider>
   </StrictMode>,
