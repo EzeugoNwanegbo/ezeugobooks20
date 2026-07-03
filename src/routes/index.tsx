@@ -6,24 +6,24 @@ import { useAuth } from "@/lib/auth-context";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "G&D — read a whole textbook in minutes, not hours" },
+      { title: "G&D - read a whole textbook in minutes, not hours" },
       {
         name: "description",
         content:
-          "Upload any textbook in under 15 seconds, ask anything, and get exact answers from your own pages — nothing made up. Then master it with practice questions built from your book.",
+          "Upload any textbook in under 15 seconds, ask anything, and get exact answers from your own pages - nothing made up. Then master it with practice questions built from your book.",
       },
     ],
   }),
   component: Landing,
 });
 
-// Landing for "/" — Symbiote Organicism aesthetic (deep black + warm beige,
+// Landing for "/" - Symbiote Organicism aesthetic (deep black + warm beige,
 // pill shapes, Sora / Hanken Grotesk / JetBrains Mono), self-contained styles
 // + Google Fonts (React 19 hoists <link>/<style> into <head>). Motion is pure
-// CSS keyframes + one IntersectionObserver for scroll reveals — no new deps.
+// CSS keyframes + one IntersectionObserver for scroll reveals - no new deps.
 
 /* ----------------------------------------------------------------- */
-/* Try for free — starts a no-signup guest session, falls back to     */
+/* Try for free - starts a no-signup guest session, falls back to     */
 /* /auth signup when anonymous sign-ins are unavailable.              */
 /* ----------------------------------------------------------------- */
 function TryForFreeButton({
@@ -42,7 +42,7 @@ function TryForFreeButton({
   const onClick = async () => {
     if (busy) return;
     if (user) {
-      // Already signed in (or already a guest) — straight to the workspace.
+      // Already signed in (or already a guest) - straight to the workspace.
       // Bare /app has no child route and renders an empty shell, so always
       // land on the chat screen.
       navigate({ to: "/app/chat" });
@@ -81,7 +81,7 @@ function TryForFreeButton({
 }
 
 /* ----------------------------------------------------------------- */
-/* Count-up number — animates when scrolled into view; respects       */
+/* Count-up number - animates when scrolled into view; respects       */
 /* prefers-reduced-motion by rendering the final value immediately.   */
 /* ----------------------------------------------------------------- */
 function CountUp({ to, duration = 1400 }: { to: number; duration?: number }) {
@@ -203,7 +203,7 @@ function Landing() {
             </h1>
             <p className="gd-lead gd-rise gd-rise-3">
               Upload any textbook in seconds. Ask it anything and get exact answers from your
-              own pages — nothing made up. Then master it with practice questions built from
+              own pages - nothing made up. Then master it with practice questions built from
               your book.
             </p>
             <div className="gd-actions gd-rise gd-rise-4">
@@ -229,7 +229,7 @@ function Landing() {
           <div
             className="gd-hero-visual"
             role="img"
-            aria-label="Animated demo: a 48 megabyte, 512-page textbook PDF is dropped in, a progress bar races to the end, and the upload finishes in 12 seconds — every page ready to search."
+            aria-label="Animated demo: a 48 megabyte, 512-page textbook PDF is dropped in, a progress bar races to the end, and the upload finishes in 12 seconds - every page ready to search."
           >
             <div className="gd-mock">
               <div className="gd-mock-head">
@@ -251,7 +251,7 @@ function Landing() {
                 <span className="gd-mock-fill" />
               </div>
               <div className="gd-mock-status">
-                <span className="gd-mock-s gd-mock-s1">Uploading — 48 MB…</span>
+                <span className="gd-mock-s gd-mock-s1">Uploading - 48 MB…</span>
                 <span className="gd-mock-s gd-mock-s2">Indexing 512 pages…</span>
                 <span className="gd-mock-s gd-mock-done">
                   <span className="material-symbols-outlined">check_circle</span>
@@ -260,7 +260,7 @@ function Landing() {
               </div>
               <div className="gd-mock-ready">
                 <span className="material-symbols-outlined">search</span>
-                Ask anything — every page is now searchable.
+                Ask anything - every page is now searchable.
               </div>
             </div>
           </div>
@@ -276,7 +276,7 @@ function Landing() {
               Any textbook. Any size. Ready in under <span className="gd-accent">15 seconds</span>.
             </h2>
             <p className="gd-lead">
-              Drop in the whole book — not a chapter, not a summary. G&amp;D makes every page
+              Drop in the whole book - not a chapter, not a summary. G&amp;D makes every page
               searchable before you've found the right highlighter.
             </p>
           </div>
@@ -304,7 +304,7 @@ function Landing() {
                 <CountUp to={15} />
                 <span className="gd-stat-unit">s</span>
               </span>
-              <span className="gd-stat-label">from upload to ready — any size</span>
+              <span className="gd-stat-label">from upload to ready - any size</span>
             </div>
             <div className="gd-stat gd-r" style={{ "--rd": "0.12s" } as React.CSSProperties}>
               <span className="gd-stat-n">
@@ -334,7 +334,7 @@ function Landing() {
               </h2>
               <p className="gd-lead">
                 G&amp;D answers only from the file you uploaded. No made-up facts, no internet
-                noise — every answer carries the page it came from, so you can check it
+                noise - every answer carries the page it came from, so you can check it
                 yourself. And when something isn't in your material, it says so.
               </p>
               <ul className="gd-points">
@@ -344,7 +344,7 @@ function Landing() {
                 </li>
                 <li>
                   <span className="material-symbols-outlined" aria-hidden="true">verified</span>
-                  Grounded in your upload — nothing invented
+                  Grounded in your upload - nothing invented
                 </li>
                 <li>
                   <span className="material-symbols-outlined" aria-hidden="true">search_off</span>
@@ -386,7 +386,7 @@ function Landing() {
                 <div className="gd-preview-na">
                   <span className="material-symbols-outlined">search_off</span>
                   <p>
-                    Not found in your material — this file has no chapter 12, and nothing was
+                    Not found in your material - this file has no chapter 12, and nothing was
                     made up to fill the gap.
                   </p>
                 </div>
@@ -406,14 +406,14 @@ function Landing() {
                 Don't just read it. <span className="gd-accent">Master it.</span>
               </h2>
               <p className="gd-lead">
-                My Coach turns your book into the world's best practice questions — generated
+                My Coach turns your book into the world's best practice questions - generated
                 from your own pages, graded instantly, and tuned from easy to brutal until it
                 actually sticks.
               </p>
               <ul className="gd-points">
                 <li>
                   <span className="material-symbols-outlined" aria-hidden="true">school</span>
-                  Questions built from your chapters — not a generic bank
+                  Questions built from your chapters - not a generic bank
                 </li>
                 <li>
                   <span className="material-symbols-outlined" aria-hidden="true">task_alt</span>
@@ -421,7 +421,7 @@ function Landing() {
                 </li>
                 <li>
                   <span className="material-symbols-outlined" aria-hidden="true">speed</span>
-                  Easy, medium, hard — climb until exam day feels easy
+                  Easy, medium, hard - climb until exam day feels easy
                 </li>
               </ul>
             </div>
@@ -442,7 +442,7 @@ function Landing() {
                 <p className="gd-quiz-q">Explain why glycolysis speeds up when ATP runs low.</p>
                 <div className="gd-quiz-grade">
                   <span className="material-symbols-outlined">task_alt</span>
-                  9/10 — revisit p. 87 for the citrate detail
+                  9/10 - revisit p. 87 for the citrate detail
                 </div>
               </div>
               <div className="gd-quiz-diff gd-r" style={{ "--rd": "0.32s" } as React.CSSProperties}>
@@ -491,7 +491,7 @@ const GD_CSS = `
   --on-beige: #1b1d0e;
   position: relative;
   min-height: 100dvh;
-  /* clip (not hidden) keeps the sticky nav working — overflow-x: hidden would
+  /* clip (not hidden) keeps the sticky nav working - overflow-x: hidden would
      turn .gd-root into a scroll container and detach position: sticky. */
   overflow-x: hidden;
   overflow-x: clip;
@@ -619,7 +619,7 @@ const GD_CSS = `
 }
 .gd-trust .material-symbols-outlined { font-size: 18px; color: var(--beige-dim); }
 
-/* Hero upload mock — the showstopper. One shared 8s timeline, looping.
+/* Hero upload mock - the showstopper. One shared 8s timeline, looping.
    Base styles are the FINISHED state, so reduced-motion users see a calm,
    completed upload instead of a blank card. */
 .gd-hero-visual { display: flex; justify-content: center; }
@@ -746,7 +746,7 @@ const GD_CSS = `
   98%, 100% { opacity: 0; transform: translateY(8px); }
 }
 
-/* Hero entrance — staggered rise on first paint */
+/* Hero entrance - staggered rise on first paint */
 @media (prefers-reduced-motion: no-preference) {
   .gd-rise { animation: gd-rise 0.85s cubic-bezier(0.22, 1, 0.36, 1) both; }
   .gd-rise-1 { animation-delay: 0.05s; }
@@ -760,7 +760,7 @@ const GD_CSS = `
   to { opacity: 1; transform: none; }
 }
 
-/* Scroll reveals — hidden only when motion is allowed */
+/* Scroll reveals - hidden only when motion is allowed */
 @media (prefers-reduced-motion: no-preference) {
   .gd-r {
     opacity: 0; transform: translateY(28px);
@@ -778,7 +778,7 @@ const GD_CSS = `
 }
 .gd-section-head { max-width: 52ch; margin-bottom: 2.75rem; }
 
-/* Race — hours vs seconds */
+/* Race - hours vs seconds */
 .gd-race {
   display: flex; flex-direction: column; gap: 1.1rem;
   background: var(--surface); border: 1px solid var(--outline-2);

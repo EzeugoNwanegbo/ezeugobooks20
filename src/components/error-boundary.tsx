@@ -5,7 +5,7 @@ type State = { error: Error | null };
 
 /**
  * App-wide safety net. Without this, any error thrown while React renders
- * unmounts the whole tree and leaves a blank page with no way to recover —
+ * unmounts the whole tree and leaves a blank page with no way to recover -
  * which is exactly what some Android users saw after an upload. Here we catch
  * it, show a recovery card, and keep the real message visible so the cause
  * isn't lost.

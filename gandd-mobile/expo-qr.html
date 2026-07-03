@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>G&D — Expo QR</title>
+    <style>
+      body {
+        margin: 0;
+        background: #131313;
+        color: #e5e2e1;
+        font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        gap: 20px;
+      }
+      h1 { font-size: 22px; letter-spacing: 1px; margin: 0; }
+      .qr { background: #fff; padding: 20px; border-radius: 16px; }
+      .url { font-family: monospace; color: #e4e4cc; font-size: 15px; }
+      .hint { color: #929187; font-size: 13px; max-width: 340px; text-align: center; line-height: 1.5; }
+    </style>
+  </head>
+  <body>
+    <h1>G&amp;D · Expo Go</h1>
+    <div class="qr" id="qr"></div>
+    <div class="url" id="url"></div>
+    <div class="hint">
+      Open <b>Expo Go</b> on your phone (same WiFi) and scan this.<br />
+      Or tap "Enter URL manually" and type the address above.
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script>
+      var url = "exp://192.168.88.252:8081";
+      document.getElementById("url").textContent = url;
+      new QRCode(document.getElementById("qr"), {
+        text: url,
+        width: 280,
+        height: 280,
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+    </script>
+  </body>
+</html>

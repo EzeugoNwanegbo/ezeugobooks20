@@ -62,7 +62,7 @@ function OnboardingFlow() {
         name: name.trim(),
         university: isStudent ? university.trim() : null,
         year: isStudent ? level : null,
-        // NOTE: exam_format is a Postgres enum (MCQ/SAQ/OSCE/Viva) — writing a
+        // NOTE: exam_format is a Postgres enum (MCQ/SAQ/OSCE/Viva) - writing a
         // free-text profession into it makes the upsert fail and blocks onboarding.
         // Store profession in the free-text `course` column instead.
         course: profession,

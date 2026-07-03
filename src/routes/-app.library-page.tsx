@@ -60,11 +60,11 @@ function getUploadErrorMessage(error: unknown): string {
 }
 
 // Parsing happens entirely in the browser (pdfjs / OCR read the whole file
-// into memory). Desktop browsers cope with very large files; phone browsers —
-// Android Chrome in particular — kill the renderer process when a tab uses too
+// into memory). Desktop browsers cope with very large files; phone browsers -
+// Android Chrome in particular - kill the renderer process when a tab uses too
 // much memory, which shows up as a blank page with no catchable error. Cap the
 // size on memory-constrained devices so the user gets a clear message instead.
-// A generous safety ceiling only — the Android blank-page issue is NOT a
+// A generous safety ceiling only - the Android blank-page issue is NOT a
 // file-size/memory problem (it happens with small files too), so this is just
 // a guard against absurd uploads, not the fix.
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
@@ -197,7 +197,7 @@ export function LibraryPage() {
   );
 
   // Read + chunk a single file in the browser. Returns the processed result, or
-  // null if the file was rejected (too large, empty, unreadable) — the caller
+  // null if the file was rejected (too large, empty, unreadable) - the caller
   // keeps going so one bad file doesn't sink the whole batch.
   const processFile = async (file: File): Promise<ProcessedFile | null> => {
     if (!user) return null;
@@ -242,7 +242,7 @@ export function LibraryPage() {
 
     // iOS often reports PDFs as application/octet-stream or with no MIME at
     // all (iCloud Drive). Check MIME, extension, then scan first 1KB for the
-    // "%PDF-" header — Acrobat-compatible tolerance for leading garbage.
+    // "%PDF-" header - Acrobat-compatible tolerance for leading garbage.
     let isPdf =
       file.type === "application/pdf" || file.type.includes("pdf") || lowerName.endsWith(".pdf");
     if (!isPdf && !isImage && !isText && !isDocx && !isPptx && file.size >= 5) {
@@ -311,7 +311,7 @@ export function LibraryPage() {
     } else if (file.size > 0) {
       // Last-resort fallback for unknown binaries (e.g. iCloud Drive PDFs
       // with no extension, no MIME, and leading bytes before %PDF). Let
-      // pdfjs decide — it throws a clean error if it isn't really a PDF.
+      // pdfjs decide - it throws a clean error if it isn't really a PDF.
       try {
         setStage("probe:importing-engine");
         const { extractPdfText } = await import("@/lib/pdf");
@@ -397,14 +397,14 @@ export function LibraryPage() {
       const remaining = GUEST_DOCUMENT_LIMIT - docs.length;
       if (remaining <= 0) {
         toast.error(
-          `Guest sessions can hold ${GUEST_DOCUMENT_LIMIT} documents. Create a free account to add more — everything you've made stays with you.`,
+          `Guest sessions can hold ${GUEST_DOCUMENT_LIMIT} documents. Create a free account to add more - everything you've made stays with you.`,
         );
         navigate({ to: "/auth", search: { mode: "upgrade" } });
         return;
       }
       if (files.length > remaining) {
         toast.warning(
-          `Guest sessions can hold ${GUEST_DOCUMENT_LIMIT} documents — uploading the first ${remaining} of ${files.length}.`,
+          `Guest sessions can hold ${GUEST_DOCUMENT_LIMIT} documents - uploading the first ${remaining} of ${files.length}.`,
         );
         files = files.slice(0, remaining);
       }
@@ -519,7 +519,7 @@ export function LibraryPage() {
 
         if (item.chunks.length > 0) {
           // Save chunks immediately with no embedding. Embedding each chunk means
-          // a round trip to OpenAI per 96-chunk batch — on a big textbook that's
+          // a round trip to OpenAI per 96-chunk batch - on a big textbook that's
           // the bulk of the "saving" wait. We skip it here so saving is just the
           // DB inserts (near-instant), and let the background backfill below add
           // the vectors a few seconds later. Chunks stay keyword-searchable in
@@ -554,7 +554,7 @@ export function LibraryPage() {
         toast.success(
           savedCount === 1 ? `Added "${pendingBatch[0].fileName}"` : `Added ${savedCount} files`,
           // TEMP: show where the save time went. Remove with the timing code.
-          { description: `${Math.round(performance.now() - t0)}ms — ${timings.join(", ")}` },
+          { description: `${Math.round(performance.now() - t0)}ms - ${timings.join(", ")}` },
         );
         // Embed the just-saved chunks in the background so semantic search lights
         // up shortly after, without making the user wait for it. Fire-and-forget:
@@ -573,7 +573,7 @@ export function LibraryPage() {
 
       if (thenChat && firstDocId && pendingBatch.length === 1) {
         // Hand the new document to the chat as its search context and jump
-        // straight into a fresh conversation — "upload, then start chatting".
+        // straight into a fresh conversation - "upload, then start chatting".
         stageDocForChat(user.id, firstDocId);
         navigate({ to: "/app/chat", search: {} });
         return;
@@ -787,7 +787,7 @@ export function LibraryPage() {
                     : "Upload files"}
                 </div>
                 <div className="mt-1 text-sm text-muted-foreground">
-                  PDF, Word, PowerPoint, text, or image — pick several at once, drag & drop or tap to
+                  PDF, Word, PowerPoint, text, or image - pick several at once, drag & drop or tap to
                   browse
                 </div>
               </div>

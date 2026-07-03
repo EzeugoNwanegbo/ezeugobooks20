@@ -12,7 +12,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 
 // "upgrade" = a guest (anonymous) session attaching a real identity. The page
 // must NOT bounce them to the app, and must link credentials to the existing
-// user instead of signing up fresh — otherwise their guest work is orphaned.
+// user instead of signing up fresh - otherwise their guest work is orphaned.
 type AuthSearch = { mode?: "signup" | "signin" | "upgrade" };
 const AUTH_ACTION_TIMEOUT_MS = 20_000;
 const AUTH_CONFIG_ERROR =
@@ -83,7 +83,7 @@ function AuthFlow() {
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const native = isNativeApp();
-  // Guest session attaching a real identity — only valid while the anonymous
+  // Guest session attaching a real identity - only valid while the anonymous
   // session is alive; otherwise fall back to the normal sign-in form.
   const isUpgrade = mode === "upgrade" && Boolean(user?.is_anonymous);
 
@@ -157,7 +157,7 @@ function AuthFlow() {
       const supabase = await loadSupabase();
 
       if (isUpgrade) {
-        // Attach the email + password to the existing anonymous user — same
+        // Attach the email + password to the existing anonymous user - same
         // auth.uid(), so every document/chat the guest made stays theirs. The
         // email lands as "pending" until they click the confirmation link.
         const { error } = await withAuthTimeout(
@@ -170,7 +170,7 @@ function AuthFlow() {
         if (error) throw error;
         setPassword("");
         setAuthNotice(
-          `Almost done — we sent a confirmation link to ${trimmedEmail}. Click it to finish creating your account. Everything you made as a guest stays with you.`,
+          `Almost done - we sent a confirmation link to ${trimmedEmail}. Click it to finish creating your account. Everything you made as a guest stays with you.`,
         );
         toast.success("Check your email to confirm your account.");
       } else if (isSignup) {
@@ -185,7 +185,7 @@ function AuthFlow() {
         if (error) throw error;
 
         if (data.session) {
-          // Signed in immediately — hold the submitting state until navigation.
+          // Signed in immediately - hold the submitting state until navigation.
           keepSubmitting = true;
           toast.success("Welcome to G&D!");
         } else {
@@ -280,7 +280,7 @@ function AuthFlow() {
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
               {isUpgrade
-                ? "Add an email or Google account — everything from your guest session stays with you."
+                ? "Add an email or Google account - everything from your guest session stays with you."
                 : isSignup
                   ? "Join G&D and start studying smarter."
                   : "Sign in to continue your studies."}
@@ -327,7 +327,10 @@ function AuthFlow() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="email"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   className="mt-1 w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
                   placeholder="you@example.com"
                 />

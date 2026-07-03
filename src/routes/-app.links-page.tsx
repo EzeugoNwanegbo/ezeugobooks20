@@ -215,7 +215,7 @@ export function LinksPage() {
           Cross-Document Synthesis
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Select up to {MAX_DOCS} documents and G&amp;D's AI connects the dots — surfacing shared
+          Select up to {MAX_DOCS} documents and G&amp;D's AI connects the dots - surfacing shared
           themes that run across separate sources.
         </p>
 

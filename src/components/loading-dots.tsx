@@ -1,4 +1,4 @@
-// Three dots that bounce in a wave — the app's loading indicator, used in place
+// Three dots that bounce in a wave - the app's loading indicator, used in place
 // of a spinning ring. Dots inherit the current text colour (bg-current), so
 // dropping it inside a button or a `text-primary` wrapper just works.
 

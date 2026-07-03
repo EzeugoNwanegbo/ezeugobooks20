@@ -1,6 +1,6 @@
 // Remembers the last in-app section the user was on, so reopening the app
 // returns them where they left off instead of always dumping them on a fixed
-// landing screen. Only the section path is stored — the chat page restores its
+// landing screen. Only the section path is stored - the chat page restores its
 // own active conversation from its session cache.
 
 const KEY = "gd-last-route";
@@ -22,7 +22,7 @@ export function rememberRoute(path: string): void {
     const match = ALLOWED.find((route) => path === route || path.startsWith(`${route}/`));
     if (match) window.localStorage.setItem(KEY, match);
   } catch {
-    // localStorage may be unavailable in some embedded webviews — best effort.
+    // localStorage may be unavailable in some embedded webviews - best effort.
   }
 }
 

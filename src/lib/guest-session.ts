@@ -18,7 +18,7 @@ export function isGuestUser(user: User | null | undefined): boolean {
 }
 
 /**
- * Starts an anonymous Supabase session. Resolves once the session exists —
+ * Starts an anonymous Supabase session. Resolves once the session exists -
  * the AuthProvider listener picks it up and creates the profile, so callers
  * can simply navigate to /app (the shell routes new users to onboarding).
  * Throws with a readable message when anonymous sign-ins are disabled.
@@ -28,7 +28,7 @@ export async function startGuestSession(): Promise<void> {
   if (error) {
     throw new Error(
       error.message.toLowerCase().includes("disabled")
-        ? "Guest mode isn't available right now — please create a free account instead."
+        ? "Guest mode isn't available right now - please create a free account instead."
         : error.message,
     );
   }

@@ -90,7 +90,7 @@ export function SettingsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete account</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes your account and all associated data — documents,
+              This permanently deletes your account and all associated data - documents,
               conversations, study plans, and profile information. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

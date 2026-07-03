@@ -51,6 +51,6 @@ export function initNativeShell(): void {
       }
     })
     .catch(() => {
-      // Plugin not available (e.g. running on web) — ignore.
+      // Plugin not available (e.g. running on web) - ignore.
     });
 }

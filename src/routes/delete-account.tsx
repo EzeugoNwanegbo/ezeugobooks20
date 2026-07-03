@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/delete-account")({
   head: () => ({
     meta: [
-      { title: "Delete Account — G&D" },
+      { title: "Delete Account - G&D" },
       { name: "description", content: "How to delete your G&D account and all associated data." },
     ],
   }),
@@ -27,7 +27,7 @@ function DeleteAccountPage() {
         <h1 style={{ fontSize: "clamp(2rem, 5vw, 3.5rem)" }}>Delete your G&D account</h1>
         <p className="luxury-copy">
           You can permanently delete your G&D account and all associated data directly inside the
-          app. There is no waiting period — deletion happens immediately.
+          app. There is no waiting period - deletion happens immediately.
         </p>
       </section>
 

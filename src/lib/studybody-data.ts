@@ -103,7 +103,7 @@ export const STATUS_LABEL: Record<TopicRow["status"], string> = {
 };
 
 // A topic is only "mastered" after two recent practice sets both clear this
-// bar — one lucky set will not flip the roadmap to done.
+// bar - one lucky set will not flip the roadmap to done.
 export const MASTERY_THRESHOLD = 80;
 export const MASTERY_HISTORY = 3;
 
@@ -280,7 +280,7 @@ export async function loadStudyDocumentsSpanning(
       ChunkRow,
       "document_id" | "chunk_index" | "page_start" | "page_end" | "content"
     >[]) ?? [];
-  // No chunk rows (older uploads) — fall back to head-of-text excerpts.
+  // No chunk rows (older uploads) - fall back to head-of-text excerpts.
   if (error || rows.length === 0) return loadStudyDocuments(documentIds);
 
   const byDoc = new Map<string, typeof rows>();

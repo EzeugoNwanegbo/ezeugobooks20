@@ -24,6 +24,7 @@
     "@capacitor/app": "^8.1.0",
     "@capacitor/browser": "^8.0.3",
     "@capacitor/core": "^8.3.4",
+    "@capacitor/keyboard": "^8.0.5",
     "@capacitor/status-bar": "^8.0.2",
     "@hookform/resolvers": "^5.2.2",
     "@posthog/react": "^1.10.1",

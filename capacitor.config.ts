@@ -7,6 +7,14 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: "https",
   },
+  plugins: {
+    // Proper Android keyboard/IME handling. `resize: native` lets Android
+    // resize the window for the keyboard (adjustResize), which fixes focused
+    // WebView inputs not receiving text on Android 15.
+    Keyboard: {
+      resize: "native" as never,
+    },
+  },
 };
 
 export default config;

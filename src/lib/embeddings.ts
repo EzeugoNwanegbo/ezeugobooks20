@@ -67,7 +67,7 @@ export async function embedChunkContents(
 /**
  * One-time (idempotent) backfill: embed any of this user's chunks that are
  * missing a vector. Runs quietly in the background, one page at a time, and
- * stops on the first failure so it never spins. Safe to call on every load —
+ * stops on the first failure so it never spins. Safe to call on every load -
  * it no-ops once everything is embedded.
  */
 export async function backfillMissingEmbeddings(

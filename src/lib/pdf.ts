@@ -9,7 +9,7 @@ GlobalWorkerOptions.workerSrc = workerUrl;
 // pdfjs needs CMap + standard-font data files for many real-world PDFs
 // (anything with embedded subset fonts, non-Latin scripts, or exported from
 // Pages / Word / Acrobat). Without these, pdfjs throws during parse. We point
-// to the unpkg CDN — only the specific files a given PDF needs get fetched,
+// to the unpkg CDN - only the specific files a given PDF needs get fetched,
 // and they're small (a few KB each).
 const PDFJS_VERSION = "3.11.174";
 const CMAP_URL = `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/cmaps/`;
@@ -40,7 +40,7 @@ export async function extractPdfText(
       // the eval-backed code paths instead of relying on a newer release. Text
       // extraction does not need them; pdf.js falls back to its safe interpreter.
       isEvalSupported: false,
-      // Don't auto-prompt for passwords — surface a clear error instead.
+      // Don't auto-prompt for passwords - surface a clear error instead.
       password: "",
     }).promise;
     onStage?.("pdf:document-loaded");
@@ -72,7 +72,7 @@ export async function extractPdfText(
 
     return { text: out, pageCount };
   } catch (error) {
-    // Always log the raw error — invaluable when a future PDF fails.
+    // Always log the raw error - invaluable when a future PDF fails.
     console.error("extract pdf text", {
       name: file.name,
       type: file.type,
@@ -85,11 +85,11 @@ export async function extractPdfText(
 
     if (message === "__SCANNED_PDF__") {
       throw new Error(
-        "This PDF has no selectable text — it looks like a scanned document. Upload the pages as images instead (PNG/JPG), and we'll OCR them.",
+        "This PDF has no selectable text - it looks like a scanned document. Upload the pages as images instead (PNG/JPG), and we'll OCR them.",
       );
     }
 
-    // pdfjs throws named exceptions for these — match on .name first, then
+    // pdfjs throws named exceptions for these - match on .name first, then
     // fall back to message text since the legacy build sometimes loses the name.
     if (errAny?.name === "PasswordException" || /password/i.test(message)) {
       throw new Error(
@@ -105,7 +105,7 @@ export async function extractPdfText(
 
     if (errAny?.name === "MissingPDFException" || /missing pdf/i.test(message)) {
       throw new Error(
-        "Could not read this PDF — the file may not have finished downloading from iCloud. Open it in Files first to force a local copy, then try again.",
+        "Could not read this PDF - the file may not have finished downloading from iCloud. Open it in Files first to force a local copy, then try again.",
       );
     }
 
@@ -115,7 +115,7 @@ export async function extractPdfText(
       );
     }
 
-    // Unknown error — surface the underlying message so the user has
+    // Unknown error - surface the underlying message so the user has
     // something actionable to share with support.
     throw new Error(
       `Could not read this PDF in the browser${message ? `: ${message}` : ""}. Try opening it on a computer and re-saving as a standard PDF.`,

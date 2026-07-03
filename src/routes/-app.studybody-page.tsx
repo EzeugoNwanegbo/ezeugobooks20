@@ -100,7 +100,7 @@ export function StudyBodyPage() {
     try {
       // For a single-topic roadmap we pull only the chunks that match the topic
       // (same pinpoint extraction the chat uses), so the plan and every later
-      // question stays grounded on just that part of the file — with page refs.
+      // question stays grounded on just that part of the file - with page refs.
       const studyDocs = topicScoped
         ? await loadStudyDocuments(selectedDocIds, focus)
         : await loadStudyDocumentsSpanning(selectedDocIds, docs);
@@ -259,7 +259,7 @@ export function StudyBodyPage() {
                   />
                   <p className="text-xs text-muted-foreground">
                     We’ll pull only the pages about this topic, and every question and answer will
-                    stay grounded on them — with the page it came from.
+                    stay grounded on them - with the page it came from.
                   </p>
                 </>
               )}

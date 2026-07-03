@@ -27,9 +27,9 @@ function createSupabaseClient() {
         sessionStorage.setItem(testKey, "1");
         sessionStorage.removeItem(testKey);
         storage = sessionStorage;
-        console.warn("localStorage unavailable — using sessionStorage (auth will not persist across tabs)");
+        console.warn("localStorage unavailable - using sessionStorage (auth will not persist across tabs)");
       } catch {
-        console.warn("localStorage and sessionStorage both unavailable — auth will not persist");
+        console.warn("localStorage and sessionStorage both unavailable - auth will not persist");
         storage = undefined;
       }
     }

@@ -1,7 +1,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
 // Skeleton placeholders used instead of full-screen spinners. The app should
-// feel like it's already there and filling in — not like a page that is
+// feel like it's already there and filling in - not like a page that is
 // "loading". Each skeleton mirrors the real layout it stands in for.
 
 /** Content placeholder for a lazy app page rendered inside the shell Outlet. */

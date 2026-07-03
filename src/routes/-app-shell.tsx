@@ -65,7 +65,7 @@ function AppLayout() {
     if (loading) return;
     if (!user) navigate({ to: "/auth", replace: true });
     else if (profile && !profile.onboarded) navigate({ to: "/onboarding", replace: true });
-    // Bare /app has no child route — the shell renders with an empty Outlet
+    // Bare /app has no child route - the shell renders with an empty Outlet
     // ("incomplete chat page"). Land such visits on the chat screen.
     else if (location.pathname === "/app" || location.pathname === "/app/") {
       navigate({ to: "/app/chat", replace: true });
@@ -108,7 +108,7 @@ function AppLayout() {
     rememberRoute(location.pathname);
   }, [location.pathname]);
 
-  // My Coach and Practice are content-heavy — collapse the sidebar on entry so
+  // My Coach and Practice are content-heavy - collapse the sidebar on entry so
   // they get the full width. The user can still expand it with the toggle.
   useEffect(() => {
     if (
@@ -200,7 +200,7 @@ function AppLayout() {
   const onChat = location.pathname.startsWith("/app/chat");
 
   // Content edge-swipe: a right-swipe starting at the very left edge returns to
-  // Chat from any other screen (and opens the menu when already on Chat) — the
+  // Chat from any other screen (and opens the menu when already on Chat) - the
   // iOS-style "back to the core experience" gesture, no button press needed.
   const onContentTouchStart = (event: React.TouchEvent) => {
     const touch = event.touches[0];
@@ -242,10 +242,10 @@ function AppLayout() {
     return (
       <Link
         to={to}
-        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+        className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
           active
-            ? "border border-primary/15 bg-primary/10 text-foreground"
-            : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
+            ? "bg-primary/10 text-foreground shadow-[inset_2px_0_0_var(--primary)]"
+            : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
         } ${isSidebarCollapsed ? "justify-center" : ""}`}
         title={isSidebarCollapsed ? label : undefined}
       >
@@ -261,7 +261,7 @@ function AppLayout() {
     if (
       isGuest &&
       !window.confirm(
-        "You're in a guest session — signing out permanently loses your documents and chats. Create a free account first to keep them.\n\nSign out anyway?",
+        "You're in a guest session - signing out permanently loses your documents and chats. Create a free account first to keep them.\n\nSign out anyway?",
       )
     ) {
       return false;
@@ -288,7 +288,7 @@ function AppLayout() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete account</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes your account and all associated data — documents,
+              This permanently deletes your account and all associated data - documents,
               conversations, study plans, and profile information. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -308,9 +308,6 @@ function AppLayout() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <div className="symbiote-blob app-blob-one" />
-      <div className="symbiote-blob app-blob-two" />
-
       {isSidebarHidden && (
         <button
           onClick={() => setIsSidebarHidden(false)}
@@ -322,11 +319,11 @@ function AppLayout() {
       )}
 
       <aside
-        className={`${isSidebarHidden ? "hidden" : "hidden md:flex"} flex-col border-r border-border bg-background/75 backdrop-blur transition-[width] duration-300 md:shrink-0 ${isSidebarCollapsed ? "md:w-20 xl:w-20" : "md:w-56 xl:w-64"}`}
+        className={`${isSidebarHidden ? "hidden" : "hidden md:flex"} flex-col border-r border-border/70 bg-background transition-[width] duration-300 md:shrink-0 ${isSidebarCollapsed ? "md:w-20 xl:w-20" : "md:w-56 xl:w-64"}`}
       >
         <div
-          className={`flex items-center border-b border-border ${
-            isSidebarCollapsed ? "justify-center p-4" : "justify-between p-5"
+          className={`flex items-center ${
+            isSidebarCollapsed ? "justify-center px-4 py-5" : "justify-between px-5 py-6"
           }`}
         >
           {!isSidebarCollapsed && (
@@ -337,7 +334,7 @@ function AppLayout() {
           <div className="flex items-center gap-1">
             <button
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
               title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
               {isSidebarCollapsed ? (
@@ -348,29 +345,33 @@ function AppLayout() {
             </button>
             <button
               onClick={() => setIsSidebarHidden(true)}
-              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
               title="Hide sidebar"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
         </div>
-        <nav className="flex-1 space-y-1 p-3">
-          {navItem("/app/chat", <MessageSquare className="h-4 w-4 shrink-0" />, "Chat")}
-          {navItem("/app/library", <BookOpen className="h-4 w-4 shrink-0" />, "Library")}
-          {navItem("/app/links", <Link2 className="h-4 w-4 shrink-0" />, "Links")}
-          {navItem("/app/history", <Clock className="h-4 w-4 shrink-0" />, "History")}
-          {navItem("/app/studybody", <Map className="h-4 w-4 shrink-0" />, "My Coach")}
-          {navItem("/app/feedback", <Heart className="h-4 w-4 shrink-0" />, "Feedback")}
-          {navItem("/app/settings", <Settings className="h-4 w-4 shrink-0" />, "Settings")}
+        <nav className="flex-1 space-y-6 px-3 py-2">
+          <div className="space-y-1">
+            {navItem("/app/chat", <MessageSquare className="h-4 w-4 shrink-0" />, "Chat")}
+            {navItem("/app/library", <BookOpen className="h-4 w-4 shrink-0" />, "Library")}
+            {navItem("/app/links", <Link2 className="h-4 w-4 shrink-0" />, "Links")}
+            {navItem("/app/history", <Clock className="h-4 w-4 shrink-0" />, "History")}
+          </div>
+          <div className="space-y-1 border-t border-border/60 pt-5">
+            {navItem("/app/studybody", <Map className="h-4 w-4 shrink-0" />, "My Coach")}
+            {navItem("/app/feedback", <Heart className="h-4 w-4 shrink-0" />, "Feedback")}
+            {navItem("/app/settings", <Settings className="h-4 w-4 shrink-0" />, "Settings")}
+          </div>
         </nav>
         <div
-          className={`border-t border-border ${
-            isSidebarCollapsed ? "flex flex-col items-center gap-3 p-3" : "p-3"
+          className={`border-t border-border/70 ${
+            isSidebarCollapsed ? "flex flex-col items-center gap-3 p-4" : "p-4"
           }`}
         >
           {!isSidebarCollapsed && (
-            <div className="mb-1 px-3 py-2">
+            <div className="mb-3 px-2">
               <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
               <div className="truncate text-xs text-muted-foreground">
                 {[profile.year, profile.university].filter(Boolean).join(" - ")}
@@ -384,7 +385,7 @@ function AppLayout() {
             onClick={async () => {
               if (await confirmAndSignOut()) navigate({ to: "/" });
             }}
-            className={`flex items-center text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground ${
+            className={`flex items-center text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground ${
               isSidebarCollapsed
                 ? "justify-center rounded-lg p-2"
                 : "w-full gap-3 rounded-lg px-3 py-2 text-sm font-medium"
@@ -396,7 +397,7 @@ function AppLayout() {
           </button>
           <button
             onClick={() => setShowDeleteDialog(true)}
-            className={`flex items-center text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-destructive ${
+            className={`flex items-center text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-destructive ${
               isSidebarCollapsed
                 ? "justify-center rounded-lg p-2"
                 : "w-full gap-3 rounded-lg px-3 py-2 text-sm font-medium"
@@ -410,7 +411,7 @@ function AppLayout() {
       </aside>
 
       <div
-        className="mobile-app-topbar sticky top-0 z-[60] flex shrink-0 items-center justify-between border-b border-border bg-background px-3 shadow-[0_10px_24px_rgba(0,0,0,0.18)] md:hidden"
+        className="mobile-app-topbar sticky top-0 z-[60] flex shrink-0 items-center justify-between border-b border-border/70 bg-background px-3 md:hidden"
         style={{
           height: "calc(3rem + env(safe-area-inset-top))",
           paddingTop: "env(safe-area-inset-top)",
@@ -419,7 +420,7 @@ function AppLayout() {
         <button
           type="button"
           onClick={() => setMobileMenuOpen((open) => !open)}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-primary/25 bg-surface text-foreground"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
           aria-expanded={mobileMenuOpen}
           aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
           title={mobileMenuOpen ? "Close menu" : "Menu"}
@@ -432,7 +433,7 @@ function AppLayout() {
         <button
           type="button"
           onClick={openNewChat}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-surface text-foreground"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
           aria-label="New chat"
           title="New chat"
         >
@@ -441,7 +442,7 @@ function AppLayout() {
       </div>
 
       <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        {/* Backdrop — tap outside the drawer to close it. */}
+        {/* Backdrop - tap outside the drawer to close it. */}
         <div
           onClick={() => setMobileMenuOpen(false)}
           aria-hidden="true"
@@ -453,18 +454,18 @@ function AppLayout() {
           onTouchStart={onDrawerTouchStart}
           onTouchEnd={onDrawerTouchEnd}
           aria-hidden={!mobileMenuOpen}
-          className={`fixed inset-y-0 left-0 z-50 flex w-[78vw] max-w-[18rem] flex-col overflow-y-auto border-r border-[#2a2a26] bg-[#060606] px-2.5 pb-3 text-[#e4e4cc] shadow-[18px_0_36px_rgba(0,0,0,0.44)] transition-transform duration-200 ease-out will-change-transform md:hidden ${
+          className={`fixed inset-y-0 left-0 z-50 flex w-[78vw] max-w-[18rem] flex-col overflow-y-auto border-r border-border/70 bg-background px-4 pb-4 text-foreground shadow-[18px_0_36px_rgba(0,0,0,0.22)] transition-transform duration-200 ease-out will-change-transform md:hidden ${
             mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
           }`}
           style={{ paddingTop: "calc(3rem + env(safe-area-inset-top) + 0.5rem)" }}
         >
-          <div className="flex w-full flex-col gap-2">
-            <div className="flex items-center justify-between pb-0.5">
+          <div className="flex w-full flex-col gap-6">
+            <div className="flex items-center justify-between">
               <span className="luxury-brand-text small">G&D</span>
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(false)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#2a2a26] text-[#e4e4cc]"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
                 aria-label="Close menu"
               >
                 <X className="h-4 w-4" />
@@ -474,14 +475,14 @@ function AppLayout() {
               <button
                 type="button"
                 onClick={openNewChat}
-                className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#e4e4cc] px-3 py-2 text-sm font-bold text-[#060606] shadow-[0_12px_32px_rgba(228,228,204,0.12)]"
+                className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-border/70 px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:border-primary/35 hover:bg-foreground/[0.04]"
               >
                 <Plus className="h-3.5 w-3.5" />
                 New chat
               </button>
             </div>
 
-            <nav className="grid gap-1.5">
+            <nav className="grid gap-1">
               <MobileDrawerNavItem
                 active={location.pathname.includes("chat")}
                 icon={<MessageSquare className="h-3.5 w-3.5" />}
@@ -526,16 +527,16 @@ function AppLayout() {
               />
             </nav>
 
-            <div className="border-t border-[#2a2a26] pt-2">
-              <p className="text-center text-[10px] font-bold uppercase tracking-wide text-[#b6b4ab]">
+            <div className="border-t border-border/70 pt-5">
+              <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Chat history
               </p>
               {mobileConvos.length === 0 ? (
-                <p className="py-1.5 text-center text-xs font-medium text-[#b6b4ab]">
+                <p className="px-1 py-2 text-xs text-muted-foreground">
                   No chats yet.
                 </p>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-4">
                   <MobileConvoGroup
                     title="Today"
                     items={groupedMobileConvos.today}
@@ -558,15 +559,15 @@ function AppLayout() {
               )}
             </div>
 
-            <div className="border-t border-[#2a2a26] pt-2">
-              <div className="mb-1 px-1 text-left">
+            <div className="border-t border-border/70 pt-5">
+              <div className="mb-3 px-1 text-left">
                 <div className="truncate text-xs font-semibold">{profile.name || "Student"}</div>
-                <div className="truncate text-[11px] text-[#b6b4ab]">
+                <div className="truncate text-[11px] text-muted-foreground">
                   {[profile.year, profile.university].filter(Boolean).join(" - ")}
                 </div>
               </div>
-              <div className="mb-1 flex w-full items-center justify-between rounded-lg px-1 py-1">
-                <span className="text-xs font-semibold text-[#e4e4cc]">Appearance</span>
+              <div className="mb-2 flex w-full items-center justify-between px-1 py-1">
+                <span className="text-xs font-semibold text-foreground">Appearance</span>
                 <ThemeToggle />
               </div>
               <button
@@ -576,7 +577,7 @@ function AppLayout() {
                   setMobileMenuOpen(false);
                   navigate({ to: "/" });
                 }}
-                className="flex w-full items-center gap-2.5 rounded-lg px-1 py-1.5 text-xs font-semibold text-[#e4e4cc] hover:bg-[#1b1b19]"
+                className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
               >
                 <LogOut className="h-3.5 w-3.5" />
                 Sign out
@@ -587,7 +588,7 @@ function AppLayout() {
                   setMobileMenuOpen(false);
                   setShowDeleteDialog(true);
                 }}
-                className="flex w-full items-center gap-2.5 rounded-lg px-1 py-1.5 text-xs font-semibold text-red-400 hover:bg-[#1b1b19]"
+                className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-destructive"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Delete account
@@ -607,7 +608,7 @@ function AppLayout() {
               search={{ mode: "upgrade" }}
               className="z-10 block shrink-0 border-b border-primary/20 bg-primary/10 px-4 py-2 text-center text-xs font-medium text-foreground transition-colors hover:bg-primary/15"
             >
-              You're exploring as a guest — <span className="underline">create a free account</span>{" "}
+              You're exploring as a guest - <span className="underline">create a free account</span>{" "}
               to keep your documents and chats.
             </Link>
           )}
@@ -633,10 +634,10 @@ function MobileDrawerNavItem({
     <button
       type="button"
       onClick={onPick}
-      className={`flex min-h-10 w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-bold transition-colors ${
+      className={`flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors ${
         active
-          ? "border border-[#e4e4cc] bg-[#e4e4cc] text-[#060606] shadow-[0_12px_28px_rgba(228,228,204,0.12)]"
-          : "border border-[#b6b4ab] bg-[#e4e4cc] text-[#060606] shadow-[0_8px_22px_rgba(0,0,0,0.24)] hover:bg-white"
+          ? "bg-primary/10 text-foreground shadow-[inset_2px_0_0_var(--primary)]"
+          : "text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
       }`}
     >
       {icon}
@@ -660,22 +661,30 @@ function MobileConvoGroup({
 
   return (
     <section className="w-full">
-      <p className="px-1 pb-0.5 text-[10px] font-bold uppercase tracking-wide text-[#b6b4ab]">
+      <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         {title}
       </p>
-      <div className="space-y-1">
+      <div className="divide-y divide-border/50">
         {items.map((item) => (
           <button
             key={item.id}
             type="button"
             onClick={() => onPick(item.id)}
-            className={`w-full rounded-lg border px-3 py-1.5 text-left text-xs font-semibold transition-colors ${
+            className={`w-full px-1 py-2.5 text-left text-xs transition-colors ${
               activeId === item.id
-                ? "border-[#e4e4cc] bg-[#e4e4cc] text-[#060606]"
-                : "border-[#2a2a26] bg-[#1b1b19] text-[#e4e4cc] hover:border-[#b6b4ab]"
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <span className="block truncate">{item.title || "New conversation"}</span>
+            <span className="block truncate font-medium">{item.title || "New conversation"}</span>
+            {item.updated_at && (
+              <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                {new Date(item.updated_at).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                })}
+              </span>
+            )}
           </button>
         ))}
       </div>

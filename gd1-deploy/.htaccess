@@ -1,0 +1,18 @@
+Options -MultiViews
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [L]
+
+<IfModule mod_headers.c>
+  # Entry point: always revalidate so every deploy is live for everyone
+  # immediately — no "clear your cache" support cases.
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+  </FilesMatch>
+  # Root-level non-hashed files (favicons etc.) change in place across
+  # deploys, so keep their cache short.
+  <FilesMatch "\.(ico|png|svg|txt|webmanifest)$">
+    Header set Cache-Control "public, max-age=3600"
+  </FilesMatch>
+</IfModule>

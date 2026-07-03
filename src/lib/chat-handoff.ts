@@ -15,7 +15,7 @@ export function stageDocForChat(userId: string, docId: string): void {
   try {
     window.localStorage.setItem(key(userId), docId);
   } catch {
-    // localStorage can be unavailable in some embedded webviews — best effort.
+    // localStorage can be unavailable in some embedded webviews - best effort.
   }
 }
 

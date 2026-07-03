@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/privacy")({
   head: () => ({
     meta: [
-      { title: "Privacy Policy — G&D" },
+      { title: "Privacy Policy - G&D" },
       { name: "description", content: "Privacy policy for the G&D study app." },
     ],
   }),
@@ -137,7 +137,7 @@ function PrivacyPage() {
           </table>
           <p style={{ marginTop: "0.75rem" }}>
             Raw PDF files are processed entirely in your browser using Tesseract.js. Only the
-            extracted text is sent to our servers — the original file is never uploaded.
+            extracted text is sent to our servers - the original file is never uploaded.
           </p>
         </Section>
 
@@ -161,7 +161,7 @@ function PrivacyPage() {
           </p>
           <ul style={{ paddingLeft: "1.25rem", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
             <li>
-              <strong>Supabase</strong> — our backend provider. Stores your account, profile,
+              <strong>Supabase</strong> - our backend provider. Stores your account, profile,
               documents, conversations, and study data. Data is encrypted at rest and in transit.
               See{" "}
               <a
@@ -175,7 +175,7 @@ function PrivacyPage() {
               .
             </li>
             <li>
-              <strong>DeepSeek</strong> — AI provider used for document retrieval and drafting
+              <strong>DeepSeek</strong> - AI provider used for document retrieval and drafting
               answers. Your study profile and relevant document excerpts are sent with each
               request. See{" "}
               <a
@@ -189,7 +189,7 @@ function PrivacyPage() {
               .
             </li>
             <li>
-              <strong>OpenAI</strong> — AI provider used for final answer styling and web search.
+              <strong>OpenAI</strong> - AI provider used for final answer styling and web search.
               Your study profile and DeepSeek's draft are sent with each request. See{" "}
               <a
                 href="https://openai.com/policies/privacy-policy"
@@ -202,7 +202,7 @@ function PrivacyPage() {
               .
             </li>
             <li>
-              <strong>Google</strong> — if you sign in with Google, Google shares your name and
+              <strong>Google</strong> - if you sign in with Google, Google shares your name and
               email address with us via OAuth. See{" "}
               <a
                 href="https://policies.google.com/privacy"
@@ -220,7 +220,7 @@ function PrivacyPage() {
         <Section title="5. Data security">
           <p>
             All data is transmitted over HTTPS. Your data is stored in Supabase, which encrypts
-            data at rest. Access to your data is restricted by row-level security policies —
+            data at rest. Access to your data is restricted by row-level security policies -
             you can only read and write your own records. Authentication uses industry-standard
             JWT tokens.
           </p>
@@ -229,8 +229,8 @@ function PrivacyPage() {
         <Section title="6. Data retention">
           <p>
             We retain your data for as long as your account is active. If you delete your account,
-            all associated data — profile, documents, conversations, study plans, and
-            authentication credentials — is permanently and immediately deleted with no retention
+            all associated data - profile, documents, conversations, study plans, and
+            authentication credentials - is permanently and immediately deleted with no retention
             period. See our{" "}
             <Link to="/delete-account" style={{ textDecoration: "underline" }}>
               account deletion page
@@ -243,19 +243,19 @@ function PrivacyPage() {
           <p style={{ marginBottom: "0.6rem" }}>You have the right to:</p>
           <ul style={{ paddingLeft: "1.25rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
             <li>
-              <strong>Delete your account and all data</strong> — from within the app (menu →
+              <strong>Delete your account and all data</strong> - from within the app (menu →
               Delete account) or by emailing us
             </li>
             <li>
-              <strong>Delete specific data</strong> — delete individual documents, conversations,
+              <strong>Delete specific data</strong> - delete individual documents, conversations,
               or messages from within the app at any time
             </li>
             <li>
-              <strong>Access your data</strong> — email us and we will provide a copy of the
+              <strong>Access your data</strong> - email us and we will provide a copy of the
               personal data we hold about you
             </li>
             <li>
-              <strong>Correct your data</strong> — update your profile from within the app
+              <strong>Correct your data</strong> - update your profile from within the app
             </li>
           </ul>
           <p style={{ marginTop: "0.75rem" }}>

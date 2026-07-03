@@ -71,13 +71,13 @@ function gradePoints(grade: Grade | undefined): number {
 }
 
 function optionLabel(question: QuestionRow, optionId: string | undefined): string {
-  if (!optionId) return "—";
+  if (!optionId) return "-";
   const match = (question.options ?? []).find((option) => option.id === optionId);
   return match ? `${match.id}. ${match.text}` : optionId;
 }
 
 function formatDuration(seconds: number | null | undefined): string {
-  if (seconds == null) return "—";
+  if (seconds == null) return "-";
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
@@ -95,7 +95,7 @@ function SourceOrWarn({ question }: { question: QuestionRow }) {
   return (
     <p className="mt-2 flex items-start gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-xs font-medium text-amber-600 break-words dark:text-amber-400">
       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-      <span className="min-w-0">Not found in your material — answer with caution.</span>
+      <span className="min-w-0">Not found in your material - answer with caution.</span>
     </p>
   );
 }
@@ -632,7 +632,7 @@ function ConfigView({ planId }: { planId: string }) {
                           </span>
                           <span className="text-[11px] text-muted-foreground">
                             {TYPE_LABEL[resumable.questionType]} ·{" "}
-                            {resumable.answered}/{resumable.total} answered — no new questions
+                            {resumable.answered}/{resumable.total} answered - no new questions
                           </span>
                         </span>
                       </span>
@@ -740,7 +740,7 @@ function ConfigView({ planId }: { planId: string }) {
                       </div>
                       {difficulty === "hard" && (
                         <p className="mt-1.5 text-[11px] text-muted-foreground">
-                          Hard pushes you with tough, multi-step questions — but every one stays
+                          Hard pushes you with tough, multi-step questions - but every one stays
                           answerable from your uploaded files.
                         </p>
                       )}
@@ -1006,7 +1006,7 @@ function SessionView({
         const modeSession =
           sessionRow.question_type === "mcq" || sessionRow.question_type === "mixed";
         if (modeSession && sessionRow.status === "completed") {
-          // Reopened a finished set — rebuild answers + grades from saved rows.
+          // Reopened a finished set - rebuild answers + grades from saved rows.
           const { data: answerData } = await db
             .from("study_answers")
             .select("question_id, answer, is_correct, score, feedback")
@@ -1033,7 +1033,7 @@ function SessionView({
           if (typeof fb?.time_taken_seconds === "number") setElapsedSec(fb.time_taken_seconds);
           if (fb?.review) setReview(fb.review);
         } else if (sessionRow.status !== "completed") {
-          // Resuming an unfinished set — restore the autosaved draft so the
+          // Resuming an unfinished set - restore the autosaved draft so the
           // student lands exactly where they stopped.
           const fb = sessionRow.feedback as {
             draftAnswers?: Record<string, string>;
@@ -1161,7 +1161,7 @@ function SessionView({
       setReview(result);
       setCompleted(true);
       toast.success(
-        mastered ? `${topicTitle || "Topic"} mastered!` : "Practice reviewed — keep going.",
+        mastered ? `${topicTitle || "Topic"} mastered!` : "Practice reviewed - keep going.",
       );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not review answers");
@@ -1287,7 +1287,7 @@ function SessionView({
       setElapsedSec(elapsed);
       if (review) setReview(review);
       const result = await persistResults(map, review, elapsed);
-      toast.success(result?.mastered ? `${topicTitle || "Topic"} mastered!` : "Saved — nice work.");
+      toast.success(result?.mastered ? `${topicTitle || "Topic"} mastered!` : "Saved - nice work.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save results");
     } finally {
@@ -1561,7 +1561,7 @@ function SessionView({
                                   </span>
                                   {question.question_type === "mcq"
                                     ? optionLabel(question, answers[question.id])
-                                    : answers[question.id] || "—"}
+                                    : answers[question.id] || "-"}
                                 </span>
                               </p>
                               <AnswerFeedback question={question} grade={grades[question.id]} />
@@ -1571,7 +1571,7 @@ function SessionView({
                       </div>
                     ) : (
                       <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 text-center text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                        Perfect score — every question correct. 🎉
+                        Perfect score - every question correct. 🎉
                       </div>
                     )}
 
@@ -1748,7 +1748,7 @@ function SessionView({
                       <p className="mt-2 flex items-start gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-xs font-medium text-amber-600 break-words dark:text-amber-400">
                         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                         <span className="min-w-0">
-                          Not found in your material — answer with caution.
+                          Not found in your material - answer with caution.
                         </span>
                       </p>
                     )}

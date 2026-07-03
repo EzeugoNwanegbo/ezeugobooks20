@@ -1,0 +1,1 @@
+const e="gd-chat-pending-doc";function o(t){return`${e}:${t}`}function a(t,n){try{window.localStorage.setItem(o(t),n)}catch{}}function c(t){try{const n=window.localStorage.getItem(o(t));return n&&window.localStorage.removeItem(o(t)),n||null}catch{return null}}export{a as s,c as t};

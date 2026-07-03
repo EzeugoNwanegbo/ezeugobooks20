@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 
-// The founder's story — shown beneath the auth panel and the onboarding
+// The founder's story - shown beneath the auth panel and the onboarding
 // questions. Collapsed by default so it never pushes the form below the fold;
 // expanding is a deliberate act by readers who want the "why".
 export function FounderStory({ className = "" }: { className?: string }) {
@@ -39,7 +39,7 @@ export function FounderStory({ className = "" }: { className?: string }) {
             Then he asked something that sounded simple: <em className="text-foreground">"Define accommodation."</em>
           </p>
           <p>
-            I answered confidently — and I was wrong. I'd described <em>acclimatization</em>{" "}
+            I answered confidently - and I was wrong. I'd described <em>acclimatization</em>{" "}
             instead. He shook his head. "That's wrong."
           </p>
           <p>
@@ -50,14 +50,14 @@ export function FounderStory({ className = "" }: { className?: string }) {
           </p>
           <p className="font-medium text-foreground">Five minutes. That was all I had.</p>
           <p>
-            I rushed out and opened my copy of <em>Essential Physiology</em> — over 1,300 pages.
+            I rushed out and opened my copy of <em>Essential Physiology</em> - over 1,300 pages.
             I flipped, scrolled, searched, panicked. Every second felt like a minute. I knew
             that if I walked back in without the answer, I'd fail.
           </p>
           <p>
             I even tried an AI chatbot. But because I was already confusing the two terms, it
             kept confidently explaining the wrong concept. It couldn't point me to the exact
-            passage in my textbook — the one thing I actually needed. The clock kept ticking.
+            passage in my textbook - the one thing I actually needed. The clock kept ticking.
           </p>
           <p>
             Then a lecturer passing by saw me struggling, asked what was wrong, and pointed me
@@ -66,13 +66,13 @@ export function FounderStory({ className = "" }: { className?: string }) {
           </p>
           <p>
             But walking home that day, one thought wouldn't leave me: what if he hadn't been
-            there? What about the thousands of students facing this every day — carrying
+            there? What about the thousands of students facing this every day - carrying
             massive textbooks, losing marks not because they didn't have the information, but
             because they couldn't find it fast enough?
           </p>
           <p>
-            That's why I built G&amp;D. An AI that reads your actual textbooks — all 1,300
-            pages — and finds the exact page, diagram, or explanation in seconds. Not a chatbot
+            That's why I built G&amp;D. An AI that reads your actual textbooks - all 1,300
+            pages - and finds the exact page, diagram, or explanation in seconds. Not a chatbot
             guessing from memory, but answers pulled straight from your material, with the
             source shown so you can trust it.
           </p>

@@ -2,7 +2,7 @@ import { Copy, Heart, Send } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-// Feedback is delivered by opening the user's email app (mailto) — no backend
+// Feedback is delivered by opening the user's email app (mailto) - no backend
 // or database table required. The address is also shown and copyable so people
 // can still reach us if their device has no mail app configured.
 const CONTACT_EMAIL = "nwanegboezeugo@gmail.com";
@@ -23,7 +23,7 @@ export function FeedbackPage() {
     }
     const who = name.trim() ? ` from ${name.trim()}` : "";
     const subject = `G&D ${type}${who}`;
-    const body = `${trimmed}\n\n— Sent from G&D`;
+    const body = `${trimmed}\n\n- Sent from G&D`;
     window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(
       subject,
     )}&body=${encodeURIComponent(body)}`;
@@ -34,7 +34,7 @@ export function FeedbackPage() {
       await navigator.clipboard.writeText(CONTACT_EMAIL);
       toast.success("Email address copied");
     } catch {
-      toast.error(`Could not copy — email us at ${CONTACT_EMAIL}`);
+      toast.error(`Could not copy - email us at ${CONTACT_EMAIL}`);
     }
   };
 

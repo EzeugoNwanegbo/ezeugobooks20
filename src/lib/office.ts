@@ -2,7 +2,7 @@
 // just ZIP archives of XML, so we unzip with fflate and pull the visible text
 // runs out of the document/slide XML. We only need raw text for search and
 // chunking, so formatting is intentionally discarded. Legacy binary .doc/.ppt
-// are NOT handled here — they need heavy tooling and are rejected upstream.
+// are NOT handled here - they need heavy tooling and are rejected upstream.
 
 function decodeXmlEntities(input: string): string {
   return input

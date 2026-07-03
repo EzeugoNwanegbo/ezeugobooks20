@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import { useAuth, type Profile } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
@@ -43,16 +43,64 @@ import {
   Play,
   RotateCcw,
   Layers,
+  Mic,
+  Volume2,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { LoadingDots } from "@/components/loading-dots";
 
 type ChatSearch = { c?: string };
 type MessageSource = "library" | "general" | "interlink" | "visuals";
 
+type BrowserSpeechRecognition = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onresult:
+    | ((event: {
+        resultIndex: number;
+        results: ArrayLike<{
+          isFinal: boolean;
+          0: { transcript: string };
+        }>;
+      }) => void)
+    | null;
+  start: () => void;
+  stop: () => void;
+};
+
+type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+
+type SpeechWindow = Window &
+  typeof globalThis & {
+    SpeechRecognition?: BrowserSpeechRecognitionConstructor;
+    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
+  };
+
 type DisplayMessage = ChatMessage & {
   source?: MessageSource;
   model?: string;
   webSources?: WebSource[];
+};
+
+type InlineThread = {
+  id: string;
+  selectedText: string;
+  prompt: string;
+  response: string;
+  collapsed: boolean;
+  loading: boolean;
+  error?: string;
+};
+
+type InlineComposerState = {
+  selectedText: string;
+  top: number;
+  left: number;
 };
 
 type ConversationRow = {
@@ -502,7 +550,7 @@ function looksCasualMessage(content: string): boolean {
 
 // Not every message is a "search my textbook" request. Greetings, chit-chat,
 // and follow-ups about the previous answer should be handled like a normal
-// conversation — the chat history is already in context, so there's no need to
+// conversation - the chat history is already in context, so there's no need to
 // run a fresh document search. We still search whenever the user explicitly
 // points at their material (see explicitlyNeedsLibrary) or hand-picks files.
 function looksConversational(content: string, messages: DisplayMessage[]): boolean {
@@ -588,14 +636,31 @@ export function ChatPage() {
   // library row, multi-line input). Track it so the message list can reserve
   // exactly enough space and never hide the end of the last answer.
   const [composerHeight, setComposerHeight] = useState(0);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [listening, setListening] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const transcriptBaseRef = useRef("");
   const chatAbortRef = useRef<AbortController | null>(null);
   const activeSendConversationRef = useRef<string | null>(null);
   const restoredOwnerRef = useRef<string | null>(null);
   const latestSessionRef = useRef<PersistedChatSession | null>(null);
   const persistTimerRef = useRef<number | null>(null);
   const previousPersistConversationRef = useRef<string | null>(conversationId ?? null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const speechWindow = window as SpeechWindow;
+    setSpeechSupported(Boolean(speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition));
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+      if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+    };
+  }, []);
 
   // Load library docs (with folder names)
   useEffect(() => {
@@ -668,7 +733,7 @@ export function ChatPage() {
     if (conversationId) navigate({ to: "/app/chat", search: {} });
     const attached = docs.find((doc) => doc.id === docId);
     toast(`Attached "${attached?.file_name ?? "your file"}"`, {
-      description: "Ask anything about it — answers will cite this file.",
+      description: "Ask anything about it - answers will cite this file.",
     });
   }, [user, docsLoaded, docs, conversationId, navigate]);
 
@@ -941,6 +1006,61 @@ export function ChatPage() {
     controller.abort();
   };
 
+  const toggleVoiceInput = () => {
+    if (!speechSupported || typeof window === "undefined") return;
+
+    if (listening) {
+      recognitionRef.current?.stop();
+      setListening(false);
+      return;
+    }
+
+    const speechWindow = window as SpeechWindow;
+    const Recognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+    if (!Recognition) {
+      toast.error("Voice input is not supported in this browser.");
+      return;
+    }
+
+    const recognition = new Recognition();
+    transcriptBaseRef.current = input.trim();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.onstart = () => setListening(true);
+    recognition.onend = () => setListening(false);
+    recognition.onerror = (event) => {
+      setListening(false);
+      toast.error(
+        event.error === "not-allowed"
+          ? "Microphone access was blocked. Allow the microphone and try again."
+          : "Voice input stopped. Try again.",
+      );
+    };
+    recognition.onresult = (event) => {
+      let finalTranscript = "";
+      let interimTranscript = "";
+
+      for (let index = 0; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const transcript = result[0]?.transcript ?? "";
+        if (result.isFinal) finalTranscript += transcript;
+        else interimTranscript += transcript;
+      }
+
+      const spoken = `${finalTranscript} ${interimTranscript}`.trim();
+      const base = transcriptBaseRef.current;
+      setInput([base, spoken].filter(Boolean).join(" ").trimStart());
+    };
+
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch {
+      setListening(false);
+    }
+  };
+
   const ensureConversation = async (firstUserContent: string): Promise<string | null> => {
     if (!user) return "guest";
     if (conversationId) return conversationId;
@@ -988,7 +1108,7 @@ export function ChatPage() {
     const terms = queryTerms(`${content} ${recentChat}`);
 
     // Embed the question so retrieval ranks by meaning, not just shared words.
-    // Returns null if the embedding service is down — the hybrid RPC then falls
+    // Returns null if the embedding service is down - the hybrid RPC then falls
     // back to keyword-only ranking, so search still works.
     const queryEmbedding = await embedQuery(content);
 
@@ -1437,18 +1557,18 @@ export function ChatPage() {
   }, [convos]);
 
   return (
-    <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-background/50 min-w-0">
+    <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-background min-w-0">
       {/* Conversations sidebar */}
       <aside
-        className={`hidden lg:flex min-h-0 flex-col border-r border-border bg-background/55 backdrop-blur transition-[width] duration-300 ${sidebarOpen ? "w-64" : "w-16"}`}
+        className={`hidden lg:flex min-h-0 flex-col border-r border-border/70 bg-background transition-[width] duration-300 ${sidebarOpen ? "w-72" : "w-16"}`}
       >
         <div
-          className={`p-3 border-b border-border flex justify-center ${sidebarOpen ? "" : "px-2"}`}
+          className={`flex justify-center px-3 py-4 ${sidebarOpen ? "" : "px-2"}`}
         >
           <button
             onClick={newChat}
-            className={`flex items-center gap-2 rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow hover:opacity-95 transition-all ${
-              sidebarOpen ? "w-full px-3 py-2 text-sm" : "h-10 w-10 justify-center p-0"
+            className={`flex items-center gap-2 rounded-xl border border-border/70 text-foreground transition-all hover:border-primary/35 hover:bg-foreground/[0.04] ${
+              sidebarOpen ? "w-full px-3 py-2.5 text-sm font-medium" : "h-10 w-10 justify-center p-0"
             }`}
             title="New chat"
           >
@@ -1456,10 +1576,10 @@ export function ChatPage() {
             {sidebarOpen && <span>New chat</span>}
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-2 space-y-4 overflow-x-hidden">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden px-3 pb-4 pt-2">
           {convos.length === 0 ? (
             sidebarOpen && (
-              <div className="text-xs text-muted-foreground px-3 py-6 text-center">
+              <div className="px-2 py-6 text-sm leading-relaxed text-muted-foreground">
                 {isGuest ? "Guest chats are not saved." : "Your past chats will appear here."}
               </div>
             )
@@ -1497,13 +1617,13 @@ export function ChatPage() {
       {/* Main column */}
       <div className="relative flex min-h-0 flex-1 flex-col min-w-0">
         {/* Header */}
-        <div className="hidden shrink-0 border-b border-border bg-background/70 px-3 py-2 backdrop-blur md:block sm:px-4 sm:py-2.5 lg:px-6 lg:py-3">
+        <div className="hidden shrink-0 border-b border-border/70 bg-background px-3 py-3 md:block sm:px-4 lg:px-6">
           <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between xl:gap-4">
             <div className="flex min-w-0 items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
                 <button
                   onClick={() => setSidebarOpen((v) => !v)}
-                  className="hidden rounded-md p-2 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground lg:inline-flex"
+                  className="hidden rounded-xl p-2 text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground lg:inline-flex"
                   title={sidebarOpen ? "Hide chats" : "Show chats"}
                 >
                   {sidebarOpen ? (
@@ -1512,22 +1632,22 @@ export function ChatPage() {
                     <PanelLeftOpen className="h-4 w-4" />
                   )}
                 </button>
-                <h1 className="truncate font-display text-lg font-light sm:text-xl">
+                <h1 className="truncate text-[15px] font-semibold tracking-[-0.01em] sm:text-base">
                   {conversationId
                     ? convos.find((c) => c.id === conversationId)?.title || "Chat"
                     : "New chat"}
                 </h1>
               </div>
             </div>
-            <div className="chat-header-controls -mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] xl:mx-0 xl:gap-2 xl:overflow-visible xl:px-0 xl:pb-0 [&::-webkit-scrollbar]:hidden">
+            <div className="chat-header-controls -mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] xl:mx-0 xl:overflow-visible xl:px-0 xl:pb-0 [&::-webkit-scrollbar]:hidden">
               <>
                 <button
                   onClick={() => setUseLibrary((v) => !v)}
                   title="Toggle file search"
-                  className={`hidden shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors sm:inline-flex ${
+                  className={`hidden shrink-0 rounded-xl px-2.5 py-1.5 text-xs font-medium transition-colors sm:inline-flex ${
                     useLibrary
-                      ? "border-primary/40 bg-primary/15 text-primary"
-                      : "border-border text-muted-foreground hover:bg-surface-elevated"
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
                   }`}
                 >
                   Files {useLibrary ? "on" : "off"}
@@ -1537,10 +1657,10 @@ export function ChatPage() {
                     onClick={() => setInterlink((v) => !v)}
                     disabled={!useLibrary}
                     title="Find connections across subjects/folders"
-                    className={`hidden shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 sm:inline-flex ${
+                    className={`hidden shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 sm:inline-flex ${
                       interlink
-                        ? "border-accent/50 bg-accent/15 text-accent"
-                        : "border-border text-muted-foreground hover:bg-surface-elevated"
+                        ? "bg-accent/10 text-accent"
+                        : "text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
                     }`}
                   >
                     <Network className="h-3.5 w-3.5" />
@@ -1564,13 +1684,13 @@ export function ChatPage() {
                   }}
                   disabled={!useLibrary}
                   title="Choose files to search"
-                  className="hidden shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground disabled:opacity-40 sm:inline-flex"
+                  className="hidden shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground disabled:opacity-40 sm:inline-flex"
                 >
                   <FileText className="h-3.5 w-3.5" />
                   Files
                 </button>
               </>
-              <div className="chat-mode-selector flex shrink-0 rounded-lg border border-border bg-background p-0.5">
+              <div className="chat-mode-selector flex shrink-0 rounded-xl border border-border/70 bg-foreground/[0.03] p-0.5">
                 {CHAT_MODES.map((m) => (
                   <button
                     key={m}
@@ -1584,9 +1704,9 @@ export function ChatPage() {
                             ? "Concepts + deeper detail"
                             : "Plain English with an analogy"
                     }
-                    className={`flex min-h-8 items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors sm:px-2.5 ${
+                    className={`flex min-h-8 items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors sm:px-2.5 ${
                       mode === m
-                        ? "bg-gradient-primary text-primary-foreground"
+                        ? "bg-background text-foreground shadow-sm"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
@@ -1618,6 +1738,8 @@ export function ChatPage() {
                   <Message
                     key={i}
                     msg={m}
+                    profile={profile}
+                    mode={mode}
                     isLast={i === messages.length - 1}
                     streaming={streaming && i === messages.length - 1}
                   />
@@ -1635,10 +1757,10 @@ export function ChatPage() {
           <div className="pointer-events-auto max-w-3xl mx-auto">
             {messages.some((m) => m.role === "user") && !flashPillDismissed && (
               <div className="mb-2 flex justify-center">
-                <div className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-background/85 py-1 pl-1 pr-1 text-xs shadow-elegant backdrop-blur-[2px]">
+                <div className="inline-flex items-center gap-1 rounded-xl border border-border/70 bg-background px-1 py-1 text-xs shadow-sm">
                   <Link
                     to="/app/studybody"
-                    className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1.5 font-medium text-primary transition-colors hover:bg-primary/15"
+                    className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-medium text-primary transition-colors hover:bg-primary/10"
                   >
                     <Layers className="h-3.5 w-3.5" />
                     Learn with flash cards
@@ -1647,14 +1769,14 @@ export function ChatPage() {
                     type="button"
                     onClick={() => setFlashPillDismissed(true)}
                     aria-label="Dismiss"
-                    className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
             )}
-            <div className="mb-1.5 flex overflow-x-auto rounded-2xl border border-border bg-background/65 p-0.5 backdrop-blur-[2px] [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden">
+            <div className="mb-2 flex overflow-x-auto rounded-xl border border-border/70 bg-foreground/[0.03] p-0.5 [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden">
               {CHAT_MODES.map((m) => (
                 <button
                   key={m}
@@ -1669,9 +1791,9 @@ export function ChatPage() {
                           ? "Concepts + deeper detail"
                           : "Plain English with an analogy"
                   }
-                  className={`flex min-h-8 flex-1 items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-medium transition-colors ${
+                  className={`flex min-h-8 flex-1 items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-medium transition-colors ${
                     mode === m
-                      ? "bg-gradient-primary text-primary-foreground"
+                      ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground"
                   }`}
                 >
@@ -1682,7 +1804,7 @@ export function ChatPage() {
               ))}
             </div>
             {mode === "Visuals" && (
-              <div className="mb-2 hidden rounded-2xl border border-border bg-background/65 px-2.5 py-2 backdrop-blur-[2px] md:block sm:rounded-[28px] sm:px-3">
+              <div className="mb-2 hidden border-b border-border/60 px-1 pb-2 md:block">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span className="inline-flex shrink-0 items-center gap-1.5 font-medium text-primary">
                     <Sparkles className="h-3.5 w-3.5" />
@@ -1699,7 +1821,7 @@ export function ChatPage() {
                         setUseLibrary(true);
                         setFilePickerOpen(true);
                       }}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1.5 font-medium text-primary hover:bg-primary/15"
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 font-medium text-primary transition-colors hover:bg-primary/10"
                     >
                       <FileText className="h-3.5 w-3.5" />
                       Choose file
@@ -1708,7 +1830,7 @@ export function ChatPage() {
                     <button
                       type="button"
                       onClick={() => navigate({ to: "/app/library" })}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1.5 font-medium text-primary hover:bg-primary/15"
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 font-medium text-primary transition-colors hover:bg-primary/10"
                     >
                       <FileText className="h-3.5 w-3.5" />
                       Upload file
@@ -1718,12 +1840,12 @@ export function ChatPage() {
               </div>
             )}
             {useLibrary && (
-              <div className="mb-1.5 rounded-2xl border border-border bg-background/60 px-2 py-1 backdrop-blur-[2px] sm:mb-2 sm:rounded-[28px] sm:px-3 sm:py-1.5">
+              <div className="mb-2 border-b border-border/60 px-1 pb-2">
                 <div className="flex flex-nowrap items-center gap-1.5 sm:flex-wrap sm:gap-2">
                   <button
                     type="button"
                     onClick={() => setFilePickerOpen(true)}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary hover:bg-primary/15 sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-xl px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10 sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs"
                   >
                     <FileText className="h-3.5 w-3.5" />
                     Add files
@@ -1734,7 +1856,7 @@ export function ChatPage() {
                       type="button"
                       onClick={() => setFilePickerOpen(true)}
                       title={selectedDocs.map((doc) => doc.file_name).join(", ")}
-                      className="inline-flex min-w-0 flex-1 items-center gap-1 rounded-full border border-border bg-surface/80 px-2 py-1 text-left text-[11px] text-foreground sm:gap-1.5 sm:px-2.5 sm:py-1.5 sm:text-xs"
+                      className="inline-flex min-w-0 flex-1 items-center gap-1 rounded-xl px-2 py-1 text-left text-[11px] text-foreground transition-colors hover:bg-foreground/[0.04] sm:gap-1.5 sm:px-2.5 sm:py-1.5 sm:text-xs"
                     >
                       <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       <span className="truncate">
@@ -1786,6 +1908,22 @@ export function ChatPage() {
               }}
               className="flex items-end gap-1.5 sm:gap-2"
             >
+              {speechSupported && (
+                <button
+                  type="button"
+                  onClick={toggleVoiceInput}
+                  title={listening ? "Stop voice input" : "Use voice input"}
+                  aria-pressed={listening}
+                  aria-label={listening ? "Stop voice input" : "Start voice input"}
+                className={`inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-xl border transition-colors ${
+                    listening
+                      ? "border-primary bg-primary text-primary-foreground shadow-glow ring-2 ring-primary/25"
+                      : "border-border/70 bg-background text-muted-foreground hover:border-primary/35 hover:bg-foreground/[0.04] hover:text-foreground"
+                  }`}
+                >
+                  <Mic className="h-4 w-4" />
+                </button>
+              )}
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -1795,9 +1933,16 @@ export function ChatPage() {
                     send();
                   }
                 }}
+                // Disable predictive/composing text - the Samsung keyboard's
+                // composing path doesn't commit into the Android WebView, so
+                // typed text never appears. Plain (non-composing) input works.
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="off"
+                spellCheck={false}
                 rows={1}
                 placeholder=""
-                className="min-h-[44px] max-h-[180px] flex-1 resize-none rounded-2xl border border-input bg-background/70 px-4 py-2.5 text-sm backdrop-blur-[2px] focus:outline-none focus:ring-2 focus:ring-ring sm:rounded-[28px] sm:px-5"
+                className="min-h-[44px] max-h-[180px] flex-1 resize-none rounded-2xl border border-border/80 bg-background px-4 py-2.5 text-sm shadow-[0_8px_24px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-ring sm:px-5"
                 style={{ height: "auto" }}
                 onInput={(e) => {
                   const t = e.currentTarget;
@@ -1811,10 +1956,10 @@ export function ChatPage() {
                 title={webSearch ? "Web search on" : "Use web search"}
                 aria-pressed={webSearch}
                 aria-label={webSearch ? "Turn web search off" : "Turn web search on"}
-                className={`inline-flex h-[44px] shrink-0 items-center justify-center gap-2 rounded-full border px-3 text-xs font-medium backdrop-blur-[2px] transition-colors sm:px-3.5 ${
+                className={`inline-flex h-[44px] shrink-0 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-medium transition-colors sm:px-3.5 ${
                   webSearch
                     ? "border-primary bg-primary text-primary-foreground shadow-glow ring-2 ring-primary/25"
-                    : "border-input bg-background/35 text-muted-foreground hover:border-primary/35 hover:bg-surface-elevated hover:text-foreground"
+                    : "border-border/70 bg-background text-muted-foreground hover:border-primary/35 hover:bg-foreground/[0.04] hover:text-foreground"
                 }`}
               >
                 <Search className="h-4 w-4" />
@@ -1826,7 +1971,7 @@ export function ChatPage() {
                   onClick={cancelResponse}
                   title="Cancel response"
                   aria-label="Cancel response"
-                  className="h-[44px] w-[44px] flex items-center justify-center rounded-full border border-destructive/40 bg-destructive/10 text-destructive backdrop-blur-[2px] transition-colors hover:bg-destructive/15"
+                  className="h-[44px] w-[44px] flex items-center justify-center rounded-xl border border-destructive/40 bg-destructive/10 text-destructive transition-colors hover:bg-destructive/15"
                 >
                   <Square className="h-3.5 w-3.5 fill-current" />
                 </button>
@@ -1834,7 +1979,7 @@ export function ChatPage() {
                 <button
                   type="submit"
                   disabled={!input.trim()}
-                  className="h-[44px] w-[44px] flex items-center justify-center rounded-full bg-gradient-primary text-primary-foreground shadow-glow disabled:opacity-40 transition-opacity"
+                  className="h-[44px] w-[44px] flex items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm transition-opacity disabled:opacity-40"
                 >
                   <Send className="h-4 w-4" />
                 </button>
@@ -1891,7 +2036,7 @@ function FilePickerDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         // On mobile, letting Radix auto-focus the search input pops the on-screen
-        // keyboard the instant the picker opens — it shrinks the viewport and
+        // keyboard the instant the picker opens - it shrinks the viewport and
         // buries the file list (and its scroll area) behind the keyboard. Keep
         // focus off the input so the list opens full-height; the keyboard only
         // appears if the user deliberately taps Search.
@@ -2014,22 +2159,22 @@ function ConvoGroup({
   return (
     <div>
       {title && !collapsed && (
-        <div className="px-3 pb-1 text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">
+        <div className="px-2 pb-2 text-[10px] uppercase font-semibold tracking-[0.16em] text-muted-foreground">
           {title}
         </div>
       )}
-      <ul className="space-y-0.5">
+      <ul className={collapsed ? "space-y-1" : "divide-y divide-border/50"}>
         {items.map((c) => {
           const active = c.id === activeId;
           return (
             <li key={c.id}>
               <div
-                className={`group flex items-center rounded-lg cursor-pointer transition-colors ${
-                  collapsed ? "justify-center p-2" : "gap-2 px-2.5 py-2"
+                className={`group flex cursor-pointer items-center transition-colors ${
+                  collapsed ? "justify-center rounded-xl p-2" : "gap-2 rounded-none px-2 py-2.5"
                 } ${
                   active
-                    ? "bg-primary/15 text-primary"
-                    : "text-foreground/80 hover:bg-surface-elevated hover:text-foreground"
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
                 }`}
                 onClick={() => onPick(c.id)}
                 title={collapsed ? c.title || "New conversation" : undefined}
@@ -2041,13 +2186,25 @@ function ConvoGroup({
                 />
                 {!collapsed && (
                   <>
-                    <span className="text-sm truncate flex-1">{c.title || "New conversation"}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">
+                        {c.title || "New conversation"}
+                      </span>
+                      {c.updated_at && (
+                        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                          {new Date(c.updated_at).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </span>
+                      )}
+                    </span>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         onDelete(c.id);
                       }}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive transition-opacity"
+                      className="rounded-lg p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/[0.05] hover:text-destructive group-hover:opacity-100"
                       title="Delete"
                     >
                       <Trash2 className="h-3 w-3" />
@@ -2075,17 +2232,19 @@ function EmptyState({
   const suggestions = mode === "Visuals" ? VISUAL_SUGGESTIONS : SUGGESTIONS;
 
   return (
-    <div className="py-8 text-center sm:py-12">
+    <div className="py-10 text-center sm:py-16">
       <AiMark size="lg" className="mb-5" />
-      <h2 className="font-display text-4xl font-light leading-none sm:text-5xl">Ready, {name}</h2>
-      <div className="mx-auto mt-6 grid max-w-xl gap-2 sm:mt-8 sm:grid-cols-2">
+      <h2 className="text-3xl font-semibold tracking-[-0.03em] text-foreground sm:text-5xl">
+        Ready, {name}
+      </h2>
+      <div className="mx-auto mt-8 grid max-w-2xl gap-3 sm:grid-cols-2">
         {suggestions.map((s) => (
           <button
             key={s}
             onClick={() => onPick(s)}
-            className="luxury-panel rounded-lg p-3 text-left text-sm transition-colors hover:border-primary/25 hover:bg-surface"
+            className="group rounded-2xl bg-transparent p-4 text-left text-sm leading-relaxed text-muted-foreground transition-all hover:-translate-y-0.5 hover:bg-foreground/[0.03] hover:text-foreground hover:shadow-sm"
           >
-            {s}
+            <span className="block font-medium">{s}</span>
           </button>
         ))}
       </div>
@@ -2468,8 +2627,36 @@ function VisualPreview({ html }: { html: string }) {
   );
 }
 
-function Message({ msg, streaming }: { msg: DisplayMessage; isLast: boolean; streaming: boolean }) {
+function textForSpeech(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, " code block omitted ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[#>*_~|-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function Message({
+  msg,
+  streaming,
+  profile,
+  mode,
+}: {
+  msg: DisplayMessage;
+  profile: Profile;
+  mode: ChatMode;
+  isLast: boolean;
+  streaming: boolean;
+}) {
+  const [speaking, setSpeaking] = useState(false);
+  const [inlineThreads, setInlineThreads] = useState<InlineThread[]>([]);
+  const [inlineComposer, setInlineComposer] = useState<InlineComposerState | null>(null);
+  const [inlineInput, setInlineInput] = useState("");
+  const contentRef = useRef<HTMLDivElement>(null);
+  const inlineComposerRef = useRef<HTMLFormElement>(null);
   const visualParts = msg.source === "visuals" ? splitVisualMessage(msg.content) : null;
+  const canSpeak = typeof window !== "undefined" && "speechSynthesis" in window;
   const htmlAnimation = !streaming ? visualParts?.html : null;
   const displayContent =
     msg.source === "visuals" && streaming
@@ -2478,40 +2665,404 @@ function Message({ msg, streaming }: { msg: DisplayMessage; isLast: boolean; str
         ? visualParts.markdown || "Animation preview ready."
         : msg.content;
 
+  useEffect(() => {
+    if (!inlineComposer) return;
+
+    const dismissOnOutsideClick = (event: MouseEvent) => {
+      if (inlineComposerRef.current?.contains(event.target as Node)) return;
+      setInlineComposer(null);
+    };
+
+    window.addEventListener("mousedown", dismissOnOutsideClick);
+    return () => window.removeEventListener("mousedown", dismissOnOutsideClick);
+  }, [inlineComposer]);
+
+  const streamInlineAnswer = (id: string, selectedText: string, prompt: string) => {
+    setInlineThreads((current) =>
+      current.map((thread) =>
+        thread.id === id
+          ? { ...thread, collapsed: false, error: undefined, loading: true, response: "" }
+          : thread,
+      ),
+    );
+
+    void streamChat({
+      messages: [
+        { role: "assistant", content: msg.content },
+        {
+          role: "user",
+          content: `I highlighted this passage from your previous answer:\n\n"${selectedText}"\n\nMy question: ${prompt}\n\nAnswer only this inline question. Keep the response focused on the highlighted passage and avoid restarting the full chat.`,
+        },
+      ],
+      profile,
+      mode: mode === "Visuals" ? "Detailed" : mode,
+      documentMode: "none",
+      onDelta: (chunk) => {
+        setInlineThreads((current) =>
+          current.map((thread) =>
+            thread.id === id ? { ...thread, response: thread.response + chunk } : thread,
+          ),
+        );
+      },
+      onDone: () => {
+        setInlineThreads((current) =>
+          current.map((thread) =>
+            thread.id === id ? { ...thread, loading: false } : thread,
+          ),
+        );
+      },
+      onError: (error) => {
+        setInlineThreads((current) =>
+          current.map((thread) =>
+            thread.id === id ? { ...thread, error, loading: false } : thread,
+          ),
+        );
+      },
+      onCancel: () => {
+        setInlineThreads((current) =>
+          current.map((thread) =>
+            thread.id === id
+              ? { ...thread, error: "Inline request cancelled.", loading: false }
+              : thread,
+          ),
+        );
+      },
+    });
+  };
+
+  const openInlineComposer = () => {
+    if (streaming) return;
+
+    window.setTimeout(() => {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+
+      const selectedText = selection.toString().replace(/\s+/g, " ").trim();
+      if (selectedText.length < 2) return;
+
+      const range = selection.getRangeAt(0);
+      if (!contentRef.current?.contains(range.commonAncestorContainer)) return;
+
+      const rect = range.getBoundingClientRect();
+      if (!rect.width && !rect.height) return;
+
+      const composerWidth = 280;
+      const top = Math.min(window.innerHeight - 74, rect.bottom + 10);
+      const left = Math.max(12, Math.min(window.innerWidth - composerWidth - 12, rect.left));
+      setInlineInput("");
+      setInlineComposer({ selectedText, top, left });
+    }, 0);
+  };
+
+  const submitInlinePrompt = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!inlineComposer) return;
+
+    const prompt = inlineInput.trim();
+    if (!prompt) return;
+
+    const id =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const thread: InlineThread = {
+      id,
+      selectedText: inlineComposer.selectedText,
+      prompt,
+      response: "",
+      collapsed: false,
+      loading: true,
+    };
+
+    setInlineThreads((current) => [...current, thread]);
+    setInlineComposer(null);
+    setInlineInput("");
+    window.getSelection()?.removeAllRanges();
+    streamInlineAnswer(id, thread.selectedText, prompt);
+  };
+
+  const renderInlineMarkdown = () => {
+    if (!displayContent) {
+      return (
+        <div className="flex flex-col gap-2 py-0.5" aria-live="polite" aria-busy="true">
+          <span className="text-xs font-medium text-muted-foreground">Preparing your answer</span>
+          <span className="gd-loading-bar" />
+        </div>
+      );
+    }
+
+    if (!inlineThreads.length) return <ReactMarkdown>{displayContent}</ReactMarkdown>;
+
+    const ordered = inlineThreads
+      .map((thread, order) => ({
+        thread,
+        order,
+        position: displayContent.indexOf(thread.selectedText),
+      }))
+      .sort((a, b) => {
+        if (a.position === b.position) return a.order - b.order;
+        if (a.position === -1) return 1;
+        if (b.position === -1) return -1;
+        return a.position - b.position;
+      });
+    const rendered: ReactNode[] = [];
+    const unattached: InlineThread[] = [];
+    let cursor = 0;
+
+    for (let index = 0; index < ordered.length; index += 1) {
+      const { thread, position } = ordered[index];
+      if (position === -1 || position < cursor) {
+        unattached.push(thread);
+        continue;
+      }
+
+      if (position > cursor) {
+        rendered.push(
+          <ReactMarkdown key={`before-${thread.id}`}>
+            {displayContent.slice(cursor, position)}
+          </ReactMarkdown>,
+        );
+      }
+
+      const anchoredThreads = [thread];
+      while (
+        index + 1 < ordered.length &&
+        ordered[index + 1].position === position &&
+        ordered[index + 1].thread.selectedText === thread.selectedText
+      ) {
+        index += 1;
+        anchoredThreads.push(ordered[index].thread);
+      }
+
+      rendered.push(
+        <mark key={`mark-${thread.id}`} className="ai-inline-selection">
+          {displayContent.slice(position, position + thread.selectedText.length)}
+        </mark>,
+      );
+      anchoredThreads.forEach((anchoredThread) => {
+        rendered.push(
+          <InlineThreadView
+            key={anchoredThread.id}
+            thread={anchoredThread}
+            onToggle={() =>
+              setInlineThreads((current) =>
+                current.map((item) =>
+                  item.id === anchoredThread.id ? { ...item, collapsed: !item.collapsed } : item,
+                ),
+              )
+            }
+            onRegenerate={() =>
+              streamInlineAnswer(
+                anchoredThread.id,
+                anchoredThread.selectedText,
+                anchoredThread.prompt,
+              )
+            }
+            onDelete={() =>
+              setInlineThreads((current) =>
+                current.filter((item) => item.id !== anchoredThread.id),
+              )
+            }
+          />,
+        );
+      });
+      cursor = position + thread.selectedText.length;
+    }
+
+    if (cursor < displayContent.length) {
+      rendered.push(
+        <ReactMarkdown key="after-inline-threads">{displayContent.slice(cursor)}</ReactMarkdown>,
+      );
+    }
+
+    if (unattached.length) {
+      rendered.push(
+        <div key="unattached-inline-threads" className="mt-4 space-y-3">
+          {unattached.map((thread) => (
+            <InlineThreadView
+              key={thread.id}
+              thread={thread}
+              onToggle={() =>
+                setInlineThreads((current) =>
+                  current.map((item) =>
+                    item.id === thread.id ? { ...item, collapsed: !item.collapsed } : item,
+                  ),
+                )
+              }
+              onRegenerate={() => streamInlineAnswer(thread.id, thread.selectedText, thread.prompt)}
+              onDelete={() =>
+                setInlineThreads((current) => current.filter((item) => item.id !== thread.id))
+              }
+            />
+          ))}
+        </div>,
+      );
+    }
+
+    return rendered;
+  };
+
   if (msg.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[88%] rounded-lg rounded-br-sm bg-gradient-primary px-3.5 py-2.5 text-sm leading-relaxed text-primary-foreground shadow-elegant break-words sm:max-w-[85%] sm:px-4">
+        <div className="max-w-[88%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2.5 text-sm leading-relaxed text-primary-foreground shadow-sm break-words sm:max-w-[85%] sm:px-4">
           {msg.content}
         </div>
       </div>
     );
   }
   return (
-    <div className="flex gap-2 sm:gap-3">
-      <AiMark active={streaming} className="mt-0.5" />
-      <div className="flex-1 min-w-0">
+    <div className="group flex gap-2 sm:gap-3">
+      <AiMark active={streaming} className="mt-0.5 scale-90 opacity-75" />
+      <div className="min-w-0 flex-1">
         {((msg.source && msg.source !== "general") || msg.webSources?.length) && (
-          <div className="mb-1.5 flex items-center gap-2">
+          <div className="mb-3 flex items-center gap-2">
             {msg.source && msg.source !== "general" && <SourceBadge source={msg.source} />}
             {msg.webSources?.length ? <WebSourceBadge count={msg.webSources.length} /> : null}
           </div>
         )}
-        <div className="medai-prose luxury-panel rounded-lg px-3.5 py-3 text-sm sm:px-4">
-          {displayContent ? (
-            <ReactMarkdown>{displayContent}</ReactMarkdown>
-          ) : (
-            <div className="flex flex-col gap-2 py-0.5" aria-live="polite" aria-busy="true">
-              <span className="text-xs font-medium text-muted-foreground">
-                Preparing your answer
-              </span>
-              <span className="gd-loading-bar" />
-            </div>
-          )}
+        <div
+          ref={contentRef}
+          onMouseUp={openInlineComposer}
+          onKeyUp={openInlineComposer}
+          className="ai-response-document medai-prose text-[15px]"
+        >
+          {renderInlineMarkdown()}
         </div>
+        {inlineComposer && (
+          <form
+            ref={inlineComposerRef}
+            onSubmit={submitInlinePrompt}
+            style={{ top: inlineComposer.top, left: inlineComposer.left }}
+            className="ai-inline-composer fixed z-50 flex w-[280px] items-center gap-1 rounded-xl border border-border/70 bg-background/95 p-1 shadow-[0_18px_50px_rgba(0,0,0,0.16)] backdrop-blur-xl"
+          >
+            <input
+              autoFocus
+              value={inlineInput}
+              onChange={(event) => setInlineInput(event.target.value)}
+              placeholder="Ask about this..."
+              className="min-w-0 flex-1 bg-transparent px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            />
+            <button
+              type="submit"
+              title="Send inline question"
+              aria-label="Send inline question"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-45"
+              disabled={!inlineInput.trim()}
+            >
+              <Send className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              title="Dismiss"
+              aria-label="Dismiss"
+              onClick={() => setInlineComposer(null)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </form>
+        )}
+        {displayContent && !streaming && canSpeak && (
+          <button
+            type="button"
+            onClick={() => {
+              if (speaking) {
+                window.speechSynthesis.cancel();
+                setSpeaking(false);
+                return;
+              }
+
+              const utterance = new SpeechSynthesisUtterance(textForSpeech(displayContent));
+              utterance.onend = () => setSpeaking(false);
+              utterance.onerror = () => setSpeaking(false);
+              window.speechSynthesis.cancel();
+              setSpeaking(true);
+              window.speechSynthesis.speak(utterance);
+            }}
+            title={speaking ? "Stop reading" : "Read answer aloud"}
+            aria-pressed={speaking}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+          >
+            <Volume2 className="h-3.5 w-3.5" />
+            {speaking ? "Stop" : "Listen"}
+          </button>
+        )}
         {htmlAnimation && <VisualPreview html={htmlAnimation} />}
         <WebSourceIcons sources={msg.webSources} />
       </div>
     </div>
+  );
+}
+
+function InlineThreadView({
+  thread,
+  onToggle,
+  onRegenerate,
+  onDelete,
+}: {
+  thread: InlineThread;
+  onToggle: () => void;
+  onRegenerate: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <aside className="ai-inline-thread my-3" aria-live={thread.loading ? "polite" : "off"}>
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <button
+          type="button"
+          onClick={onToggle}
+          title={thread.collapsed ? "Expand inline response" : "Collapse inline response"}
+          aria-label={thread.collapsed ? "Expand inline response" : "Collapse inline response"}
+          className="inline-flex min-w-0 items-center gap-2 rounded-lg px-1 py-0.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+        >
+          {thread.collapsed ? (
+            <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+          )}
+          <span className="truncate">{thread.prompt}</span>
+        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={onRegenerate}
+            title="Regenerate inline response"
+            aria-label="Regenerate inline response"
+            disabled={thread.loading}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground disabled:opacity-40"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            title="Delete inline response"
+            aria-label="Delete inline response"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {!thread.collapsed && (
+        <div className="pl-3">
+          <blockquote className="ai-inline-quote">{thread.selectedText}</blockquote>
+          {thread.error ? (
+            <p className="text-sm text-destructive">{thread.error}</p>
+          ) : thread.response ? (
+            <div className="medai-prose text-sm">
+              <ReactMarkdown>{thread.response}</ReactMarkdown>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2 py-1.5" aria-busy="true">
+              <span className="text-xs font-medium text-muted-foreground">Thinking inline</span>
+              <span className="gd-loading-bar" />
+            </div>
+          )}
+        </div>
+      )}
+    </aside>
   );
 }

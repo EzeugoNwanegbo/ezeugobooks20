@@ -269,18 +269,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPracticeRouteImport
       parentRoute: typeof AppRoute
     }
-    '/app/library': {
-      id: '/app/library'
-      path: '/library'
-      fullPath: '/app/library'
-      preLoaderRoute: typeof AppLibraryRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/app/links': {
       id: '/app/links'
       path: '/links'
       fullPath: '/app/links'
       preLoaderRoute: typeof AppLinksRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/library': {
+      id: '/app/library'
+      path: '/library'
+      fullPath: '/app/library'
+      preLoaderRoute: typeof AppLibraryRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/history': {

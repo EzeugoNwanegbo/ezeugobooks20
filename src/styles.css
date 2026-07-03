@@ -304,12 +304,12 @@ html.gd-low-power .gd-loading-bar::after {
 /* Markdown prose styling */
 .medai-prose {
   color: var(--foreground);
-  line-height: 1.7;
+  line-height: 1.72;
   /* AI replies read a touch bolder than the thin 300 body weight for legibility. */
   font-weight: 400;
 }
 .medai-prose p {
-  margin: 0.5rem 0;
+  margin: 0.65rem 0;
 }
 .medai-prose strong {
   color: var(--foreground);
@@ -357,6 +357,71 @@ html.gd-low-power .gd-loading-bar::after {
   padding-left: 12px;
   color: var(--muted-foreground);
   margin: 0.75rem 0;
+}
+.medai-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  overflow: hidden;
+  border-radius: 8px;
+  font-size: 0.92em;
+}
+.medai-prose th,
+.medai-prose td {
+  border: 1px solid var(--border);
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+  vertical-align: top;
+}
+.medai-prose th {
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  font-weight: 600;
+}
+
+.ai-response-document {
+  max-width: 760px;
+  padding: 0.125rem 0 1rem;
+}
+.ai-response-document > :first-child {
+  margin-top: 0;
+}
+.ai-response-document > :last-child {
+  margin-bottom: 0;
+}
+.ai-response-document::selection,
+.ai-response-document *::selection {
+  background: color-mix(in srgb, var(--primary) 24%, transparent);
+}
+.ai-inline-selection {
+  border-radius: 0.25rem;
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  color: inherit;
+  padding: 0.08rem 0.12rem;
+}
+@keyframes aiInlineComposerIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.ai-inline-composer {
+  animation: aiInlineComposerIn 140ms ease-out;
+}
+.ai-inline-thread {
+  border-left: 2px solid color-mix(in srgb, var(--primary) 36%, transparent);
+  padding: 0.25rem 0 0.25rem 0.85rem;
+}
+.ai-inline-quote {
+  margin: 0 0 0.65rem;
+  border-left: 0;
+  padding-left: 0;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  line-height: 1.55;
 }
 
 input,
@@ -1145,7 +1210,7 @@ html.gd-low-power .backdrop-blur-\[2px\] {
   -webkit-backdrop-filter: none !important;
 }
 
-/* Disable backdrop-filter on touch devices (phones AND tablets) — Android GPU
+/* Disable backdrop-filter on touch devices (phones AND tablets) - Android GPU
    compositing can black out the page when backdrop-blur is combined with fixed
    positioning + transforms. `pointer: coarse` catches large Android tablets the
    old max-width:767px rule missed. */
@@ -1171,7 +1236,7 @@ html.gd-low-power *::after {
   transition-duration: 0ms !important;
 }
 
-/* ── Tablet breakpoint (768px–1024px) ── */
+/* ── Tablet breakpoint (768px-1024px) ── */
 @media (min-width: 768px) and (max-width: 1024px) {
   .luxury-hero h1 {
     font-size: 56px;
@@ -1231,7 +1296,13 @@ html.gd-native-app .luxury-auth-page header {
 }
 
 html.gd-native-app .luxury-auth-page main {
-  align-items: center;
+  /* Top-align (NOT center): when the soft keyboard opens, the viewport shrinks
+     and a vertically-centered panel taller than the viewport gets its top
+     clipped and becomes unscrollable - the email field scrolls out of reach
+     (you type but can't see it) and the Sign-in button hides behind the
+     keyboard, so the page feels frozen. Top alignment keeps the form reachable
+     and lets the page scroll the rest into view. */
+  align-items: flex-start !important;
   padding-bottom: max(1rem, env(safe-area-inset-bottom)) !important;
   padding-top: max(1rem, env(safe-area-inset-top)) !important;
 }
@@ -1250,7 +1321,7 @@ html.gd-native-app .luxury-app-shell .animate-spin {
   display: none !important;
 }
 
-/* Three-dot loading indicator (replaces the spinning ring) — a bouncing wave. */
+/* Three-dot loading indicator (replaces the spinning ring) - a bouncing wave. */
 @keyframes gd-dot-wave {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
   30% { transform: translateY(-65%); opacity: 1; }
