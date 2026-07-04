@@ -1780,6 +1780,7 @@ export function ChatPage() {
                     profile={profile}
                     mode={mode}
                     isLast={i === messages.length - 1}
+                    composerOffset={composerHeight || 150}
                     streaming={streaming && i === messages.length - 1}
                   />
                 ))}
@@ -2697,11 +2698,13 @@ function Message({
   streaming,
   profile,
   mode,
+  composerOffset,
 }: {
   msg: DisplayMessage;
   profile: Profile;
   mode: ChatMode;
   isLast: boolean;
+  composerOffset: number;
   streaming: boolean;
 }) {
   const [speaking, setSpeaking] = useState(false);
@@ -2997,9 +3000,11 @@ function Message({
             style={
               typeof window !== "undefined" && window.innerWidth >= 768
                 ? { top: inlineComposer.top, left: inlineComposer.left }
-                : undefined
+                : {
+                    bottom: `calc(${Math.max(composerOffset, 96)}px + max(0.75rem, env(safe-area-inset-bottom)))`,
+                  }
             }
-            className="ai-inline-composer fixed z-50 flex flex-col w-[calc(100%-1.5rem)] md:w-[320px] gap-1.5 rounded-2xl md:rounded-xl border border-border/70 bg-background/95 p-2 shadow-[0_18px_50px_rgba(0,0,0,0.16)] backdrop-blur-xl bottom-3 left-3 right-3 md:bottom-auto md:left-auto md:right-auto md:translate-y-0"
+            className="ai-inline-composer fixed z-50 flex max-h-[42dvh] w-[calc(100%-1.5rem)] flex-col gap-1.5 rounded-2xl border border-border/70 bg-background/95 p-2 shadow-[0_18px_50px_rgba(0,0,0,0.16)] backdrop-blur-xl left-3 right-3 md:bottom-auto md:left-auto md:right-auto md:w-[320px] md:translate-y-0 md:rounded-xl"
           >
             <div className="text-[11px] text-muted-foreground px-2 py-1 max-h-16 overflow-y-auto border-b border-border/50 italic select-none leading-normal">
               "{inlineComposer.selectedText.replace(/—/g, " - ")}"
