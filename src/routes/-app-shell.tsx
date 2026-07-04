@@ -5,7 +5,6 @@ import {
   ChevronRight,
   Clock,
   Heart,
-  Link2,
   LogOut,
   Map,
   Menu,
@@ -212,7 +211,6 @@ function AppLayout() {
       | "/app/chat"
       | "/app/library"
       | "/app/last-minute"
-      | "/app/links"
       | "/app/history"
       | "/app/studybody"
       | "/app/feedback"
@@ -380,7 +378,6 @@ function AppLayout() {
             {navItem("/app/chat", <MessageSquare className="h-4 w-4 shrink-0" />, "Chat")}
             {navItem("/app/library", <BookOpen className="h-4 w-4 shrink-0" />, "Library")}
             {navItem("/app/last-minute", <Sparkles className="h-4 w-4 shrink-0" />, "Last Minute")}
-            {navItem("/app/links", <Link2 className="h-4 w-4 shrink-0" />, "Links")}
             {navItem("/app/history", <Clock className="h-4 w-4 shrink-0" />, "History")}
           </div>
           <div className="space-y-1 border-t border-border/60 pt-5">
@@ -535,12 +532,6 @@ function AppLayout() {
                 icon={<Sparkles className="h-4 w-4" />}
                 label="Last Minute"
                 onPick={() => goToMobileRoute("/app/last-minute")}
-              />
-              <MobileDrawerNavItem
-                active={location.pathname.includes("links")}
-                icon={<Link2 className="h-4 w-4" />}
-                label="Links"
-                onPick={() => goToMobileRoute("/app/links")}
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("history")}

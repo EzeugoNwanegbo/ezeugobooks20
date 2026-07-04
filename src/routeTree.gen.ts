@@ -18,7 +18,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppStudybodyRouteImport } from './routes/app.studybody'
 import { Route as AppSettingsRouteImport } from './routes/app.settings'
 import { Route as AppPracticeRouteImport } from './routes/app.practice'
-import { Route as AppLinksRouteImport } from './routes/app.links'
 import { Route as AppLastMinuteRouteImport } from './routes/app.last-minute'
 import { Route as AppLibraryRouteImport } from './routes/app.library'
 import { Route as AppHistoryRouteImport } from './routes/app.history'
@@ -70,11 +69,6 @@ const AppPracticeRoute = AppPracticeRouteImport.update({
   path: '/practice',
   getParentRoute: () => AppRoute,
 } as any)
-const AppLinksRoute = AppLinksRouteImport.update({
-  id: '/links',
-  path: '/links',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppLastMinuteRoute = AppLastMinuteRouteImport.update({
   id: '/last-minute',
   path: '/last-minute',
@@ -113,7 +107,6 @@ export interface FileRoutesByFullPath {
   '/app/history': typeof AppHistoryRoute
   '/app/last-minute': typeof AppLastMinuteRoute
   '/app/library': typeof AppLibraryRoute
-  '/app/links': typeof AppLinksRoute
   '/app/practice': typeof AppPracticeRoute
   '/app/settings': typeof AppSettingsRoute
   '/app/studybody': typeof AppStudybodyRoute
@@ -130,7 +123,6 @@ export interface FileRoutesByTo {
   '/app/history': typeof AppHistoryRoute
   '/app/last-minute': typeof AppLastMinuteRoute
   '/app/library': typeof AppLibraryRoute
-  '/app/links': typeof AppLinksRoute
   '/app/practice': typeof AppPracticeRoute
   '/app/settings': typeof AppSettingsRoute
   '/app/studybody': typeof AppStudybodyRoute
@@ -148,7 +140,6 @@ export interface FileRoutesById {
   '/app/history': typeof AppHistoryRoute
   '/app/last-minute': typeof AppLastMinuteRoute
   '/app/library': typeof AppLibraryRoute
-  '/app/links': typeof AppLinksRoute
   '/app/practice': typeof AppPracticeRoute
   '/app/settings': typeof AppSettingsRoute
   '/app/studybody': typeof AppStudybodyRoute
@@ -167,7 +158,6 @@ export interface FileRouteTypes {
     | '/app/history'
     | '/app/last-minute'
     | '/app/library'
-    | '/app/links'
     | '/app/practice'
     | '/app/settings'
     | '/app/studybody'
@@ -184,7 +174,6 @@ export interface FileRouteTypes {
     | '/app/history'
     | '/app/last-minute'
     | '/app/library'
-    | '/app/links'
     | '/app/practice'
     | '/app/settings'
     | '/app/studybody'
@@ -201,7 +190,6 @@ export interface FileRouteTypes {
     | '/app/history'
     | '/app/last-minute'
     | '/app/library'
-    | '/app/links'
     | '/app/practice'
     | '/app/settings'
     | '/app/studybody'
@@ -281,13 +269,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPracticeRouteImport
       parentRoute: typeof AppRoute
     }
-    '/app/links': {
-      id: '/app/links'
-      path: '/links'
-      fullPath: '/app/links'
-      preLoaderRoute: typeof AppLinksRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/app/library': {
       id: '/app/library'
       path: '/library'
@@ -332,7 +313,6 @@ interface AppRouteChildren {
   AppHistoryRoute: typeof AppHistoryRoute
   AppLastMinuteRoute: typeof AppLastMinuteRoute
   AppLibraryRoute: typeof AppLibraryRoute
-  AppLinksRoute: typeof AppLinksRoute
   AppPracticeRoute: typeof AppPracticeRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppStudybodyRoute: typeof AppStudybodyRoute
@@ -344,7 +324,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppHistoryRoute: AppHistoryRoute,
   AppLastMinuteRoute: AppLastMinuteRoute,
   AppLibraryRoute: AppLibraryRoute,
-  AppLinksRoute: AppLinksRoute,
   AppPracticeRoute: AppPracticeRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppStudybodyRoute: AppStudybodyRoute,
