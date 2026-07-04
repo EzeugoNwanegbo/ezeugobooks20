@@ -23,3 +23,6 @@ verify_jwt = true
 
 [functions.connect-dots]
 verify_jwt = true
+
+[functions.last-minute]
+verify_jwt = true

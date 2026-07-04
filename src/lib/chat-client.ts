@@ -9,9 +9,9 @@ const DOCUMENT_CHAT_START_TIMEOUT_MS = 160_000;
 const WEB_CHAT_START_TIMEOUT_MS = 95_000;
 const VISUAL_CHAT_START_TIMEOUT_MS = 300_000;
 const LENGTH_LIMIT_NOTE =
-  '\n\n**Note:** The AI hit its response length limit before finishing. Ask "continue" and it can pick up from here.';
+  '\n\nNote: The AI hit its response length limit before finishing. Ask "continue" and it can pick up from here.';
 const INCOMPLETE_STREAM_NOTE =
-  '\n\n**Note:** The connection closed before the AI sent its final completion marker, so this answer may be incomplete. Ask "continue" or retry the question.';
+  '\n\nNote: The connection closed before the AI sent its final completion marker, so this answer may be incomplete. Ask "continue" or retry the question.';
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 

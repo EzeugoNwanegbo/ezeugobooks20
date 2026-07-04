@@ -71,7 +71,7 @@ const WEB_ANSWER_TIMEOUT_MS = 75_000;
 const WEB_VISUAL_RESEARCH_TIMEOUT_MS = 75_000;
 const DEEPSEEK_VISUALS_TIMEOUT_MS = 120_000;
 const LENGTH_LIMIT_NOTE =
-  '\n\n**Note:** The AI hit its response length limit before finishing. Ask "continue" and it can pick up from here.';
+  '\n\nNote: The AI hit its response length limit before finishing. Ask "continue" and it can pick up from here.';
 
 async function fetchWithTimeout(
   input: string,
@@ -241,14 +241,14 @@ function modeInstruction(mode: Mode, examFormat: string): string {
     return `Present the answer as a SHORT STORY.
 - Use a relatable narrative, classroom moment, real-world scenario, or step-by-step journey through the idea.
 - Weave the subject matter naturally into the story so facts stick in memory.
-- 3–5 short paragraphs. End with "**The takeaway:**" (2 lines max).
-- Then on a new line: "**Study tip:**" - one sentence directly relevant to ${examFormat} assessment.`;
+- 3–5 short paragraphs. End with "The takeaway:" (2 lines max).
+- Then on a new line: "Study tip:" - one sentence directly relevant to ${examFormat} assessment.`;
   }
   if (mode === "Detailed") {
     return `Present the answer in DETAILED mode.
 - Cover the core idea, reasoning, examples, exceptions, and exam points.
 - Use short tables or bullet lists where they help clarity.
-- End with "**Study tip:**" - one sentence directly relevant to ${examFormat} assessment.`;
+- End with "Study tip:" - one sentence directly relevant to ${examFormat} assessment.`;
   }
   // Simplified (default)
   return `Present the answer in SIMPLIFIED mode.
@@ -256,7 +256,7 @@ function modeInstruction(mode: Mode, examFormat: string): string {
 - Use plain English and one real-world analogy to make the concept click.
 - No jargon without an immediate plain-English explanation.
 - If there is a source reference, put it in one short inline line, not a separate section.
-- End with "**Study tip:**" - one sentence directly relevant to ${examFormat} assessment.`;
+- End with "Study tip:" - one sentence directly relevant to ${examFormat} assessment.`;
 }
 
 /** System prompt for DeepSeek - pure fact extraction, no style. */
@@ -342,7 +342,7 @@ function buildGPTRewriterSystemPrompt(
     ? `
 INTERLINK STYLE:
 - Explicitly highlight how concepts from different subjects connect.
-- Use a subheading per subject/folder, then a final "**Connections found:**" bullet list
+- Use a subheading per subject/folder, then a final "Connections found:" bullet list
   naming every source document used.`
     : "";
 
@@ -369,11 +369,13 @@ RULES:
 - Preserve every fact from the research summary; do not drop important evidence.
 - Lead with the direct answer, then the source evidence, then the explanation.
 - Keep source references (document names / page numbers) where they appear in the summary.
-- For uploaded-file answers, include a short "**Source:**" line near the top using the document name and page/chunk label from the DeepSeek result. Do not hide the source in prose.
+- For uploaded-file answers, include a short "Source:" line near the top using the document name and page/chunk label from the DeepSeek result. Do not hide the source in prose.
 - If a page number is not available, write the source as the document name plus the chunk/source excerpt label instead of omitting it.
 - If the summary says "[General knowledge]", keep that label so the student knows.
 - Write as if you are talking directly to ${p.name || "the student"} - warm, clear, encouraging.
-- Use markdown: bold key terms, short paragraphs, bullet lists where helpful.
+- Use clean, organized Markdown: headings, short paragraphs, numbered steps, hyphen bullets, and tables where helpful.
+- Never output asterisk characters. Do not use asterisks for emphasis, bullets, multiplication, footnotes, or decoration. Use plain labels, hyphen bullets, and the x symbol for multiplication.
+- For maths, write equations clearly using plain text or fenced code/math blocks, define every variable, then explain the steps in order.
 - If the research summary says it is uncertain about something, reflect that uncertainty honestly.`;
 }
 
@@ -408,7 +410,7 @@ function buildDeepSeekVisualAnimationSystemPrompt(p: Profile): string {
 GPT has already produced a storyboard and developer handoff. Your job is to create the working animation.
 
 OUTPUT REQUIREMENTS:
-1. Start with a short "**Visual plan**" summary in 3 bullets or fewer.
+1. Start with a short "Visual plan" summary in 3 bullets or fewer.
 2. Then output one complete fenced code block labelled \`\`\`html.
 3. The HTML must be a full, self-contained document using only HTML, CSS, SVG/canvas, and vanilla JavaScript.
 4. Do not use external assets, CDNs, fonts, libraries, network calls, or framework syntax.
@@ -418,7 +420,7 @@ OUTPUT REQUIREMENTS:
 8. Prefer CSS keyframes and inline SVG over JavaScript. If JavaScript is necessary, place it at the end of <body>, wrap it in try/catch, and render a visible first frame before any script runs.
 9. The code must run inside a sandboxed iframe with srcDoc and only allow-scripts. Do not use modules, imports, top-level await, localStorage, sessionStorage, fetch, clipboard, alert, prompt, confirm, or external APIs.
 10. Self-check before output: all queried elements exist, all variables are declared, canvas contexts are checked before use, and no runtime errors occur.
-11. After the code block, include a brief "**Source notes**" section if source notes were supplied.
+11. After the code block, include a brief "Source notes" section if source notes were supplied.
 
 Student context:
 - Name: ${p.name || "Student"}
@@ -626,7 +628,8 @@ RULES:
 - Use current web results only when they are relevant to the question.
 - Do not list raw URLs in the answer body; the app will show clickable source icons separately.
 - If web results are weak or unrelated, say that plainly and answer from general knowledge.
-- Use markdown, short paragraphs, and direct teaching language.`,
+- Use clean, organized Markdown with headings, numbered steps, hyphen bullets, and tables where useful.
+- Never output asterisk characters. Use the x symbol for multiplication and plain labels instead of bold syntax.`,
           },
           ...messages,
         ],
@@ -769,7 +772,7 @@ async function enqueueTextAsSse(
 }
 
 function fallbackVisualAnimationText() {
-  return `**Visual plan**
+  return `Visual plan
 - The animation request started, but the AI animation builder did not finish in time.
 - This preview keeps the Visuals panel alive instead of leaving the student with a blank result.
 - Try again with Web off, a smaller selected file excerpt, or a shorter process to animate.
@@ -814,7 +817,7 @@ function fallbackVisualAnimationText() {
 </html>
 \`\`\`
 
-**Source notes:** The visual animation pipeline timed out before source-specific animation code was completed.`;
+Source notes: The visual animation pipeline timed out before source-specific animation code was completed.`;
 }
 
 function visualStreamResponse(

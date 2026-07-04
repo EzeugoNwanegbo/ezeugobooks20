@@ -4,6 +4,7 @@ import { ChevronRight, FileText, History, Map as MapIcon, Sparkles } from "lucid
 import { LoadingDots } from "@/components/loading-dots";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
+import { takeLastMinuteForCoach } from "@/lib/last-minute-handoff";
 import { generateStudyPlan, type StudyRoadmapTopic } from "@/lib/studybody-client";
 import {
   db,
@@ -70,6 +71,16 @@ export function StudyBodyPage() {
 
   useEffect(() => {
     refreshDocsAndPlans();
+    if (user) {
+      const handoff = takeLastMinuteForCoach(user.id);
+      if (handoff) {
+        setPlanTitle(handoff.title || "Last Minute Master Note");
+        setCourseOutline(`Last Minute Master Note\n\n${handoff.note}`);
+        setSelectedDocIds(handoff.docIds ?? []);
+        setScope("whole");
+        toast.success("Last Minute note loaded into My Coach");
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 

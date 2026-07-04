@@ -8,6 +8,7 @@ const KEY = "gd-last-route";
 const ALLOWED = [
   "/app/chat",
   "/app/library",
+  "/app/last-minute",
   "/app/history",
   "/app/studybody",
   "/app/practice",

@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Plus,
   Settings,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -210,6 +211,7 @@ function AppLayout() {
     to:
       | "/app/chat"
       | "/app/library"
+      | "/app/last-minute"
       | "/app/links"
       | "/app/history"
       | "/app/studybody"
@@ -377,6 +379,7 @@ function AppLayout() {
           <div className="space-y-1">
             {navItem("/app/chat", <MessageSquare className="h-4 w-4 shrink-0" />, "Chat")}
             {navItem("/app/library", <BookOpen className="h-4 w-4 shrink-0" />, "Library")}
+            {navItem("/app/last-minute", <Sparkles className="h-4 w-4 shrink-0" />, "Last Minute")}
             {navItem("/app/links", <Link2 className="h-4 w-4 shrink-0" />, "Links")}
             {navItem("/app/history", <Clock className="h-4 w-4 shrink-0" />, "History")}
           </div>
@@ -526,6 +529,12 @@ function AppLayout() {
                 icon={<BookOpen className="h-4 w-4" />}
                 label="Library"
                 onPick={() => goToMobileRoute("/app/library")}
+              />
+              <MobileDrawerNavItem
+                active={location.pathname.includes("last-minute")}
+                icon={<Sparkles className="h-4 w-4" />}
+                label="Last Minute"
+                onPick={() => goToMobileRoute("/app/last-minute")}
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("links")}

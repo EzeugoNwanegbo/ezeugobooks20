@@ -186,6 +186,7 @@ function Landing() {
         <nav className="gd-nav-links" aria-label="Product">
           <Link to="/app/chat" className="gd-nav-link">Chat</Link>
           <Link to="/app/library" className="gd-nav-link">Library</Link>
+          <Link to="/app/last-minute" className="gd-nav-link">Last Minute</Link>
           <Link to="/app/studybody" className="gd-nav-link">Coach</Link>
         </nav>
         <TryForFreeButton className="gd-nav-cta" icon="bolt" />
@@ -450,12 +451,80 @@ function Landing() {
         </section>
 
         {/* ------------------------------------------------------- */}
-        {/* 04 · My Coach                                             */}
+        {/* 04 · Last Minute                                          */}
+        {/* ------------------------------------------------------- */}
+        <section className="gd-section">
+          <div className="gd-split">
+            <div className="gd-split-copy gd-r">
+              <span className="gd-eyebrow">04 · Last Minute</span>
+              <h2 className="gd-h2">
+                Exam close? <span className="gd-accent">Build one master note.</span>
+              </h2>
+              <p className="gd-lead">
+                Last Minute reads up to 10 PDFs from the same course, connects related ideas,
+                removes repetition, and turns scattered lectures into one topic-organized study
+                guide.
+              </p>
+              <ul className="gd-points">
+                <li>
+                  <span className="material-symbols-outlined" aria-hidden="true">hub</span>
+                  Anatomy, physiology, pathology, and lecture notes become one connected guide
+                </li>
+                <li>
+                  <span className="material-symbols-outlined" aria-hidden="true">verified</span>
+                  Confidence labels show which sections are strongly supported
+                </li>
+                <li>
+                  <span className="material-symbols-outlined" aria-hidden="true">download</span>
+                  Download Markdown, DOCX, or PDF, then continue in My Coach
+                </li>
+              </ul>
+            </div>
+
+            <div className="gd-split-visual" aria-hidden="true">
+              <div className="gd-preview gd-r">
+                <div className="gd-preview-q">
+                  <span className="material-symbols-outlined">auto_awesome</span>
+                  <p>Last Minute Master Note</p>
+                </div>
+                <div className="gd-preview-a">
+                  <span className="gd-pill-label">Heart revision</span>
+                  <p>
+                    SA node automaticity, cardiac cycle pressure changes, ECG waves, and coronary
+                    blood supply are grouped by topic instead of separated by lecture file.
+                  </p>
+                  <div className="gd-sources">
+                    <span className="gd-source-chip">
+                      <span className="material-symbols-outlined">description</span>
+                      5 PDFs connected
+                    </span>
+                    <span className="gd-source-chip">
+                      <span className="material-symbols-outlined">fact_check</span>
+                      Confidence: High
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="gd-preview gd-preview-honest gd-r" style={{ "--rd": "0.18s" } as React.CSSProperties}>
+                <div className="gd-preview-na">
+                  <span className="material-symbols-outlined">school</span>
+                  <p>
+                    Open the synthesized note in My Coach to generate MCQs, short answers, rapid
+                    revision prompts, and flashcards from the same material.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ------------------------------------------------------- */}
+        {/* 05 · My Coach                                             */}
         {/* ------------------------------------------------------- */}
         <section className="gd-section">
           <div className="gd-split gd-split-flip">
             <div className="gd-split-copy gd-r">
-              <span className="gd-eyebrow">04 · Master</span>
+              <span className="gd-eyebrow">05 · Master</span>
               <h2 className="gd-h2">
                 Don't just read it. <span className="gd-accent">Master it.</span>
               </h2>

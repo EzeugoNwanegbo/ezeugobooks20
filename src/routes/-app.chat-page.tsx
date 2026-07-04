@@ -2692,6 +2692,16 @@ function textForSpeech(markdown: string): string {
     .trim();
 }
 
+function cleanAiResponseMarkdown(markdown: string): string {
+  return markdown
+    .replace(/^\s*\*\s+/gm, "- ")
+    .replace(/\*\*([^*\n]+)\*\*/g, "$1")
+    .replace(/\*([^*\n]+)\*/g, "$1")
+    .replace(/(\d)\s*\*\s*(\d)/g, "$1 x $2")
+    .replace(/([A-Za-z])\s*\*\s*([A-Za-z])/g, "$1 x $2")
+    .replace(/\*/g, "");
+}
+
 function Message({
   msg,
   streaming,
@@ -2719,7 +2729,7 @@ function Message({
       : visualParts
         ? visualParts.markdown || "Animation preview ready."
         : msg.content;
-  const displayContent = rawContent ? rawContent.replace(/—/g, " - ") : "";
+  const displayContent = rawContent ? cleanAiResponseMarkdown(rawContent.replace(/—/g, " - ")) : "";
 
   useEffect(() => {
     if (!inlineComposer) return;
