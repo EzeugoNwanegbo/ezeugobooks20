@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
-import { chunkDocumentText, documentPreview, type DocumentChunkInput } from "@/lib/document-chunks";
+import {
+  chunkDocumentText,
+  documentPreview,
+  sanitizeExtractedText,
+  type DocumentChunkInput,
+} from "@/lib/document-chunks";
 import { backfillMissingEmbeddings } from "@/lib/embeddings";
 import { getCached, setCached } from "@/lib/data-cache";
 import { GUEST_DOCUMENT_LIMIT, isGuestUser } from "@/lib/guest-session";
@@ -350,6 +355,8 @@ export function LibraryPage() {
       toast.error(`"${file.name}" looks empty. Try a different one.`);
       return null;
     }
+
+    extracted = sanitizeExtractedText(extracted);
 
     // Office files with no text runs are almost always image-only decks/scans;
     // reject them clearly. (PDFs/images keep their original behaviour: a scanned

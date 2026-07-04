@@ -1,4 +1,4 @@
-// G&D — Links synthesis ("connect the dots") for the native app.
+// G&D - Links synthesis ("connect the dots") for the native app.
 //
 // Given a set of the user's extracted documents (<=10), DeepSeek reads a
 // representative excerpt of each and returns the conceptual threads that run
@@ -45,7 +45,7 @@ async function sha256Hex(input: string): Promise<string> {
 }
 
 function buildSystemPrompt(): string {
-  return `You are G&D's Cross-Document Synthesis engine. The student has uploaded a small set of focused study documents. Your job is to find the genuine conceptual threads that connect them — the "dots" a strong tutor would draw between separate materials.
+  return `You are G&D's Cross-Document Synthesis engine. The student has uploaded a small set of focused study documents. Your job is to find the genuine conceptual threads that connect them - the "dots" a strong tutor would draw between separate materials.
 
 Rules:
 - Use ONLY the supplied excerpts. Never invent facts, documents, or page numbers.

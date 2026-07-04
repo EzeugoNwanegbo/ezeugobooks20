@@ -638,6 +638,9 @@ export function ChatPage() {
   const [composerHeight, setComposerHeight] = useState(0);
   const [speechSupported, setSpeechSupported] = useState(false);
   const [listening, setListening] = useState(false);
+  const [hideComposer, setHideComposer] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const lastScrollY = useRef(0);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
@@ -995,6 +998,46 @@ export function ChatPage() {
     measure();
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+
+    const handleScroll = () => {
+      if (isInputFocused) return;
+      const currentScrollY = scroller.scrollTop;
+      const diff = currentScrollY - lastScrollY.current;
+
+      // scroll threshold
+      if (Math.abs(diff) < 20) return;
+
+      if (diff > 0 && currentScrollY > 150) {
+        setHideComposer(true);
+        window.dispatchEvent(new CustomEvent("gd:chat-scroll", { detail: { hide: true } }));
+      } else {
+        setHideComposer(false);
+        window.dispatchEvent(new CustomEvent("gd:chat-scroll", { detail: { hide: false } }));
+      }
+      lastScrollY.current = currentScrollY;
+    };
+
+    scroller.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener("scroll", handleScroll);
+    };
+  }, [isInputFocused]);
+
+  useEffect(() => {
+    if (streaming) {
+      setHideComposer(false);
+      window.dispatchEvent(new CustomEvent("gd:chat-scroll", { detail: { hide: false } }));
+    }
+  }, [streaming]);
+
+  useEffect(() => {
+    setHideComposer(false);
+    window.dispatchEvent(new CustomEvent("gd:chat-scroll", { detail: { hide: false } }));
+  }, [conversationId]);
 
   useEffect(() => {
     return () => chatAbortRef.current?.abort();
@@ -1752,7 +1795,9 @@ export function ChatPage() {
         {/* Composer */}
         <div
           ref={composerRef}
-          className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+          className={`pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))] transition-all duration-300 ease-in-out ${
+            hideComposer ? "translate-y-[120%] opacity-0" : "translate-y-0 opacity-100"
+          }`}
         >
           <div className="pointer-events-auto max-w-3xl mx-auto">
             {messages.some((m) => m.role === "user") && !flashPillDismissed && (
@@ -1927,6 +1972,12 @@ export function ChatPage() {
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
+                onFocus={() => {
+                  setIsInputFocused(true);
+                  setHideComposer(false);
+                  window.dispatchEvent(new CustomEvent("gd:chat-scroll", { detail: { hide: false } }));
+                }}
+                onBlur={() => setIsInputFocused(false)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -2658,23 +2709,28 @@ function Message({
   const visualParts = msg.source === "visuals" ? splitVisualMessage(msg.content) : null;
   const canSpeak = typeof window !== "undefined" && "speechSynthesis" in window;
   const htmlAnimation = !streaming ? visualParts?.html : null;
-  const displayContent =
+  const rawContent =
     msg.source === "visuals" && streaming
       ? "Building your animation preview..."
       : visualParts
         ? visualParts.markdown || "Animation preview ready."
         : msg.content;
+  const displayContent = rawContent ? rawContent.replace(/—/g, " - ") : "";
 
   useEffect(() => {
     if (!inlineComposer) return;
 
-    const dismissOnOutsideClick = (event: MouseEvent) => {
+    const dismissOnOutsideClick = (event: MouseEvent | TouchEvent) => {
       if (inlineComposerRef.current?.contains(event.target as Node)) return;
       setInlineComposer(null);
     };
 
     window.addEventListener("mousedown", dismissOnOutsideClick);
-    return () => window.removeEventListener("mousedown", dismissOnOutsideClick);
+    window.addEventListener("touchstart", dismissOnOutsideClick);
+    return () => {
+      window.removeEventListener("mousedown", dismissOnOutsideClick);
+      window.removeEventListener("touchstart", dismissOnOutsideClick);
+    };
   }, [inlineComposer]);
 
   const streamInlineAnswer = (id: string, selectedText: string, prompt: string) => {
@@ -2925,6 +2981,7 @@ function Message({
           ref={contentRef}
           onMouseUp={openInlineComposer}
           onKeyUp={openInlineComposer}
+          onTouchEnd={openInlineComposer}
           className="ai-response-document medai-prose text-[15px]"
         >
           {renderInlineMarkdown()}
@@ -2933,34 +2990,43 @@ function Message({
           <form
             ref={inlineComposerRef}
             onSubmit={submitInlinePrompt}
-            style={{ top: inlineComposer.top, left: inlineComposer.left }}
-            className="ai-inline-composer fixed z-50 flex w-[280px] items-center gap-1 rounded-xl border border-border/70 bg-background/95 p-1 shadow-[0_18px_50px_rgba(0,0,0,0.16)] backdrop-blur-xl"
+            style={
+              typeof window !== "undefined" && window.innerWidth >= 768
+                ? { top: inlineComposer.top, left: inlineComposer.left }
+                : undefined
+            }
+            className="ai-inline-composer fixed z-50 flex flex-col w-[calc(100%-1.5rem)] md:w-[320px] gap-1.5 rounded-2xl md:rounded-xl border border-border/70 bg-background/95 p-2 shadow-[0_18px_50px_rgba(0,0,0,0.16)] backdrop-blur-xl bottom-3 left-3 right-3 md:bottom-auto md:left-auto md:right-auto md:translate-y-0"
           >
-            <input
-              autoFocus
-              value={inlineInput}
-              onChange={(event) => setInlineInput(event.target.value)}
-              placeholder="Ask about this..."
-              className="min-w-0 flex-1 bg-transparent px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
-            />
-            <button
-              type="submit"
-              title="Send inline question"
-              aria-label="Send inline question"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-45"
-              disabled={!inlineInput.trim()}
-            >
-              <Send className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              title="Dismiss"
-              aria-label="Dismiss"
-              onClick={() => setInlineComposer(null)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            <div className="text-[11px] text-muted-foreground px-2 py-1 max-h-16 overflow-y-auto border-b border-border/50 italic select-none leading-normal">
+              "{inlineComposer.selectedText.replace(/—/g, " - ")}"
+            </div>
+            <div className="flex items-center gap-1">
+              <input
+                autoFocus
+                value={inlineInput}
+                onChange={(event) => setInlineInput(event.target.value)}
+                placeholder="Ask about this..."
+                className="min-w-0 flex-1 bg-transparent px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+              />
+              <button
+                type="submit"
+                title="Send inline question"
+                aria-label="Send inline question"
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-45"
+                disabled={!inlineInput.trim()}
+              >
+                <Send className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                title="Dismiss"
+                aria-label="Dismiss"
+                onClick={() => setInlineComposer(null)}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </form>
         )}
         {displayContent && !streaming && canSpeak && (
@@ -3021,7 +3087,7 @@ function InlineThreadView({
           ) : (
             <ChevronDown className="h-3.5 w-3.5 shrink-0" />
           )}
-          <span className="truncate">{thread.prompt}</span>
+          <span className="truncate">{thread.prompt.replace(/—/g, " - ")}</span>
         </button>
         <div className="flex shrink-0 items-center gap-1">
           <button
@@ -3048,12 +3114,12 @@ function InlineThreadView({
 
       {!thread.collapsed && (
         <div className="pl-3">
-          <blockquote className="ai-inline-quote">{thread.selectedText}</blockquote>
+          <blockquote className="ai-inline-quote">{thread.selectedText.replace(/—/g, " - ")}</blockquote>
           {thread.error ? (
             <p className="text-sm text-destructive">{thread.error}</p>
           ) : thread.response ? (
             <div className="medai-prose text-sm">
-              <ReactMarkdown>{thread.response}</ReactMarkdown>
+              <ReactMarkdown>{thread.response.replace(/—/g, " - ")}</ReactMarkdown>
             </div>
           ) : (
             <div className="flex flex-col gap-2 py-1.5" aria-busy="true">

@@ -1,4 +1,4 @@
-// G&D — embedding edge function
+// G&D - embedding edge function
 //
 // Turns text into OpenAI text-embedding-3-small vectors (1536-dim). Used for two
 // things, both client-driven:

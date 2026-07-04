@@ -20,7 +20,7 @@ Deno.serve(async (req: Request) => {
 
   const token = authHeader.replace("Bearer ", "");
 
-  // JWT already verified by verify_jwt = true in config — decode payload to get user ID
+  // JWT already verified by verify_jwt = true in config - decode payload to get user ID
   let userId: string;
   try {
     const payload = JSON.parse(

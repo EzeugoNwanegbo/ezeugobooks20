@@ -1,4 +1,4 @@
-// G&D — server-side PDF extraction for the Links feature.
+// G&D - server-side PDF extraction for the Links feature.
 //
 // The web app extracts PDF text with pdf.js in the browser, which cannot run in
 // the React Native app. So the native Links flow uploads the PDF to the
@@ -33,6 +33,35 @@ type ChunkInput = {
   token_estimate: number;
 };
 
+function sanitizeExtractedText(text: string): string {
+  let out = "";
+
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+
+    if (code === 0) continue;
+    if (code < 32 && code !== 9 && code !== 10 && code !== 13) {
+      out += " ";
+      continue;
+    }
+
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        out += text[i] + text[i + 1];
+        i += 1;
+      }
+      continue;
+    }
+
+    if (code >= 0xdc00 && code <= 0xdfff) continue;
+
+    out += text[i];
+  }
+
+  return out.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").trim();
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -59,7 +88,7 @@ function chunkPages(pages: string[]): ChunkInput[] {
 
   pages.forEach((raw, i) => {
     const page = i + 1;
-    const labelled = `[Page ${page}]\n${(raw ?? "").trim()}`;
+    const labelled = `[Page ${page}]\n${sanitizeExtractedText(raw ?? "")}`;
 
     if (labelled.length > CHUNK_CHARS) {
       flush();
@@ -137,7 +166,7 @@ Deno.serve(async (req: Request) => {
       const pdf = await getDocumentProxy(bytes);
       pageCount = pdf.numPages;
 
-      // 3. Anti-textbook guard — reject before doing any AI work.
+      // 3. Anti-textbook guard - reject before doing any AI work.
       if (pageCount > MAX_PAGES) {
         const message = `This PDF has ${pageCount} pages, which is over the ${MAX_PAGES}-page limit. Try splitting it into smaller files.`;
         await admin
@@ -149,11 +178,11 @@ Deno.serve(async (req: Request) => {
 
       const result = await extractText(pdf, { mergePages: false });
       pageTexts = (Array.isArray(result.text) ? result.text : [result.text]).map((t) =>
-        (t ?? "").toString(),
+        sanitizeExtractedText((t ?? "").toString()),
       );
     } catch (e) {
       const message =
-        "Could not read this PDF. If it is a scanned document it has no selectable text — try a text-based PDF.";
+        "Could not read this PDF. If it is a scanned document it has no selectable text - try a text-based PDF.";
       await admin
         .from("documents")
         .update({ extract_status: "error", extract_error: message })
@@ -162,10 +191,12 @@ Deno.serve(async (req: Request) => {
       return json({ error: message }, 422);
     }
 
-    const fullText = pageTexts.map((t, i) => `[Page ${i + 1}]\n${t}`).join("\n\n");
+    const fullText = sanitizeExtractedText(
+      pageTexts.map((t, i) => `[Page ${i + 1}]\n${t}`).join("\n\n"),
+    );
     if (!fullText.replace(/\[Page \d+\]/g, "").trim()) {
       const message =
-        "This PDF has no selectable text — it looks scanned. Upload a text-based PDF instead.";
+        "This PDF has no selectable text - it looks scanned. Upload a text-based PDF instead.";
       await admin
         .from("documents")
         .update({ page_count: pageCount, extract_status: "error", extract_error: message })

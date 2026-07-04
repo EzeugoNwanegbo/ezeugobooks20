@@ -1,4 +1,4 @@
-// G&D — chat edge function
+// G&D - chat edge function
 //
 // Provider boundary:
 // - DeepSeek does the heavy lifting: uploaded-file retrieval, textbook excerpts,
@@ -252,14 +252,14 @@ function modeInstruction(mode: Mode, examFormat: string): string {
   }
   // Simplified (default)
   return `Present the answer in SIMPLIFIED mode.
-- HARD LIMIT: 3 short paragraphs maximum. Condense the draft — do not expand it.
+- HARD LIMIT: 3 short paragraphs maximum. Condense the draft - do not expand it.
 - Use plain English and one real-world analogy to make the concept click.
 - No jargon without an immediate plain-English explanation.
-- If there is a source reference, put it in one short inline line — not a separate section.
-- End with "**Study tip:**" — one sentence directly relevant to ${examFormat} assessment.`;
+- If there is a source reference, put it in one short inline line, not a separate section.
+- End with "**Study tip:**" - one sentence directly relevant to ${examFormat} assessment.`;
 }
 
-/** System prompt for DeepSeek — pure fact extraction, no style. */
+/** System prompt for DeepSeek - pure fact extraction, no style. */
 function buildDeepSeekSystemPrompt(
   p: Profile,
   docs: DocumentCtx[],
@@ -302,7 +302,7 @@ ${docContent}
 ${interlinkBlock}
 
 YOUR TASK:
-1. SEARCH THOROUGHLY before answering. Read EVERY excerpt and chunk provided above from start to finish — do not stop at the first chunk that looks relevant. The exact answer is often in a later chunk than the first keyword match. Scan all of them, then decide.
+1. SEARCH THOROUGHLY before answering. Read EVERY excerpt and chunk provided above from start to finish - do not stop at the first chunk that looks relevant. The exact answer is often in a later chunk than the first keyword match. Scan all of them, then decide.
 2. Cross-check related chunks. If several chunks touch the topic, combine them and resolve any apparent conflicts using the most specific/complete passage.
 3. Start with "Exact answer:" and give the answer in one or two clear sentences.
 4. Then write "Where found:" and list document names plus page/chunk labels wherever available. If there is no page label, keep the document name and chunk/source excerpt label.
@@ -313,7 +313,7 @@ YOUR TASK:
 9. If you are uncertain about anything, say so explicitly.`;
 }
 
-/** System prompt for GPT — style rewriter, human touch. */
+/** System prompt for GPT - style rewriter, human touch. */
 function buildDeepSeekDirectSystemPrompt(p: Profile, usingWebCurriculum: boolean): string {
   return `You are G&D's DeepSeek factual-draft engine. Prepare an accurate source-neutral draft for a final teaching answer.
 
@@ -372,7 +372,7 @@ RULES:
 - For uploaded-file answers, include a short "**Source:**" line near the top using the document name and page/chunk label from the DeepSeek result. Do not hide the source in prose.
 - If a page number is not available, write the source as the document name plus the chunk/source excerpt label instead of omitting it.
 - If the summary says "[General knowledge]", keep that label so the student knows.
-- Write as if you are talking directly to ${p.name || "the student"} — warm, clear, encouraging.
+- Write as if you are talking directly to ${p.name || "the student"} - warm, clear, encouraging.
 - Use markdown: bold key terms, short paragraphs, bullet lists where helpful.
 - If the research summary says it is uncertain about something, reflect that uncertainty honestly.`;
 }
@@ -428,7 +428,7 @@ Student context:
 
 // AI callers
 
-/** Call DeepSeek without streaming — we need the full text before passing to GPT. */
+/** Call DeepSeek without streaming - we need the full text before passing to GPT. */
 async function callDeepSeekSync(
   apiKey: string,
   systemPrompt: string,
@@ -447,7 +447,7 @@ async function callDeepSeekSync(
         model: Deno.env.get("DEEPSEEK_MODEL") || "deepseek-chat",
         stream: false,
         max_tokens: 8192,
-        temperature: 0.2, // Low temp — we want accurate facts, not creative flair
+        temperature: 0.2, // Low temp - we want accurate facts, not creative flair
         messages: [{ role: "system", content: systemPrompt }, ...messages],
       }),
     },
@@ -464,8 +464,7 @@ async function callDeepSeekSync(
   return withLengthLimitNote(choice?.message?.content ?? "", choice?.finish_reason);
 }
 
-/** Call GPT-4o-mini with streaming — this is what the student sees. */
-/** Call GPT-4o-mini with streaming — this is what the student sees. */
+/** Call GPT-4o-mini with streaming - this is what the student sees. */
 async function callGPTStream(
   apiKey: string,
   systemPrompt: string,
@@ -482,7 +481,7 @@ async function callGPTStream(
       body: JSON.stringify({
         model: "gpt-4o-mini",
         stream: true,
-        temperature: 0.75, // Slightly higher — we want GPT's natural warmth
+        temperature: 0.75, // Slightly higher - we want GPT's natural warmth
         messages: [{ role: "system", content: systemPrompt }, ...messages],
       }),
     },

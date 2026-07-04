@@ -56,6 +56,24 @@ function AppLayout() {
   const [mobileConvos, setMobileConvos] = useState<ConversationRow[]>([]);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [hideMobileTopbar, setHideMobileTopbar] = useState(false);
+
+  useEffect(() => {
+    const handleChatScroll = (e: Event) => {
+      const customEvent = e as CustomEvent<{ hide: boolean }>;
+      setHideMobileTopbar(customEvent.detail.hide);
+    };
+
+    window.addEventListener("gd:chat-scroll", handleChatScroll);
+    return () => {
+      window.removeEventListener("gd:chat-scroll", handleChatScroll);
+    };
+  }, []);
+
+  useEffect(() => {
+    setHideMobileTopbar(false);
+  }, [location.pathname]);
+
   // Touch-gesture trackers (declared up here so the Hook order is stable across
   // the early returns below).
   const contentTouchRef = useRef<{ x: number; y: number; edge: boolean } | null>(null);
@@ -411,10 +429,14 @@ function AppLayout() {
       </aside>
 
       <div
-        className="mobile-app-topbar sticky top-0 z-[60] flex shrink-0 items-center justify-between border-b border-border/70 bg-background px-3 md:hidden"
+        className={`mobile-app-topbar sticky top-0 z-[60] flex shrink-0 items-center justify-between border-b border-border/70 bg-background/80 backdrop-blur-md px-3 md:hidden transition-all duration-300 ease-in-out overflow-hidden ${
+          hideMobileTopbar ? "opacity-0 pointer-events-none" : "opacity-100"
+        }`}
         style={{
-          height: "calc(3rem + env(safe-area-inset-top))",
-          paddingTop: "env(safe-area-inset-top)",
+          height: hideMobileTopbar ? "0px" : "calc(3rem + env(safe-area-inset-top))",
+          paddingTop: hideMobileTopbar ? "0px" : "env(safe-area-inset-top)",
+          paddingBottom: hideMobileTopbar ? "0px" : "0px",
+          borderBottomWidth: hideMobileTopbar ? "0px" : "0px",
         }}
       >
         <button

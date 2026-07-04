@@ -77,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
   // The user id whose profile is already loaded. Used to skip the full-screen
   // loading state on background token refreshes (which fire whenever the tab
-  // regains focus — e.g. returning from the Android file picker). Re-entering
+  // regains focus - e.g. returning from the Android file picker). Re-entering
   // loading there unmounts the app and cancels in-progress uploads.
   const loadedUserIdRef = useRef<string | null>(null);
 
@@ -174,7 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (sess?.user) {
           // Background events (TOKEN_REFRESHED on tab refocus, USER_UPDATED, or
           // SIGNED_IN re-fired for the same user) must NOT re-enter the loading
-          // state — that unmounts the whole app and kills any in-progress
+          // state - that unmounts the whole app and kills any in-progress
           // upload. Only the first load / a genuine user change loads the
           // profile behind the full-screen splash.
           if (loadedUserIdRef.current === sess.user.id) return;
@@ -223,7 +223,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           } else if (!listenerFired) {
             // Only null-out state when the listener hasn't already established
-            // a session — avoids overwriting a just-created sign-up session.
+            // a session - avoids overwriting a just-created sign-up session.
             setSession(null);
             setUser(null);
             setProfile(null);

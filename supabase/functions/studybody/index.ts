@@ -54,7 +54,7 @@ interface Body {
 type DifficultyLevel = "easy" | "medium" | "hard";
 
 // Absolute, student-chosen difficulty. "hard" must be genuinely punishing while
-// staying 100% answerable from the excerpts — never reaching outside the files.
+// staying 100% answerable from the excerpts - never reaching outside the files.
 function difficultyInstruction(level: DifficultyLevel): string {
   if (level === "easy") {
     return `DIFFICULTY: EASY.
@@ -63,7 +63,7 @@ function difficultyInstruction(level: DifficultyLevel): string {
 - For MCQ, make the three distractors clearly wrong to someone who read the material.`;
   }
   if (level === "hard") {
-    return `DIFFICULTY: HARD — make these EXTREMELY challenging, exam-topper level.
+    return `DIFFICULTY: HARD - make these EXTREMELY challenging, exam-topper level.
 - Demand multi-step reasoning: require combining and synthesising facts spread across SEVERAL excerpts, not a single sentence.
 - Target subtle distinctions, edge cases, exceptions, mechanisms, "why/how" reasoning, and commonly confused points.
 - For MCQ, every distractor must be highly plausible and drawn from the excerpts (e.g. a true-but-irrelevant fact, a near-miss, or a common misconception the material corrects). No giveaway options.

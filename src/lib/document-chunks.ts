@@ -15,16 +15,50 @@ type PageBlock = {
   text: string;
 };
 
+export function sanitizeExtractedText(text: string): string {
+  let out = "";
+
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+
+    // PostgreSQL rejects JSON strings containing \u0000 before PostgREST can
+    // write them to text columns. Other non-whitespace C0 controls are not
+    // useful study text either, so strip/space them before document inserts.
+    if (code === 0) continue;
+    if (code < 32 && code !== 9 && code !== 10 && code !== 13) {
+      out += " ";
+      continue;
+    }
+
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        out += text[i] + text[i + 1];
+        i += 1;
+      }
+      continue;
+    }
+
+    if (code >= 0xdc00 && code <= 0xdfff) continue;
+
+    out += text[i];
+  }
+
+  return out.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").trim();
+}
+
 export function documentPreview(text: string): string {
-  if (text.length <= DOCUMENT_PREVIEW_CHARS) return text;
-  return `${text.slice(0, DOCUMENT_PREVIEW_CHARS)}\n\n[...preview truncated; full text is stored in searchable chunks]`;
+  const cleanText = sanitizeExtractedText(text);
+  if (cleanText.length <= DOCUMENT_PREVIEW_CHARS) return cleanText;
+  return `${cleanText.slice(0, DOCUMENT_PREVIEW_CHARS)}\n\n[...preview truncated; full text is stored in searchable chunks]`;
 }
 
 export function chunkDocumentText(text: string): DocumentChunkInput[] {
-  const pages = parsePageBlocks(text);
+  const cleanText = sanitizeExtractedText(text);
+  const pages = parsePageBlocks(cleanText);
   const chunks = pages.some((page) => page.page !== null)
     ? chunkPages(pages)
-    : chunkPlainText(text, null);
+    : chunkPlainText(cleanText, null);
 
   return chunks.map((chunk, index) => ({
     ...chunk,

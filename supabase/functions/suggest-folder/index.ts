@@ -1,4 +1,4 @@
-// G&D — folder suggestion
+// G&D - folder suggestion
 // Given a document excerpt + the user's existing folders, suggest a subject.
 // Uses DeepSeek for folder classification.
 // Returns { folder: string, isNew: boolean }
