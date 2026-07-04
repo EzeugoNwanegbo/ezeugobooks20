@@ -51,7 +51,6 @@ function AppLayout() {
   const location = useLocation();
   const search = useSearch({ strict: false }) as { c?: string };
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isSidebarHidden, setIsSidebarHidden] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileConvos, setMobileConvos] = useState<ConversationRow[]>([]);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -102,7 +101,7 @@ function AppLayout() {
       .select("id, title, updated_at")
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false })
-      .limit(30)
+      .limit(50)
       .then(({ data, error }) => {
         if (!active) return;
         if (error) {
@@ -139,17 +138,23 @@ function AppLayout() {
 
   const groupedMobileConvos = useMemo(() => {
     const today: ConversationRow[] = [];
+    const yesterday: ConversationRow[] = [];
+    const thisWeek: ConversationRow[] = [];
+    const thisMonth: ConversationRow[] = [];
     const older: ConversationRow[] = [];
     const now = Date.now();
 
     for (const convo of mobileConvos) {
-      const timestamp = convo.updated_at ? new Date(convo.updated_at).getTime() : 0;
-      const ageDays = (now - timestamp) / (1000 * 60 * 60 * 24);
+      const ts = convo.updated_at ? new Date(convo.updated_at).getTime() : 0;
+      const ageDays = (now - ts) / (1000 * 60 * 60 * 24);
       if (ageDays < 1) today.push(convo);
+      else if (ageDays < 2) yesterday.push(convo);
+      else if (ageDays < 7) thisWeek.push(convo);
+      else if (ageDays < 30) thisMonth.push(convo);
       else older.push(convo);
     }
 
-    return { today, older };
+    return { today, yesterday, thisWeek, thisMonth, older };
   }, [mobileConvos]);
 
   if (loading || !user) {
@@ -260,15 +265,24 @@ function AppLayout() {
     return (
       <Link
         to={to}
-        className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
+        className={`flex items-center overflow-hidden rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-300 ${
           active
             ? "bg-primary/10 text-foreground shadow-[inset_2px_0_0_var(--primary)]"
             : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
-        } ${isSidebarCollapsed ? "justify-center" : ""}`}
+        } ${isSidebarCollapsed ? "justify-center gap-0" : "gap-3"}`}
         title={isSidebarCollapsed ? label : undefined}
+        aria-label={label}
       >
         {icon}
-        {!isSidebarCollapsed && <span>{label}</span>}
+        <span
+          className={`whitespace-nowrap transition-all duration-300 ${
+            isSidebarCollapsed
+              ? "max-w-0 -translate-x-2 opacity-0"
+              : "max-w-32 translate-x-0 opacity-100"
+          }`}
+        >
+          {label}
+        </span>
       </Link>
     );
   };
@@ -326,49 +340,38 @@ function AppLayout() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {isSidebarHidden && (
-        <button
-          onClick={() => setIsSidebarHidden(false)}
-          className="fixed left-4 top-4 z-50 hidden rounded-md border border-border bg-background/80 p-2 text-muted-foreground backdrop-blur hover:text-foreground md:inline-flex"
-          title="Show navigation"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-      )}
 
       <aside
-        className={`${isSidebarHidden ? "hidden" : "hidden md:flex"} flex-col border-r border-border/70 bg-background transition-[width] duration-300 md:shrink-0 ${isSidebarCollapsed ? "md:w-20 xl:w-20" : "md:w-56 xl:w-64"}`}
+        className={`hidden md:flex flex-col overflow-hidden border-r border-border/70 bg-background transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] md:shrink-0 ${isSidebarCollapsed ? "md:w-16 xl:w-16" : "md:w-56 xl:w-64"}`}
       >
         <div
-          className={`flex items-center ${
-            isSidebarCollapsed ? "justify-center px-4 py-5" : "justify-between px-5 py-6"
+          className={`flex items-center transition-[padding] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+            isSidebarCollapsed ? "justify-center px-4 py-5" : "justify-between px-5 py-5"
           }`}
         >
-          {!isSidebarCollapsed && (
-            <Link to="/app/chat" className="luxury-brand-text">
-              G&D
-            </Link>
-          )}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-              title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            >
-              {isSidebarCollapsed ? (
-                <ChevronRight className="h-4 w-4" />
-              ) : (
-                <ChevronLeft className="h-4 w-4" />
-              )}
-            </button>
-            <button
-              onClick={() => setIsSidebarHidden(true)}
-              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-              title="Hide sidebar"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+          <Link
+            to="/app/chat"
+            className={`luxury-brand-text overflow-hidden whitespace-nowrap transition-all duration-300 ${
+              isSidebarCollapsed
+                ? "max-w-0 -translate-x-2 opacity-0"
+                : "max-w-24 translate-x-0 opacity-100"
+            }`}
+            aria-hidden={isSidebarCollapsed}
+            tabIndex={isSidebarCollapsed ? -1 : undefined}
+          >
+            G&D
+          </Link>
+          <button
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+            title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {isSidebarCollapsed ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : (
+              <ChevronLeft className="h-4 w-4" />
+            )}
+          </button>
         </div>
         <nav className="flex-1 space-y-6 px-3 py-2">
           <div className="space-y-1">
@@ -388,14 +391,19 @@ function AppLayout() {
             isSidebarCollapsed ? "flex flex-col items-center gap-3 p-4" : "p-4"
           }`}
         >
-          {!isSidebarCollapsed && (
-            <div className="mb-3 px-2">
-              <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
-              <div className="truncate text-xs text-muted-foreground">
-                {[profile.year, profile.university].filter(Boolean).join(" - ")}
-              </div>
+          <div
+            className={`overflow-hidden px-2 transition-all duration-300 ${
+              isSidebarCollapsed
+                ? "mb-0 max-h-0 -translate-y-1 opacity-0"
+                : "mb-3 max-h-14 translate-y-0 opacity-100"
+            }`}
+            aria-hidden={isSidebarCollapsed}
+          >
+            <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
+            <div className="truncate text-xs text-muted-foreground">
+              {[profile.year, profile.university].filter(Boolean).join(" - ")}
             </div>
-          )}
+          </div>
           <div className={isSidebarCollapsed ? "" : "mb-2 px-3"}>
             <ThemeToggle className={isSidebarCollapsed ? "" : "w-full"} />
           </div>
@@ -411,7 +419,15 @@ function AppLayout() {
             title={isSidebarCollapsed ? "Sign out" : undefined}
           >
             <LogOut className="h-4 w-4 shrink-0" />
-            {!isSidebarCollapsed && <span>Sign out</span>}
+            <span
+              className={`whitespace-nowrap transition-all duration-300 ${
+                isSidebarCollapsed
+                  ? "max-w-0 -translate-x-2 opacity-0"
+                  : "max-w-24 translate-x-0 opacity-100"
+              }`}
+            >
+              Sign out
+            </span>
           </button>
           <button
             onClick={() => setShowDeleteDialog(true)}
@@ -423,21 +439,25 @@ function AppLayout() {
             title={isSidebarCollapsed ? "Delete account" : undefined}
           >
             <Trash2 className="h-4 w-4 shrink-0" />
-            {!isSidebarCollapsed && <span>Delete account</span>}
+            <span
+              className={`whitespace-nowrap transition-all duration-300 ${
+                isSidebarCollapsed
+                  ? "max-w-0 -translate-x-2 opacity-0"
+                  : "max-w-32 translate-x-0 opacity-100"
+              }`}
+            >
+              Delete account
+            </span>
           </button>
         </div>
       </aside>
 
       <div
-        className={`mobile-app-topbar sticky top-0 z-[60] flex shrink-0 items-center justify-between border-b border-border/70 bg-background/80 backdrop-blur-md px-3 md:hidden transition-all duration-300 ease-in-out overflow-hidden ${
-          hideMobileTopbar ? "opacity-0 pointer-events-none" : "opacity-100"
+        className={`mobile-app-topbar sticky top-0 z-[60] flex h-[calc(3rem+env(safe-area-inset-top))] shrink-0 items-center justify-between overflow-hidden border-b border-border/70 bg-background/80 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-md transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform md:hidden ${
+          hideMobileTopbar
+            ? "pointer-events-none -translate-y-full opacity-0"
+            : "translate-y-0 opacity-100"
         }`}
-        style={{
-          height: hideMobileTopbar ? "0px" : "calc(3rem + env(safe-area-inset-top))",
-          paddingTop: hideMobileTopbar ? "0px" : "env(safe-area-inset-top)",
-          paddingBottom: hideMobileTopbar ? "0px" : "0px",
-          borderBottomWidth: hideMobileTopbar ? "0px" : "0px",
-        }}
       >
         <button
           type="button"
@@ -476,122 +496,148 @@ function AppLayout() {
           onTouchStart={onDrawerTouchStart}
           onTouchEnd={onDrawerTouchEnd}
           aria-hidden={!mobileMenuOpen}
-          className={`fixed inset-y-0 left-0 z-50 flex w-[78vw] max-w-[18rem] flex-col overflow-y-auto border-r border-border/70 bg-background px-4 pb-4 text-foreground shadow-[18px_0_36px_rgba(0,0,0,0.22)] transition-transform duration-200 ease-out will-change-transform md:hidden ${
-            mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+          className={`fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-[19rem] flex-col border-r border-border/60 bg-background/98 text-foreground shadow-[20px_0_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-transform will-change-transform md:hidden ${
+            mobileMenuOpen
+              ? "translate-x-0 duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+              : "-translate-x-full duration-200 ease-in"
           }`}
-          style={{ paddingTop: "calc(3rem + env(safe-area-inset-top) + 0.5rem)" }}
+          style={{ paddingTop: "env(safe-area-inset-top)" }}
         >
-          <div className="flex w-full flex-col gap-6">
-            <div className="flex items-center justify-between">
-              <span className="luxury-brand-text small">G&D</span>
-              <button
-                type="button"
-                onClick={() => setMobileMenuOpen(false)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-                aria-label="Close menu"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div>
-              <button
-                type="button"
-                onClick={openNewChat}
-                className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-border/70 px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:border-primary/35 hover:bg-foreground/[0.04]"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                New chat
-              </button>
-            </div>
+          {/* ── Pinned top section: New Chat + Nav ── */}
+          <div className="shrink-0 px-3 pb-3 pt-4">
+            <button
+              type="button"
+              onClick={openNewChat}
+              className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-md transition-opacity active:opacity-80"
+            >
+              <Plus className="h-4 w-4" />
+              New chat
+            </button>
 
-            <nav className="grid gap-1">
+            <nav className="mt-3 grid gap-0.5">
               <MobileDrawerNavItem
                 active={location.pathname.includes("chat")}
-                icon={<MessageSquare className="h-3.5 w-3.5" />}
+                icon={<MessageSquare className="h-4 w-4" />}
                 label="Chat"
                 onPick={() => goToMobileRoute("/app/chat")}
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("library")}
-                icon={<BookOpen className="h-3.5 w-3.5" />}
+                icon={<BookOpen className="h-4 w-4" />}
                 label="Library"
                 onPick={() => goToMobileRoute("/app/library")}
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("links")}
-                icon={<Link2 className="h-3.5 w-3.5" />}
+                icon={<Link2 className="h-4 w-4" />}
                 label="Links"
                 onPick={() => goToMobileRoute("/app/links")}
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("history")}
-                icon={<Clock className="h-3.5 w-3.5" />}
+                icon={<Clock className="h-4 w-4" />}
                 label="History"
                 onPick={() => goToMobileRoute("/app/history")}
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("studybody")}
-                icon={<Map className="h-3.5 w-3.5" />}
+                icon={<Map className="h-4 w-4" />}
                 label="My Coach"
                 onPick={() => goToMobileRoute("/app/studybody")}
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("feedback")}
-                icon={<Heart className="h-3.5 w-3.5" />}
+                icon={<Heart className="h-4 w-4" />}
                 label="Feedback"
                 onPick={() => goToMobileRoute("/app/feedback")}
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("settings")}
-                icon={<Settings className="h-3.5 w-3.5" />}
+                icon={<Settings className="h-4 w-4" />}
                 label="Settings"
                 onPick={() => goToMobileRoute("/app/settings")}
               />
             </nav>
+          </div>
 
-            <div className="border-t border-border/70 pt-5">
-              <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Chat history
-              </p>
-              {mobileConvos.length === 0 ? (
-                <p className="px-1 py-2 text-xs text-muted-foreground">
-                  No chats yet.
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  <MobileConvoGroup
-                    title="Today"
-                    items={groupedMobileConvos.today}
-                    activeId={search.c}
-                    onPick={(id) => {
-                      navigate({ to: "/app/chat", search: { c: id } });
-                      setMobileMenuOpen(false);
-                    }}
-                  />
-                  <MobileConvoGroup
-                    title="Older"
-                    items={groupedMobileConvos.older}
-                    activeId={search.c}
-                    onPick={(id) => {
-                      navigate({ to: "/app/chat", search: { c: id } });
-                      setMobileMenuOpen(false);
-                    }}
-                  />
+          {/* ── Scrollable chat history ── */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-border/50 px-3 py-3">
+            <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Recent chats
+            </p>
+            {mobileConvos.length === 0 ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center">
+                <MessageSquare className="h-8 w-8 text-muted-foreground/30" />
+                <p className="text-xs text-muted-foreground">No chats yet. Start one above!</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <MobileConvoGroup
+                  title="Today"
+                  items={groupedMobileConvos.today}
+                  activeId={search.c}
+                  onPick={(id) => {
+                    navigate({ to: "/app/chat", search: { c: id } });
+                    setMobileMenuOpen(false);
+                  }}
+                />
+                <MobileConvoGroup
+                  title="Yesterday"
+                  items={groupedMobileConvos.yesterday}
+                  activeId={search.c}
+                  onPick={(id) => {
+                    navigate({ to: "/app/chat", search: { c: id } });
+                    setMobileMenuOpen(false);
+                  }}
+                />
+                <MobileConvoGroup
+                  title="This week"
+                  items={groupedMobileConvos.thisWeek}
+                  activeId={search.c}
+                  onPick={(id) => {
+                    navigate({ to: "/app/chat", search: { c: id } });
+                    setMobileMenuOpen(false);
+                  }}
+                />
+                <MobileConvoGroup
+                  title="This month"
+                  items={groupedMobileConvos.thisMonth}
+                  activeId={search.c}
+                  onPick={(id) => {
+                    navigate({ to: "/app/chat", search: { c: id } });
+                    setMobileMenuOpen(false);
+                  }}
+                />
+                <MobileConvoGroup
+                  title="Older"
+                  items={groupedMobileConvos.older}
+                  activeId={search.c}
+                  onPick={(id) => {
+                    navigate({ to: "/app/chat", search: { c: id } });
+                    setMobileMenuOpen(false);
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* ── Pinned footer: user info + actions ── */}
+          <div
+            className="shrink-0 border-t border-border/50 px-3 py-3"
+            style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+          >
+            <div className="mb-2 flex items-center justify-between px-1">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold leading-tight">
+                  {profile.name || "Student"}
                 </div>
-              )}
-            </div>
-
-            <div className="border-t border-border/70 pt-5">
-              <div className="mb-3 px-1 text-left">
-                <div className="truncate text-xs font-semibold">{profile.name || "Student"}</div>
                 <div className="truncate text-[11px] text-muted-foreground">
-                  {[profile.year, profile.university].filter(Boolean).join(" - ")}
+                  {[profile.year, profile.university].filter(Boolean).join(" · ")}
                 </div>
               </div>
-              <div className="mb-2 flex w-full items-center justify-between px-1 py-1">
-                <span className="text-xs font-semibold text-foreground">Appearance</span>
-                <ThemeToggle />
-              </div>
+              <ThemeToggle />
+            </div>
+            <div className="flex gap-1">
               <button
                 type="button"
                 onClick={async () => {
@@ -599,7 +645,7 @@ function AppLayout() {
                   setMobileMenuOpen(false);
                   navigate({ to: "/" });
                 }}
-                className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
               >
                 <LogOut className="h-3.5 w-3.5" />
                 Sign out
@@ -610,7 +656,7 @@ function AppLayout() {
                   setMobileMenuOpen(false);
                   setShowDeleteDialog(true);
                 }}
-                className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-destructive"
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-destructive"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Delete account
@@ -618,6 +664,7 @@ function AppLayout() {
             </div>
           </div>
         </aside>
+
 
         <main
           onTouchStart={onContentTouchStart}

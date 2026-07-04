@@ -1230,9 +1230,12 @@ html.gd-low-power .luxury-card::before {
   display: none !important;
 }
 
-html.gd-low-power *,
-html.gd-low-power *::before,
-html.gd-low-power *::after {
+html.gd-low-power .symbiote-blob,
+html.gd-low-power .luxury-ticker div,
+html.gd-low-power .ai-symbiote-mark,
+html.gd-low-power .ai-symbiote-mark::before,
+html.gd-low-power .ai-symbiote-mark::after,
+html.gd-low-power .ai-symbiote-dot {
   transition-duration: 0ms !important;
 }
 

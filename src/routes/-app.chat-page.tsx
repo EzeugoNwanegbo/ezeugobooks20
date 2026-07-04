@@ -621,7 +621,7 @@ export function ChatPage() {
   const [mode, setMode] = useState<ChatMode>(normalizeChatMode(profile.preferred_mode));
   const [useLibrary, setUseLibrary] = useState(() => Boolean(user));
   const [webSearch, setWebSearch] = useState(false);
-  const [interlink, setInterlink] = useState(false);
+  const interlink = false;
   const [docs, setDocs] = useState<DocumentCtx[]>([]);
   const [docsLoaded, setDocsLoaded] = useState(false);
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
@@ -769,7 +769,6 @@ export function ChatPage() {
     if (session) {
       latestSessionRef.current = session;
       setInput(session.input);
-      setInterlink(session.interlink);
       setLibraryNotice(session.libraryNotice);
       setMode(session.mode);
       setSelectedDocIds(session.selectedDocIds);
@@ -805,7 +804,7 @@ export function ChatPage() {
       version: 1,
       conversationId: currentConversationId,
       input,
-      interlink,
+      interlink: false,
       libraryNotice,
       messages,
       mode,
@@ -1449,7 +1448,7 @@ export function ChatPage() {
         documentMode:
           documentsForRequest.length === 0 ? "none" : manuallySelected ? "selected" : "smart",
         forceWebSearch: webSearch,
-        interlink: interlink && documentsForRequest.length > 0,
+        interlink: false,
         signal: requestController.signal,
         onMeta: (m) => {
           metaModel = m.model;
@@ -1541,7 +1540,7 @@ export function ChatPage() {
       version: 1,
       conversationId: null,
       input: "",
-      interlink,
+      interlink: false,
       libraryNotice: null,
       messages: [],
       mode,
@@ -1603,23 +1602,35 @@ export function ChatPage() {
     <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-background min-w-0">
       {/* Conversations sidebar */}
       <aside
-        className={`hidden lg:flex min-h-0 flex-col border-r border-border/70 bg-background transition-[width] duration-300 ${sidebarOpen ? "w-72" : "w-16"}`}
+        className={`hidden lg:flex min-h-0 flex-col overflow-hidden border-r border-border/70 bg-background transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${sidebarOpen ? "w-72" : "w-16"}`}
       >
         <div
-          className={`flex justify-center px-3 py-4 ${sidebarOpen ? "" : "px-2"}`}
+          className={`flex justify-center py-4 transition-[padding] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${sidebarOpen ? "px-3" : "px-2"}`}
         >
           <button
             onClick={newChat}
-            className={`flex items-center gap-2 rounded-xl border border-border/70 text-foreground transition-all hover:border-primary/35 hover:bg-foreground/[0.04] ${
+            className={`flex items-center overflow-hidden rounded-xl border border-border/70 text-foreground transition-all duration-300 hover:border-primary/35 hover:bg-foreground/[0.04] ${
               sidebarOpen ? "w-full px-3 py-2.5 text-sm font-medium" : "h-10 w-10 justify-center p-0"
             }`}
             title="New chat"
           >
             <Plus className="h-4 w-4" />
-            {sidebarOpen && <span>New chat</span>}
+            <span
+              className={`whitespace-nowrap transition-all duration-300 ${
+                sidebarOpen
+                  ? "ml-2 max-w-24 translate-x-0 opacity-100"
+                  : "ml-0 max-w-0 -translate-x-2 opacity-0"
+              }`}
+            >
+              New chat
+            </span>
           </button>
         </div>
-        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden px-3 pb-4 pt-2">
+        <div
+          className={`min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden pb-4 pt-2 transition-[padding] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+            sidebarOpen ? "px-3" : "px-2"
+          }`}
+        >
           {convos.length === 0 ? (
             sidebarOpen && (
               <div className="px-2 py-6 text-sm leading-relaxed text-muted-foreground">
@@ -1629,7 +1640,7 @@ export function ChatPage() {
           ) : (
             <>
               <ConvoGroup
-                title={sidebarOpen ? "Today" : ""}
+                title="Today"
                 items={groupedConvos.today}
                 activeId={conversationId}
                 collapsed={!sidebarOpen}
@@ -1637,7 +1648,7 @@ export function ChatPage() {
                 onDelete={deleteConversation}
               />
               <ConvoGroup
-                title={sidebarOpen ? "Last 7 days" : ""}
+                title="Last 7 days"
                 items={groupedConvos.week}
                 activeId={conversationId}
                 collapsed={!sidebarOpen}
@@ -1645,7 +1656,7 @@ export function ChatPage() {
                 onDelete={deleteConversation}
               />
               <ConvoGroup
-                title={sidebarOpen ? "Older" : ""}
+                title="Older"
                 items={groupedConvos.older}
                 activeId={conversationId}
                 collapsed={!sidebarOpen}
@@ -1695,21 +1706,6 @@ export function ChatPage() {
                 >
                   Files {useLibrary ? "on" : "off"}
                 </button>
-                {docs.length > 0 && (
-                  <button
-                    onClick={() => setInterlink((v) => !v)}
-                    disabled={!useLibrary}
-                    title="Find connections across subjects/folders"
-                    className={`hidden shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 sm:inline-flex ${
-                      interlink
-                        ? "bg-accent/10 text-accent"
-                        : "text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
-                    }`}
-                  >
-                    <Network className="h-3.5 w-3.5" />
-                    Find connections
-                  </button>
-                )}
                 <button
                   onClick={() => {
                     if (docs.length === 0) {
@@ -1795,8 +1791,8 @@ export function ChatPage() {
         {/* Composer */}
         <div
           ref={composerRef}
-          className={`pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))] transition-all duration-300 ease-in-out ${
-            hideComposer ? "translate-y-[120%] opacity-0" : "translate-y-0 opacity-100"
+          className={`pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${
+            hideComposer ? "translate-y-[calc(100%+1rem)]" : "translate-y-0"
           }`}
         >
           <div className="pointer-events-auto max-w-3xl mx-auto">
@@ -2208,23 +2204,25 @@ function ConvoGroup({
 }) {
   if (items.length === 0) return null;
   return (
-    <div>
-      {title && !collapsed && (
-        <div className="px-2 pb-2 text-[10px] uppercase font-semibold tracking-[0.16em] text-muted-foreground">
-          {title}
-        </div>
-      )}
-      <ul className={collapsed ? "space-y-1" : "divide-y divide-border/50"}>
+    <div className="overflow-hidden">
+      <div
+        className={`px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground transition-all duration-300 ${
+          title && !collapsed ? "max-h-6 pb-2 opacity-100" : "max-h-0 pb-0 opacity-0"
+        }`}
+      >
+        {title}
+      </div>
+      <ul className="space-y-1">
         {items.map((c) => {
           const active = c.id === activeId;
           return (
             <li key={c.id}>
               <div
-                className={`group flex cursor-pointer items-center transition-colors ${
-                  collapsed ? "justify-center rounded-xl p-2" : "gap-2 rounded-none px-2 py-2.5"
+                className={`group flex cursor-pointer items-center overflow-hidden rounded-xl transition-all duration-300 ${
+                  collapsed ? "justify-center p-2" : "gap-2 px-2 py-2.5"
                 } ${
                   active
-                    ? "text-foreground"
+                    ? "bg-primary/10 text-foreground"
                     : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
                 }`}
                 onClick={() => onPick(c.id)}
@@ -2235,33 +2233,39 @@ function ConvoGroup({
                     active ? "text-primary" : "text-muted-foreground"
                   }`}
                 />
-                {!collapsed && (
-                  <>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">
-                        {c.title || "New conversation"}
-                      </span>
-                      {c.updated_at && (
-                        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                          {new Date(c.updated_at).toLocaleDateString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </span>
-                      )}
+                <span
+                  className={`min-w-0 flex-1 transition-all duration-300 ${
+                    collapsed
+                      ? "max-w-0 -translate-x-2 opacity-0"
+                      : "max-w-[12rem] translate-x-0 opacity-100"
+                  }`}
+                >
+                  <span className="block truncate text-sm font-medium">
+                    {c.title || "New conversation"}
+                  </span>
+                  {c.updated_at && (
+                    <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                      {new Date(c.updated_at).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                      })}
                     </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete(c.id);
-                      }}
-                      className="rounded-lg p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/[0.05] hover:text-destructive group-hover:opacity-100"
-                      title="Delete"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </>
-                )}
+                  )}
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(c.id);
+                  }}
+                  className={`overflow-hidden rounded-lg text-muted-foreground transition-all duration-300 hover:bg-foreground/[0.05] hover:text-destructive group-hover:opacity-100 ${
+                    collapsed
+                      ? "pointer-events-none max-w-0 translate-x-2 p-0 opacity-0"
+                      : "max-w-8 translate-x-0 p-1 opacity-0"
+                  }`}
+                  title="Delete"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
               </div>
             </li>
           );
