@@ -1780,7 +1780,6 @@ export function ChatPage() {
                     profile={profile}
                     mode={mode}
                     isLast={i === messages.length - 1}
-                    composerOffset={composerHeight || 150}
                     streaming={streaming && i === messages.length - 1}
                   />
                 ))}
@@ -2698,13 +2697,11 @@ function Message({
   streaming,
   profile,
   mode,
-  composerOffset,
 }: {
   msg: DisplayMessage;
   profile: Profile;
   mode: ChatMode;
   isLast: boolean;
-  composerOffset: number;
   streaming: boolean;
 }) {
   const [speaking, setSpeaking] = useState(false);
@@ -2728,7 +2725,8 @@ function Message({
     if (!inlineComposer) return;
 
     const dismissOnOutsideClick = (event: MouseEvent | TouchEvent) => {
-      if (inlineComposerRef.current?.contains(event.target as Node)) return;
+      const target = event.target as Element | null;
+      if (target?.closest(".ai-inline-composer")) return;
       setInlineComposer(null);
     };
 
@@ -2844,6 +2842,58 @@ function Message({
     streamInlineAnswer(id, thread.selectedText, prompt);
   };
 
+  const renderInlineComposerForm = (placement: "inline" | "floating") => {
+    if (!inlineComposer) return null;
+
+    return (
+      <form
+        ref={placement === "floating" ? inlineComposerRef : undefined}
+        onSubmit={submitInlinePrompt}
+        style={
+          placement === "floating"
+            ? { top: inlineComposer.top, left: inlineComposer.left }
+            : undefined
+        }
+        className={
+          placement === "floating"
+            ? "ai-inline-composer fixed z-50 hidden w-[320px] flex-col gap-1.5 rounded-xl border border-border/70 bg-background/95 p-2 shadow-[0_18px_50px_rgba(0,0,0,0.16)] backdrop-blur-xl md:flex"
+            : "ai-inline-composer my-3 flex max-h-[42dvh] w-full flex-col gap-1.5 rounded-2xl border border-border/70 bg-background/95 p-2 shadow-[0_12px_34px_rgba(0,0,0,0.14)] backdrop-blur-xl md:hidden"
+        }
+      >
+        <div className="max-h-16 overflow-y-auto border-b border-border/50 px-2 py-1 text-[11px] italic leading-normal text-muted-foreground select-none">
+          "{inlineComposer.selectedText.replace(/â€”/g, " - ")}"
+        </div>
+        <div className="flex items-center gap-1">
+          <input
+            autoFocus={placement === "floating"}
+            value={inlineInput}
+            onChange={(event) => setInlineInput(event.target.value)}
+            placeholder="Ask about this..."
+            className="min-w-0 flex-1 bg-transparent px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          />
+          <button
+            type="submit"
+            title="Send inline question"
+            aria-label="Send inline question"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-45"
+            disabled={!inlineInput.trim()}
+          >
+            <Send className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            title="Dismiss"
+            aria-label="Dismiss"
+            onClick={() => setInlineComposer(null)}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </form>
+    );
+  };
+
   const renderInlineMarkdown = () => {
     if (!displayContent) {
       return (
@@ -2854,14 +2904,31 @@ function Message({
       );
     }
 
-    if (!inlineThreads.length) return <ReactMarkdown>{displayContent}</ReactMarkdown>;
+    if (!inlineThreads.length && !inlineComposer) {
+      return <ReactMarkdown>{displayContent}</ReactMarkdown>;
+    }
 
-    const ordered = inlineThreads
-      .map((thread, order) => ({
+    const ordered = [
+      ...inlineThreads.map((thread, order) => ({
+        kind: "thread" as const,
+        key: thread.id,
+        selectedText: thread.selectedText,
         thread,
         order,
         position: displayContent.indexOf(thread.selectedText),
-      }))
+      })),
+      ...(inlineComposer
+        ? [
+            {
+              kind: "composer" as const,
+              key: "active-composer",
+              selectedText: inlineComposer.selectedText,
+              order: inlineThreads.length,
+              position: displayContent.indexOf(inlineComposer.selectedText),
+            },
+          ]
+        : []),
+    ]
       .sort((a, b) => {
         if (a.position === b.position) return a.order - b.order;
         if (a.position === -1) return 1;
@@ -2873,36 +2940,43 @@ function Message({
     let cursor = 0;
 
     for (let index = 0; index < ordered.length; index += 1) {
-      const { thread, position } = ordered[index];
+      const item = ordered[index];
+      const { position } = item;
       if (position === -1 || position < cursor) {
-        unattached.push(thread);
+        if (item.kind === "thread") unattached.push(item.thread);
         continue;
       }
 
       if (position > cursor) {
         rendered.push(
-          <ReactMarkdown key={`before-${thread.id}`}>
+          <ReactMarkdown key={`before-${item.key}`}>
             {displayContent.slice(cursor, position)}
           </ReactMarkdown>,
         );
       }
 
-      const anchoredThreads = [thread];
+      const anchoredItems = [item];
       while (
         index + 1 < ordered.length &&
         ordered[index + 1].position === position &&
-        ordered[index + 1].thread.selectedText === thread.selectedText
+        ordered[index + 1].selectedText === item.selectedText
       ) {
         index += 1;
-        anchoredThreads.push(ordered[index].thread);
+        anchoredItems.push(ordered[index]);
       }
 
       rendered.push(
-        <mark key={`mark-${thread.id}`} className="ai-inline-selection">
-          {displayContent.slice(position, position + thread.selectedText.length)}
+        <mark key={`mark-${item.key}`} className="ai-inline-selection">
+          {displayContent.slice(position, position + item.selectedText.length)}
         </mark>,
       );
-      anchoredThreads.forEach((anchoredThread) => {
+      anchoredItems.forEach((anchoredItem) => {
+        if (anchoredItem.kind === "composer") {
+          rendered.push(<div key="active-inline-composer">{renderInlineComposerForm("inline")}</div>);
+          return;
+        }
+
+        const anchoredThread = anchoredItem.thread;
         rendered.push(
           <InlineThreadView
             key={anchoredThread.id}
@@ -2929,7 +3003,7 @@ function Message({
           />,
         );
       });
-      cursor = position + thread.selectedText.length;
+      cursor = position + item.selectedText.length;
     }
 
     if (cursor < displayContent.length) {
@@ -2960,6 +3034,10 @@ function Message({
           ))}
         </div>,
       );
+    }
+
+    if (inlineComposer && displayContent.indexOf(inlineComposer.selectedText) === -1) {
+      rendered.push(<div key="unattached-inline-composer">{renderInlineComposerForm("inline")}</div>);
     }
 
     return rendered;
@@ -2997,14 +3075,8 @@ function Message({
           <form
             ref={inlineComposerRef}
             onSubmit={submitInlinePrompt}
-            style={
-              typeof window !== "undefined" && window.innerWidth >= 768
-                ? { top: inlineComposer.top, left: inlineComposer.left }
-                : {
-                    bottom: `calc(${Math.max(composerOffset, 96)}px + max(0.75rem, env(safe-area-inset-bottom)))`,
-                  }
-            }
-            className="ai-inline-composer fixed z-50 flex max-h-[42dvh] w-[calc(100%-1.5rem)] flex-col gap-1.5 rounded-2xl border border-border/70 bg-background/95 p-2 shadow-[0_18px_50px_rgba(0,0,0,0.16)] backdrop-blur-xl left-3 right-3 md:bottom-auto md:left-auto md:right-auto md:w-[320px] md:translate-y-0 md:rounded-xl"
+            style={{ top: inlineComposer.top, left: inlineComposer.left }}
+            className="ai-inline-composer fixed z-50 hidden w-[320px] flex-col gap-1.5 rounded-xl border border-border/70 bg-background/95 p-2 shadow-[0_18px_50px_rgba(0,0,0,0.16)] backdrop-blur-xl md:flex"
           >
             <div className="text-[11px] text-muted-foreground px-2 py-1 max-h-16 overflow-y-auto border-b border-border/50 italic select-none leading-normal">
               "{inlineComposer.selectedText.replace(/—/g, " - ")}"

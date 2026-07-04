@@ -396,12 +396,66 @@ function Landing() {
         </section>
 
         {/* ------------------------------------------------------- */}
-        {/* 03 · My Coach                                             */}
+        {/* 03 · Highlight follow-ups                                 */}
         {/* ------------------------------------------------------- */}
         <section className="gd-section">
           <div className="gd-split gd-split-flip">
             <div className="gd-split-copy gd-r">
-              <span className="gd-eyebrow">03 · Master</span>
+              <span className="gd-eyebrow">03 · Highlight</span>
+              <h2 className="gd-h2">
+                Stuck on one line? <span className="gd-accent">Ask right there.</span>
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                Highlight any part of an answer and ask a focused follow-up. G&amp;D answers in
+                place, beside the exact sentence you were reading, so you never lose your train of
+                thought.
+              </p>
+              <ul className="gd-points">
+                <li>
+                  <span className="material-symbols-outlined" aria-hidden="true">ink_highlighter</span>
+                  Turn confusing phrases into focused follow-up questions
+                </li>
+                <li>
+                  <span className="material-symbols-outlined" aria-hidden="true">subdirectory_arrow_right</span>
+                  The answer appears inside the original explanation
+                </li>
+                <li>
+                  <span className="material-symbols-outlined" aria-hidden="true">notes</span>
+                  Keep the main answer clean while exploring the details
+                </li>
+              </ul>
+            </div>
+
+            <div className="gd-split-visual" aria-hidden="true">
+              <div className="gd-preview gd-highlight-demo gd-r">
+                <div className="gd-preview-a gd-highlight-answer">
+                  <span className="gd-pill-label">Inline follow-up</span>
+                  <p>
+                    PFK-1 is allosterically inhibited by ATP, meaning high cellular energy slows
+                    glycolysis at the committed step.
+                  </p>
+                  <span className="gd-highlighted-line">allosterically inhibited by ATP</span>
+                  <div className="gd-inline-question">
+                    <span className="material-symbols-outlined">quickreply</span>
+                    <p>Why would ATP switch this enzyme off?</p>
+                  </div>
+                  <div className="gd-inline-answer">
+                    ATP signals that the cell already has enough usable energy, so slowing PFK-1
+                    prevents unnecessary glucose breakdown.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ------------------------------------------------------- */}
+        {/* 04 · My Coach                                             */}
+        {/* ------------------------------------------------------- */}
+        <section className="gd-section">
+          <div className="gd-split gd-split-flip">
+            <div className="gd-split-copy gd-r">
+              <span className="gd-eyebrow">04 · Master</span>
               <h2 className="gd-h2">
                 Don't just read it. <span className="gd-accent">Master it.</span>
               </h2>
@@ -907,6 +961,35 @@ const GD_CSS = `
 }
 .gd-preview-na .material-symbols-outlined { font-size: 20px; color: var(--beige-dim); flex: none; }
 .gd-preview-na p { margin: 0; font-size: 0.92rem; line-height: 1.55; }
+.gd-highlight-demo { max-width: 520px; }
+.gd-highlight-answer { background: var(--surface); color: var(--on); border: 1px solid var(--outline-2); }
+.gd-highlighted-line {
+  align-self: flex-start;
+  border-radius: 0.45rem;
+  background: color-mix(in srgb, var(--beige) 24%, transparent);
+  color: var(--beige);
+  padding: 0.12rem 0.28rem;
+  font-size: 0.94rem;
+  line-height: 1.5;
+}
+.gd-inline-question {
+  display: flex; align-items: center; gap: 0.55rem;
+  max-width: 92%;
+  border: 1px solid var(--outline);
+  border-radius: 1rem;
+  background: var(--surface-3);
+  padding: 0.75rem 0.9rem;
+  color: var(--on);
+}
+.gd-inline-question .material-symbols-outlined { font-size: 18px; color: var(--beige); flex: none; }
+.gd-inline-question p { margin: 0; font-size: 0.88rem; line-height: 1.45; }
+.gd-inline-answer {
+  border-left: 2px solid color-mix(in srgb, var(--beige) 54%, transparent);
+  padding: 0.2rem 0 0.2rem 0.85rem;
+  color: var(--on-dim);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
 
 /* Coach quiz cards */
 .gd-coach-stack { gap: 1rem; }
