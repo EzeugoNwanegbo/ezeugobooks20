@@ -1,6 +1,6 @@
 // G&D - Last Minute study synthesis.
 //
-// Turns up to 10 of the user's ready PDFs into one topic-organized master note.
+// Turns up to 10 of the user's ready study files into one topic-organized master note.
 // The output is deliberately clean Markdown without asterisk styling so the app
 // can render readable notes across chat, downloads, and My Coach handoff.
 
@@ -15,6 +15,7 @@ const MAX_DOCS = 10;
 const MAX_PAGES = 100;
 const DEEPSEEK_TIMEOUT_MS = 120_000;
 const TOTAL_EXCERPT_CHARS = 100_000;
+type FileKind = "pdf" | "pptx" | "docx" | "text" | "image";
 
 type DocumentRow = {
   id: string;
@@ -43,8 +44,26 @@ async function fetchWithTimeout(input: string, init: RequestInit, ms: number): P
   }
 }
 
-function isPdf(doc: DocumentRow): boolean {
-  return doc.file_type === "pdf" || doc.file_name.toLowerCase().endsWith(".pdf");
+function fileKind(doc: DocumentRow): FileKind | null {
+  const type = (doc.file_type ?? "").toLowerCase();
+  const name = doc.file_name.toLowerCase();
+  if (type === "pdf" || type.includes("pdf") || name.endsWith(".pdf")) return "pdf";
+  if (type === "pptx" || type.includes("presentation") || name.endsWith(".pptx")) return "pptx";
+  if (type === "docx" || type.includes("wordprocessing") || name.endsWith(".docx")) return "docx";
+  if (type === "text" || type.startsWith("text/") || name.endsWith(".txt")) return "text";
+  if (type === "image" || type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(name)) {
+    return "image";
+  }
+  return null;
+}
+
+function kindLabel(kind: FileKind | null): string {
+  if (kind === "pdf") return "PDF";
+  if (kind === "pptx") return "PowerPoint";
+  if (kind === "docx") return "Word";
+  if (kind === "text") return "Text";
+  if (kind === "image") return "Image";
+  return "Unsupported";
 }
 
 function cleanText(text: string): string {
@@ -81,7 +100,7 @@ function buildSystemPrompt(): string {
   return `You are G&D Last Minute, an AI study synthesis engine for students preparing close to an exam.
 
 Your task:
-- Combine the supplied PDFs into one unified study guide.
+- Combine the supplied study files into one unified study guide.
 - Organize by topic and concept, not by document.
 - Remove duplicate explanations and merge overlapping information.
 - Connect related concepts across documents clearly.
@@ -136,7 +155,7 @@ Deno.serve(async (req: Request) => {
     const docIds = Array.isArray(body.docIds)
       ? [...new Set(body.docIds.filter(Boolean))].slice(0, MAX_DOCS)
       : [];
-    if (docIds.length === 0) return json({ error: "Choose at least one PDF." }, 400);
+    if (docIds.length === 0) return json({ error: "Choose at least one study file." }, 400);
 
     const { data: docs, error: docsErr } = await admin
       .from("documents")
@@ -151,20 +170,28 @@ Deno.serve(async (req: Request) => {
     }
 
     const invalid = rows.find((doc) => {
+      const kind = fileKind(doc);
       const pageCount = doc.page_count ?? 0;
       const hasText = Boolean((doc.extracted_text ?? "").trim());
       const ready = doc.extract_status === "ready" || (!doc.extract_status && hasText);
       return (
-        !isPdf(doc) ||
-        pageCount > MAX_PAGES ||
+        !kind ||
+        ((kind === "pdf" || kind === "pptx") && pageCount > MAX_PAGES) ||
         !ready ||
         !hasText
       );
     });
     if (invalid) {
-      if (!isPdf(invalid)) return json({ error: `${invalid.file_name} is not a PDF.` }, 400);
-      if ((invalid.page_count ?? 0) > MAX_PAGES) {
-        return json({ error: `${invalid.file_name} is over ${MAX_PAGES} pages.` }, 400);
+      const kind = fileKind(invalid);
+      if (!kind) {
+        return json({
+          error: `${invalid.file_name} is not a supported Last Minute file. Use PDF, PowerPoint, Word, text, or image notes.`,
+        }, 400);
+      }
+      if ((kind === "pdf" || kind === "pptx") && (invalid.page_count ?? 0) > MAX_PAGES) {
+        return json({
+          error: `${invalid.file_name} is over ${MAX_PAGES} ${kind === "pptx" ? "slides" : "pages"}.`,
+        }, 400);
       }
       if (invalid.extract_status && invalid.extract_status !== "ready") {
         return json({ error: `${invalid.file_name} is still processing.` }, 409);
@@ -176,9 +203,12 @@ Deno.serve(async (req: Request) => {
     const excerpts = rows
       .map((doc, index) => {
         const label = `Doc ${index + 1}: ${doc.file_name}`;
-        const pages = doc.page_count ? `Pages: ${doc.page_count}` : "Pages: unknown";
+        const kind = fileKind(doc);
+        const pages = doc.page_count
+          ? `${kind === "pptx" ? "Slides" : "Pages"}: ${doc.page_count}`
+          : "Length: unknown";
         const text = sampleText(cleanText(doc.extracted_text ?? ""), perDocBudget);
-        return `${label}\n${pages}\n"""${text}"""`;
+        return `${label}\nType: ${kindLabel(kind)}\n${pages}\n"""${text}"""`;
       })
       .join("\n\n");
 
@@ -198,7 +228,7 @@ Deno.serve(async (req: Request) => {
             { role: "system", content: buildSystemPrompt() },
             {
               role: "user",
-              content: `Create one topic-organized Last Minute Master Note from these ${rows.length} PDF excerpts.\n\n${excerpts}`,
+              content: `Create one topic-organized Last Minute Master Note from these ${rows.length} study file excerpts.\n\n${excerpts}`,
             },
           ],
         }),
@@ -235,6 +265,7 @@ Deno.serve(async (req: Request) => {
       documents: rows.map((doc) => ({
         id: doc.id,
         file_name: doc.file_name,
+        file_type: doc.file_type,
         page_count: doc.page_count,
       })),
     });
