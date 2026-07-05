@@ -85,3 +85,11 @@ jobs:
           # The main Hostinger FTP account lands in the home directory and the
           # live site is served from the public_html subfolder, so publish there.
           server-dir: public_html/
+          # Wipe public_html/ and re-upload the full build every deploy. Without
+          # this, each deploy's content-hashed bundles (index-<hash>.js, etc.)
+          # accumulate forever because old files are never removed — eventually
+          # exhausting Hostinger's disk/inode quota, at which point FTP writes
+          # start failing mid-upload with "550 ... No such file or directory".
+          # Safe here because public_html/ hosts only the G&D build, which this
+          # step fully reproduces. The site is ~3 MB, so a clean re-upload is cheap.
+          dangerous-clean-slate: true
