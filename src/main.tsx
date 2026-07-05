@@ -5,14 +5,16 @@ import { getRouter } from "./router";
 import { AppErrorBoundary } from "./components/error-boundary";
 import { initNativeShell, isNativeApp } from "./lib/native";
 import { PostHogProvider } from "@posthog/react";
-import { capturePageview, initAnalytics, posthog } from "./lib/analytics";
+import { posthog } from "./lib/analytics";
 import "./styles.css";
 
 // Mark the document as the native app and configure the status bar before the
 // first paint, so safe-area styling and native auth behavior apply from the
 // very first frame.
 initNativeShell();
-initAnalytics({ autocapture: !isNativeApp() });
+// NOTE: analytics (initAnalytics + pageview tracking) is bootstrapped inside
+// getRouter() in src/router.tsx so it also runs in the SSR build, which never
+// loads this file. Do not re-add it here or pageviews will double-fire.
 
 // TEMPORARY: on-device event log (top of screen) to diagnose the login-input
 // freeze. Native only. Remove once fixed (see src/lib/native-diagnostics.ts).
@@ -76,12 +78,6 @@ if (!root) {
 }
 
 const router = getRouter();
-capturePageview();
-router.subscribe("onResolved", (event) => {
-  if (event.hrefChanged) {
-    capturePageview(event.toLocation.href);
-  }
-});
 
 createRoot(root).render(
   <StrictMode>
