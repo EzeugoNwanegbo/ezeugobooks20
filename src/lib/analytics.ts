@@ -1,6 +1,16 @@
 import posthog from "posthog-js";
 
-const posthogProjectToken = import.meta.env.VITE_POSTHOG_PROJECT_TOKEN?.trim();
+// PostHog project tokens (phc_*) are public, client-side identifiers - they
+// ship inside the browser bundle by design - so committing this fallback is
+// safe. It exists because production (gd1.online) is built by Hostinger's
+// GitHub auto-deployment, whose build environment does not define the VITE_*
+// PostHog vars; without a fallback the live bundle silently drops analytics.
+// An env var, when present, still takes precedence (e.g. to point a staging
+// build at a different PostHog project).
+const FALLBACK_POSTHOG_PROJECT_TOKEN = "phc_r7GLejTvKrvqF83JgT2dSwTpcd62acXpAB5r4VqGLrhZ";
+
+const posthogProjectToken =
+  import.meta.env.VITE_POSTHOG_PROJECT_TOKEN?.trim() || FALLBACK_POSTHOG_PROJECT_TOKEN;
 const posthogHost = import.meta.env.VITE_POSTHOG_HOST?.trim() || "https://us.i.posthog.com";
 
 let analyticsInitialized = false;

@@ -1,7 +1,17 @@
-# Build the static site and publish dist/ to Hostinger over FTP on every push
-# to main (or manually from the Actions tab). The VITE_* values are baked into
-# the bundle at build time — set them and the FTP_* credentials in the repo's
-# GitHub Secrets (Settings → Secrets and variables → Actions).
+# CI for pushes to main (or manual runs from the Actions tab):
+#   1. deploy-edge-functions - publishes every Supabase Edge Function.
+#   2. build-and-deploy      - builds the static site as a sanity check.
+#
+# NOTE ON PRODUCTION HOSTING: gd1.online is NOT published by this workflow.
+# Hostinger's own GitHub auto-deployment (configured in hPanel) rebuilds the
+# repo on every push and serves the SSR app (server.mjs + dist/server) - the
+# live site updates within ~2 minutes of a push regardless of this workflow.
+# This workflow used to also FTP the static dist/ into public_html/, but those
+# files are never served (LiteSpeed routes requests to the Node SSR app), and
+# the upload raced Hostinger's own deploy of the same push, which kept killing
+# the transfer mid-flight with "FTPError: 550 <file>: No such file or
+# directory" / ".in.<file> rename failed". The FTP step was removed for that
+# reason - do not re-add it while Hostinger's Git deployment is active.
 name: Deploy to Hostinger
 
 on:
@@ -9,7 +19,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Never let two deploys interleave their FTP syncs.
+# Never let two runs of this workflow interleave.
 concurrency:
   group: hostinger-deploy
   cancel-in-progress: true
@@ -51,6 +61,9 @@ jobs:
           echo "SUPABASE_ACCESS_TOKEN is not configured, so the Edge Functions were not deployed."
           echo "Set the SUPABASE_ACCESS_TOKEN repo secret to enable automatic function deploys."
 
+  # Build-only CI check. Production is built and served by Hostinger's GitHub
+  # auto-deployment (see the note at the top of this file); this job just
+  # proves the static build still compiles with production env values.
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
@@ -70,26 +83,18 @@ jobs:
           VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID }}
           # PostHog's phc_ token is public (it ships in the browser bundle), so
           # it may live in repo Variables OR Secrets — accept whichever is set.
+          # src/lib/analytics.ts also carries the production token as a
+          # fallback, so builds without these vars still report analytics.
           VITE_POSTHOG_PROJECT_TOKEN: ${{ vars.VITE_POSTHOG_PROJECT_TOKEN || secrets.VITE_POSTHOG_PROJECT_TOKEN }}
           VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST || secrets.VITE_POSTHOG_HOST }}
 
-      - name: Deploy dist/ via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftps
-          port: 21
-          local-dir: dist/
-          # The main Hostinger FTP account lands in the home directory and the
-          # live site is served from the public_html subfolder, so publish there.
-          server-dir: public_html/
-          # Wipe public_html/ and re-upload the full build every deploy. Without
-          # this, each deploy's content-hashed bundles (index-<hash>.js, etc.)
-          # accumulate forever because old files are never removed — eventually
-          # exhausting Hostinger's disk/inode quota, at which point FTP writes
-          # start failing mid-upload with "550 ... No such file or directory".
-          # Safe here because public_html/ hosts only the G&D build, which this
-          # step fully reproduces. The site is ~3 MB, so a clean re-upload is cheap.
-          dangerous-clean-slate: true
+      # Verify the produced bundle actually contains the PostHog token — this
+      # is what proves analytics will work in any build made from this commit.
+      - name: Assert PostHog token is baked into the bundle
+        run: |
+          if grep -rlaq 'phc_[A-Za-z0-9]\{20,\}' dist/assets/; then
+            echo "PostHog token found in built bundle."
+          else
+            echo "::error::No phc_ PostHog token found in dist/assets — analytics would be dead in this build."
+            exit 1
+          fi
