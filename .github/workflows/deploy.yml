@@ -26,14 +26,30 @@ jobs:
         with:
           version: latest
 
-      - name: Deploy Last Minute Edge Function
+      # Deploy every function under supabase/functions/ so a new or renamed
+      # function can never be silently left undeployed (which surfaces to users
+      # as "could not reach the service" — the endpoint 404s). Each directory
+      # there is one function; its name is the directory name.
+      - name: Deploy all Edge Functions
         if: env.SUPABASE_ACCESS_TOKEN != ''
-        run: supabase functions deploy last-minute --project-ref ptditjhezxiwdeqqoezc
+        run: |
+          set -euo pipefail
+          for dir in supabase/functions/*/; do
+            name="$(basename "$dir")"
+            # Skip helper directories that aren't deployable functions.
+            case "$name" in
+              _shared|_*) echo "Skipping $name (shared/helper dir)"; continue ;;
+            esac
+            echo "::group::Deploying $name"
+            supabase functions deploy "$name" --project-ref ptditjhezxiwdeqqoezc
+            echo "::endgroup::"
+          done
 
       - name: Skip Edge Function deploy
         if: env.SUPABASE_ACCESS_TOKEN == ''
         run: |
-          echo "SUPABASE_ACCESS_TOKEN is not configured, so the Last Minute Edge Function was not deployed."
+          echo "SUPABASE_ACCESS_TOKEN is not configured, so the Edge Functions were not deployed."
+          echo "Set the SUPABASE_ACCESS_TOKEN repo secret to enable automatic function deploys."
 
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -52,8 +68,10 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID }}
-          VITE_POSTHOG_PROJECT_TOKEN: ${{ secrets.VITE_POSTHOG_PROJECT_TOKEN }}
-          VITE_POSTHOG_HOST: ${{ secrets.VITE_POSTHOG_HOST }}
+          # PostHog's phc_ token is public (it ships in the browser bundle), so
+          # it may live in repo Variables OR Secrets — accept whichever is set.
+          VITE_POSTHOG_PROJECT_TOKEN: ${{ vars.VITE_POSTHOG_PROJECT_TOKEN || secrets.VITE_POSTHOG_PROJECT_TOKEN }}
+          VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST || secrets.VITE_POSTHOG_HOST }}
 
       - name: Deploy dist/ via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
