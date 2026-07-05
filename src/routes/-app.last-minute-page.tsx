@@ -141,8 +141,40 @@ function markdownToDocx(markdown: string) {
   );
 }
 
+type FunctionErrorWithContext = Error & {
+  context?: Response;
+};
+
+async function readableFunctionError(error: unknown): Promise<string> {
+  if (error instanceof Error) {
+    const context = (error as FunctionErrorWithContext).context;
+    if (context instanceof Response) {
+      try {
+        const body = (await context.clone().json()) as { error?: unknown; message?: unknown };
+        const serverMessage =
+          typeof body.error === "string"
+            ? body.error
+            : typeof body.message === "string"
+              ? body.message
+              : "";
+        if (serverMessage) return serverMessage;
+      } catch {
+        try {
+          const text = await context.clone().text();
+          if (text.trim()) return text.trim();
+        } catch {
+          // Fall through to the generic client-side message.
+        }
+      }
+    }
+    return error.message;
+  }
+
+  return "";
+}
+
 function generationErrorMessage(message: string) {
-  if (/failed to fetch|networkerror|load failed|edge function/i.test(message)) {
+  if (/failed to fetch|networkerror|load failed|failed to send/i.test(message)) {
     return "Last Minute could not reach the synthesis service. Refresh and try again; if it was just deployed, give the function a moment to come online.";
   }
   return message || "Could not generate Master Note.";
@@ -216,7 +248,7 @@ export function LastMinutePage() {
       const { data, error } = await supabase.functions.invoke("last-minute", {
         body: { docIds: selected },
       });
-      if (error) throw new Error(error.message);
+      if (error) throw error;
       const body = data as { title?: string; note?: string; error?: string } | null;
       if (!body || body.error) throw new Error(body?.error ?? "Could not generate Master Note.");
       setTitle(body.title || "Last Minute Master Note");
@@ -224,7 +256,7 @@ export function LastMinutePage() {
       setProgressIndex(PROGRESS_STEPS.length - 1);
       toast.success("Master Note ready");
     } catch (error) {
-      toast.error(generationErrorMessage(error instanceof Error ? error.message : ""));
+      toast.error(generationErrorMessage(await readableFunctionError(error)));
     } finally {
       setGenerating(false);
     }

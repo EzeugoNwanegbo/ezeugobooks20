@@ -15,6 +15,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  deploy-edge-functions:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy Last Minute Edge Function
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: supabase functions deploy last-minute --project-ref ptditjhezxiwdeqqoezc
+
+      - name: Skip Edge Function deploy
+        if: env.SUPABASE_ACCESS_TOKEN == ''
+        run: |
+          echo "SUPABASE_ACCESS_TOKEN is not configured, so the Last Minute Edge Function was not deployed."
+
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:

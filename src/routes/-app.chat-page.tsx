@@ -47,6 +47,8 @@ import {
   Volume2,
   ChevronDown,
   ChevronRight,
+  Copy,
+  Scissors,
 } from "lucide-react";
 import { LoadingDots } from "@/components/loading-dots";
 
@@ -101,6 +103,7 @@ type InlineComposerState = {
   selectedText: string;
   top: number;
   left: number;
+  canCut: boolean;
 };
 
 type ConversationRow = {
@@ -655,7 +658,9 @@ export function ChatPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const speechWindow = window as SpeechWindow;
-    setSpeechSupported(Boolean(speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition));
+    setSpeechSupported(
+      Boolean(speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition),
+    );
   }, []);
 
   useEffect(() => {
@@ -1610,7 +1615,9 @@ export function ChatPage() {
           <button
             onClick={newChat}
             className={`flex items-center overflow-hidden rounded-xl border border-border/70 text-foreground transition-all duration-300 hover:border-primary/35 hover:bg-foreground/[0.04] ${
-              sidebarOpen ? "w-full px-3 py-2.5 text-sm font-medium" : "h-10 w-10 justify-center p-0"
+              sidebarOpen
+                ? "w-full px-3 py-2.5 text-sm font-medium"
+                : "h-10 w-10 justify-center p-0"
             }`}
             title="New chat"
           >
@@ -1833,9 +1840,7 @@ export function ChatPage() {
                           : "Plain English with an analogy"
                   }
                   className={`flex min-h-8 flex-1 items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-medium transition-colors ${
-                    mode === m
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground"
+                    mode === m ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
                   }`}
                 >
                   {m === "Storytelling" && <BookText className="h-3 w-3" />}
@@ -1956,7 +1961,7 @@ export function ChatPage() {
                   title={listening ? "Stop voice input" : "Use voice input"}
                   aria-pressed={listening}
                   aria-label={listening ? "Stop voice input" : "Start voice input"}
-                className={`inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-xl border transition-colors ${
+                  className={`inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-xl border transition-colors ${
                     listening
                       ? "border-primary bg-primary text-primary-foreground shadow-glow ring-2 ring-primary/25"
                       : "border-border/70 bg-background text-muted-foreground hover:border-primary/35 hover:bg-foreground/[0.04] hover:text-foreground"
@@ -1971,7 +1976,9 @@ export function ChatPage() {
                 onFocus={() => {
                   setIsInputFocused(true);
                   setHideComposer(false);
-                  window.dispatchEvent(new CustomEvent("gd:chat-scroll", { detail: { hide: false } }));
+                  window.dispatchEvent(
+                    new CustomEvent("gd:chat-scroll", { detail: { hide: false } }),
+                  );
                 }}
                 onBlur={() => setIsInputFocused(false)}
                 onKeyDown={(e) => {
@@ -2702,6 +2709,38 @@ function cleanAiResponseMarkdown(markdown: string): string {
     .replace(/\*/g, "");
 }
 
+function selectionHasEditableTarget(range: Range): boolean {
+  const node = range.commonAncestorContainer;
+  const element = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+  const editable = element?.closest(
+    "textarea,input,[contenteditable='true'],[contenteditable='plaintext-only']",
+  );
+  if (!editable) return false;
+  if (editable instanceof HTMLTextAreaElement) return !editable.disabled && !editable.readOnly;
+  if (editable instanceof HTMLInputElement) return !editable.disabled && !editable.readOnly;
+  if (editable instanceof HTMLElement) return editable.isContentEditable;
+  return false;
+}
+
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.setAttribute("readonly", "");
+  textArea.style.position = "fixed";
+  textArea.style.left = "-9999px";
+  textArea.style.top = "0";
+  document.body.appendChild(textArea);
+  textArea.select();
+  const copied = document.execCommand("copy");
+  textArea.remove();
+  if (!copied) throw new Error("Clipboard copy failed");
+}
+
 function Message({
   msg,
   streaming,
@@ -2720,6 +2759,7 @@ function Message({
   const [inlineInput, setInlineInput] = useState("");
   const contentRef = useRef<HTMLDivElement>(null);
   const inlineComposerRef = useRef<HTMLFormElement>(null);
+  const selectedRangeRef = useRef<Range | null>(null);
   const visualParts = msg.source === "visuals" ? splitVisualMessage(msg.content) : null;
   const canSpeak = typeof window !== "undefined" && "speechSynthesis" in window;
   const htmlAnimation = !streaming ? visualParts?.html : null;
@@ -2737,7 +2777,7 @@ function Message({
     const dismissOnOutsideClick = (event: MouseEvent | TouchEvent) => {
       const target = event.target as Element | null;
       if (target?.closest(".ai-inline-composer")) return;
-      setInlineComposer(null);
+      closeInlineComposer();
     };
 
     window.addEventListener("mousedown", dismissOnOutsideClick);
@@ -2777,9 +2817,7 @@ function Message({
       },
       onDone: () => {
         setInlineThreads((current) =>
-          current.map((thread) =>
-            thread.id === id ? { ...thread, loading: false } : thread,
-          ),
+          current.map((thread) => (thread.id === id ? { ...thread, loading: false } : thread)),
         );
       },
       onError: (error) => {
@@ -2820,9 +2858,51 @@ function Message({
       const composerWidth = 280;
       const top = Math.min(window.innerHeight - 74, rect.bottom + 10);
       const left = Math.max(12, Math.min(window.innerWidth - composerWidth - 12, rect.left));
+      selectedRangeRef.current = range.cloneRange();
       setInlineInput("");
-      setInlineComposer({ selectedText, top, left });
+      setInlineComposer({ selectedText, top, left, canCut: selectionHasEditableTarget(range) });
     }, 0);
+  };
+
+  const closeInlineComposer = () => {
+    setInlineComposer(null);
+    selectedRangeRef.current = null;
+  };
+
+  const clearInlineSelection = () => {
+    window.getSelection()?.removeAllRanges();
+    selectedRangeRef.current = null;
+  };
+
+  const copyInlineSelection = async () => {
+    if (!inlineComposer) return;
+
+    try {
+      await copyTextToClipboard(inlineComposer.selectedText);
+      toast.success("Copied selection");
+      closeInlineComposer();
+      clearInlineSelection();
+    } catch (error) {
+      console.error("copy selection", error);
+      toast.error("Couldn't copy selection");
+    }
+  };
+
+  const cutInlineSelection = () => {
+    if (!inlineComposer?.canCut || !selectedRangeRef.current) return;
+
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(selectedRangeRef.current);
+    const cut = document.execCommand("cut");
+
+    if (cut) {
+      toast.success("Cut selection");
+      closeInlineComposer();
+      clearInlineSelection();
+    } else {
+      toast.error("Couldn't cut selection");
+    }
   };
 
   const submitInlinePrompt = (event: FormEvent<HTMLFormElement>) => {
@@ -2846,7 +2926,7 @@ function Message({
     };
 
     setInlineThreads((current) => [...current, thread]);
-    setInlineComposer(null);
+    closeInlineComposer();
     setInlineInput("");
     window.getSelection()?.removeAllRanges();
     streamInlineAnswer(id, thread.selectedText, prompt);
@@ -2874,6 +2954,29 @@ function Message({
           "{inlineComposer.selectedText.replace(/â€”/g, " - ")}"
         </div>
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            title="Copy selection"
+            aria-label="Copy selection"
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => void copyInlineSelection()}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            title={
+              inlineComposer.canCut ? "Cut selection" : "Cut is only available in editable text"
+            }
+            aria-label="Cut selection"
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={cutInlineSelection}
+            disabled={!inlineComposer.canCut}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            <Scissors className="h-3.5 w-3.5" />
+          </button>
           <input
             autoFocus={placement === "floating"}
             value={inlineInput}
@@ -2894,7 +2997,7 @@ function Message({
             type="button"
             title="Dismiss"
             aria-label="Dismiss"
-            onClick={() => setInlineComposer(null)}
+            onClick={closeInlineComposer}
             className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
           >
             <X className="h-3.5 w-3.5" />
@@ -2938,13 +3041,12 @@ function Message({
             },
           ]
         : []),
-    ]
-      .sort((a, b) => {
-        if (a.position === b.position) return a.order - b.order;
-        if (a.position === -1) return 1;
-        if (b.position === -1) return -1;
-        return a.position - b.position;
-      });
+    ].sort((a, b) => {
+      if (a.position === b.position) return a.order - b.order;
+      if (a.position === -1) return 1;
+      if (b.position === -1) return -1;
+      return a.position - b.position;
+    });
     const rendered: ReactNode[] = [];
     const unattached: InlineThread[] = [];
     let cursor = 0;
@@ -2982,7 +3084,9 @@ function Message({
       );
       anchoredItems.forEach((anchoredItem) => {
         if (anchoredItem.kind === "composer") {
-          rendered.push(<div key="active-inline-composer">{renderInlineComposerForm("inline")}</div>);
+          rendered.push(
+            <div key="active-inline-composer">{renderInlineComposerForm("inline")}</div>,
+          );
           return;
         }
 
@@ -3006,9 +3110,7 @@ function Message({
               )
             }
             onDelete={() =>
-              setInlineThreads((current) =>
-                current.filter((item) => item.id !== anchoredThread.id),
-              )
+              setInlineThreads((current) => current.filter((item) => item.id !== anchoredThread.id))
             }
           />,
         );
@@ -3047,7 +3149,9 @@ function Message({
     }
 
     if (inlineComposer && displayContent.indexOf(inlineComposer.selectedText) === -1) {
-      rendered.push(<div key="unattached-inline-composer">{renderInlineComposerForm("inline")}</div>);
+      rendered.push(
+        <div key="unattached-inline-composer">{renderInlineComposerForm("inline")}</div>,
+      );
     }
 
     return rendered;
@@ -3092,6 +3196,29 @@ function Message({
               "{inlineComposer.selectedText.replace(/—/g, " - ")}"
             </div>
             <div className="flex items-center gap-1">
+              <button
+                type="button"
+                title="Copy selection"
+                aria-label="Copy selection"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => void copyInlineSelection()}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                title={
+                  inlineComposer.canCut ? "Cut selection" : "Cut is only available in editable text"
+                }
+                aria-label="Cut selection"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={cutInlineSelection}
+                disabled={!inlineComposer.canCut}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                <Scissors className="h-3.5 w-3.5" />
+              </button>
               <input
                 autoFocus
                 value={inlineInput}
@@ -3112,7 +3239,7 @@ function Message({
                 type="button"
                 title="Dismiss"
                 aria-label="Dismiss"
-                onClick={() => setInlineComposer(null)}
+                onClick={closeInlineComposer}
                 className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
               >
                 <X className="h-3.5 w-3.5" />
@@ -3205,7 +3332,9 @@ function InlineThreadView({
 
       {!thread.collapsed && (
         <div className="pl-3">
-          <blockquote className="ai-inline-quote">{thread.selectedText.replace(/—/g, " - ")}</blockquote>
+          <blockquote className="ai-inline-quote">
+            {thread.selectedText.replace(/—/g, " - ")}
+          </blockquote>
           {thread.error ? (
             <p className="text-sm text-destructive">{thread.error}</p>
           ) : thread.response ? (
