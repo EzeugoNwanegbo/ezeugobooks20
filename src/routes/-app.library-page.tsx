@@ -59,6 +59,18 @@ type ProcessedFile = {
   fileSize: number;
 };
 
+// A large scanned PDF being OCR'd by the server-side queue (src/lib/server-ocr.ts).
+// Keyed by document id; drives the "processing on our servers" banner under the
+// upload card. These never join the folder-assignment batch - the documents row
+// is created up-front by the server path and lands in Uncategorised when ready.
+type ServerOcrEntry = {
+  fileName: string;
+  pagesDone: number;
+  pagesTotal: number | null;
+  status: "processing" | "background" | "error";
+  error?: string;
+};
+
 function getUploadErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) return "Upload failed";
   return error.message || "Upload failed";
@@ -89,6 +101,7 @@ export function LibraryPage() {
     null,
   );
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
+  const [serverOcr, setServerOcr] = useState<Record<string, ServerOcrEntry>>({});
   const [pendingBatch, setPendingBatch] = useState<ProcessedFile[] | null>(null);
   const [chosenFolder, setChosenFolder] = useState<string>("");
   const [newFolderName, setNewFolderName] = useState<string>("");
@@ -201,6 +214,71 @@ export function LibraryPage() {
     [grouped],
   );
 
+  // Hands a large scanned PDF (> 50 pages, no text layer) to the server-side
+  // OCR queue: upload the real bytes + enqueue page-range jobs, then babysit
+  // the queue in the background while the banner under the upload card shows
+  // page progress. Only the upload/enqueue part is awaited - OCR-ing a book
+  // takes many minutes and must not block the rest of the upload batch.
+  const startServerOcr = async (file: File) => {
+    if (!user) return;
+    setUploadBar({ percent: null, label: `Uploading "${file.name}" for server OCR` });
+    // Lazy-import for the same reason as pdf.js above: keep the Library page
+    // lightweight until this rare path is actually taken.
+    const { enqueueServerOcr, driveServerOcr } = await import("@/lib/server-ocr");
+    const { documentId } = await enqueueServerOcr(file, user.id); // throws -> caller's toast
+    setServerOcr((cur) => ({
+      ...cur,
+      [documentId]: { fileName: file.name, pagesDone: 0, pagesTotal: null, status: "processing" },
+    }));
+    toast.info(
+      `"${file.name}" is a scanned PDF, so our servers are OCR-ing it. Keep this tab open to speed it up - progress shows below the upload box.`,
+      { duration: 10_000 },
+    );
+    void refresh(); // the row appears (Uncategorised, processing) right away
+
+    // Fire-and-forget babysitter: pokes the worker + polls progress until the
+    // document is ready, fails, or the watch budget runs out (pg_cron keeps
+    // draining the queue after that, so "background" is not a failure).
+    void driveServerOcr(documentId, (p) =>
+      setServerOcr((cur) =>
+        cur[documentId] ? { ...cur, [documentId]: { ...cur[documentId], ...p } } : cur,
+      ),
+    )
+      .then((outcome) => {
+        if (outcome.status === "ready") {
+          setServerOcr((cur) => {
+            const next = { ...cur };
+            delete next[documentId];
+            return next;
+          });
+          toast.success(`"${file.name}" finished OCR and is ready to use.`);
+          void refresh();
+          return;
+        }
+        setServerOcr((cur) =>
+          cur[documentId]
+            ? {
+                ...cur,
+                [documentId]: {
+                  ...cur[documentId],
+                  status: outcome.status,
+                  error: outcome.status === "error" ? outcome.error : undefined,
+                },
+              }
+            : cur,
+        );
+        if (outcome.status === "error") {
+          toast.error(`OCR failed for "${file.name}": ${outcome.error}`);
+        } else {
+          toast.info(
+            `"${file.name}" is still OCR-ing on our servers - it continues in the background. Check back later.`,
+          );
+        }
+        void refresh();
+      })
+      .catch((err) => console.warn("server OCR babysitter stopped", err));
+  };
+
   // Read + chunk a single file in the browser. Returns the processed result, or
   // null if the file was rejected (too large, empty, unreadable) - the caller
   // keeps going so one bad file doesn't sink the whole batch.
@@ -285,14 +363,39 @@ export function LibraryPage() {
       setStage("pdf:importing-engine");
       const { extractPdfText } = await import("@/lib/pdf");
       setStage("pdf:engine-loaded");
-      const r = await extractPdfText(file, Number.POSITIVE_INFINITY, setStage, (page, total) =>
-        setUploadBar({
-          percent: Math.round((page / total) * 100),
-          label: `Reading page ${page} of ${total}`,
-        }),
-      );
-      extracted = r.text;
-      pageCount = r.pageCount;
+      // Scanned PDFs with no text layer get a second, much slower OCR pass -
+      // watch the stage stream so the progress bar says so instead of silently
+      // "reading" the same pages again.
+      let ocrPass = false;
+      try {
+        const r = await extractPdfText(
+          file,
+          Number.POSITIVE_INFINITY,
+          (stage) => {
+            if (stage.startsWith("pdf:ocr")) ocrPass = true;
+            setStage(stage);
+          },
+          (page, total) =>
+            setUploadBar({
+              percent: Math.round((page / total) * 100),
+              label: ocrPass
+                ? `OCR-ing scanned page ${page} of ${total}`
+                : `Reading page ${page} of ${total}`,
+            }),
+        );
+        extracted = r.text;
+        pageCount = r.pageCount;
+      } catch (err) {
+        // Scanned AND too big to OCR in the browser (> 50 pages): hand it to
+        // the server-side OCR queue instead. Nothing joins the folder batch -
+        // the documents row is created by the server path and lands in
+        // Uncategorised once ready.
+        if (err instanceof Error && err.message === "__SCANNED_PDF_LARGE__") {
+          await startServerOcr(file);
+          return null;
+        }
+        throw err;
+      }
       setUploadBar(null); // chunk/embed/save stages have no page meter
     } else if (isImage) {
       setStage("image:importing-ocr");
@@ -335,6 +438,12 @@ export function LibraryPage() {
         isPdf = true;
         setUploadBar(null);
       } catch (probeErr) {
+        // The probe proved it IS a PDF - just a scanned one too big for
+        // browser OCR. Same server routing as the explicit PDF branch above.
+        if (probeErr instanceof Error && probeErr.message === "__SCANNED_PDF_LARGE__") {
+          await startServerOcr(file);
+          return null;
+        }
         const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
         const hex = Array.from(head)
           .map((b) => b.toString(16).padStart(2, "0"))
@@ -812,6 +921,74 @@ export function LibraryPage() {
             </div>
           )}
         </div>
+
+        {/* Server-side OCR progress: large scanned PDFs process on Supabase in
+            small page-range jobs. This banner tracks each one so the user can
+            keep uploading (or leave) while the queue drains. */}
+        {Object.keys(serverOcr).length > 0 && (
+          <div className="mt-4 space-y-2">
+            {Object.entries(serverOcr).map(([docId, job]) => {
+              const percent =
+                job.pagesTotal && job.pagesTotal > 0
+                  ? Math.min(100, Math.round((job.pagesDone / job.pagesTotal) * 100))
+                  : null;
+              return (
+                <div
+                  key={docId}
+                  className="rounded-lg border border-border bg-surface/60 p-3 text-sm"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate font-medium">{job.fileName}</span>
+                    {job.status !== "processing" && (
+                      <button
+                        type="button"
+                        aria-label="Dismiss"
+                        onClick={() =>
+                          setServerOcr((cur) => {
+                            const next = { ...cur };
+                            delete next[docId];
+                            return next;
+                          })
+                        }
+                        className="text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                  {job.status === "error" ? (
+                    <p className="mt-1 text-xs text-destructive">{job.error || "OCR failed."}</p>
+                  ) : (
+                    <>
+                      <div
+                        className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-primary/15"
+                        role="progressbar"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={percent ?? undefined}
+                        aria-label="Server OCR progress"
+                      >
+                        <div
+                          className={`h-full rounded-full bg-primary transition-[width] duration-500 ease-out ${
+                            percent == null ? "w-full animate-pulse" : ""
+                          }`}
+                          style={percent != null ? { width: `${percent}%` } : undefined}
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {job.status === "background"
+                          ? "Still processing on our servers - check back later."
+                          : job.pagesTotal
+                            ? `OCR-ing on our servers · page ${job.pagesDone} of ${job.pagesTotal}`
+                            : "Starting OCR on our servers..."}
+                      </p>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Search */}
         {docs.length > 0 && (

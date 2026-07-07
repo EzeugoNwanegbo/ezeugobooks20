@@ -35,12 +35,16 @@ export type Database = {
       documents: {
         Row: {
           created_at: string | null;
+          extract_error: string | null;
+          extract_status: string | null;
           extracted_text: string | null;
           file_name: string;
           file_size: number | null;
           file_type: string | null;
           folder_id: string | null;
           id: string;
+          ocr_pages_done: number | null;
+          ocr_pages_total: number | null;
           page_count: number | null;
           storage_path: string;
           suggested_subject: string | null;
@@ -48,12 +52,16 @@ export type Database = {
         };
         Insert: {
           created_at?: string | null;
+          extract_error?: string | null;
+          extract_status?: string | null;
           extracted_text?: string | null;
           file_name: string;
           file_size?: number | null;
           file_type?: string | null;
           folder_id?: string | null;
           id?: string;
+          ocr_pages_done?: number | null;
+          ocr_pages_total?: number | null;
           page_count?: number | null;
           storage_path: string;
           suggested_subject?: string | null;
@@ -61,12 +69,16 @@ export type Database = {
         };
         Update: {
           created_at?: string | null;
+          extract_error?: string | null;
+          extract_status?: string | null;
           extracted_text?: string | null;
           file_name?: string;
           file_size?: number | null;
           file_type?: string | null;
           folder_id?: string | null;
           id?: string;
+          ocr_pages_done?: number | null;
+          ocr_pages_total?: number | null;
           page_count?: number | null;
           storage_path?: string;
           suggested_subject?: string | null;

@@ -26,3 +26,12 @@ verify_jwt = true
 
 [functions.last-minute]
 verify_jwt = true
+
+[functions.ocr-enqueue]
+verify_jwt = true
+
+# verify_jwt still requires a platform-signed JWT; the anon key that pg_cron
+# sends satisfies it. The worker itself never trusts the caller - it only
+# advances the internal ocr_jobs queue with the service role.
+[functions.ocr-worker]
+verify_jwt = true
