@@ -18,8 +18,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppStudybodyRouteImport } from './routes/app.studybody'
 import { Route as AppSettingsRouteImport } from './routes/app.settings'
 import { Route as AppPracticeRouteImport } from './routes/app.practice'
-import { Route as AppLastMinuteRouteImport } from './routes/app.last-minute'
 import { Route as AppLibraryRouteImport } from './routes/app.library'
+import { Route as AppLastMinuteRouteImport } from './routes/app.last-minute'
 import { Route as AppHistoryRouteImport } from './routes/app.history'
 import { Route as AppFeedbackRouteImport } from './routes/app.feedback'
 import { Route as AppChatRouteImport } from './routes/app.chat'
@@ -69,14 +69,14 @@ const AppPracticeRoute = AppPracticeRouteImport.update({
   path: '/practice',
   getParentRoute: () => AppRoute,
 } as any)
-const AppLastMinuteRoute = AppLastMinuteRouteImport.update({
-  id: '/last-minute',
-  path: '/last-minute',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppLibraryRoute = AppLibraryRouteImport.update({
   id: '/library',
   path: '/library',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLastMinuteRoute = AppLastMinuteRouteImport.update({
+  id: '/last-minute',
+  path: '/last-minute',
   getParentRoute: () => AppRoute,
 } as any)
 const AppHistoryRoute = AppHistoryRouteImport.update({
@@ -276,18 +276,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppLibraryRouteImport
       parentRoute: typeof AppRoute
     }
-    '/app/history': {
-      id: '/app/history'
-      path: '/history'
-      fullPath: '/app/history'
-      preLoaderRoute: typeof AppHistoryRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/app/last-minute': {
       id: '/app/last-minute'
       path: '/last-minute'
       fullPath: '/app/last-minute'
       preLoaderRoute: typeof AppLastMinuteRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/history': {
+      id: '/app/history'
+      path: '/history'
+      fullPath: '/app/history'
+      preLoaderRoute: typeof AppHistoryRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/feedback': {

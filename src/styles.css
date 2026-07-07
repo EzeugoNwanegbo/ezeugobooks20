@@ -377,6 +377,37 @@ html.gd-low-power .gd-loading-bar::after {
   background: color-mix(in srgb, var(--foreground) 5%, transparent);
   font-weight: 600;
 }
+/* `---` in an answer renders as a real, subtle section divider (ChatGPT-style). */
+.medai-prose hr {
+  border: 0;
+  height: 1px;
+  margin: 1.25rem 0;
+  background: color-mix(in srgb, var(--border) 90%, transparent);
+}
+
+/* Tap-to-look-up key term: a dotted underline that reads as "there's more here"
+   without shouting. Styled as a bare inline button so it flows inside prose. */
+.ai-term-trigger {
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--primary) 55%, transparent);
+  transition: color 120ms ease, text-decoration-color 120ms ease;
+}
+.ai-term-trigger:hover,
+.ai-term-trigger:focus-visible {
+  color: var(--primary-glow, var(--primary));
+  text-decoration-color: var(--primary);
+  outline: none;
+}
+.ai-term-popover {
+  animation: aiInlineComposerIn 140ms ease-out;
+}
 
 .ai-response-document {
   max-width: 760px;

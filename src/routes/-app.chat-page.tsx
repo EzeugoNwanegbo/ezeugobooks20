@@ -1,6 +1,17 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useAuth, type Profile } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -11,6 +22,7 @@ import {
   type WebSource,
 } from "@/lib/chat-client";
 import { takePendingChatDoc } from "@/lib/chat-handoff";
+import { lookupTerm, isTermLookupComplete, type TermLookupState } from "@/lib/term-lookup";
 import { embedQuery } from "@/lib/embeddings";
 import { getCached, setCached } from "@/lib/data-cache";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -51,6 +63,11 @@ import {
   Scissors,
 } from "lucide-react";
 import { LoadingDots } from "@/components/loading-dots";
+
+// GitHub-flavoured markdown (tables, ~~strikethrough~~, task lists, `---` rules).
+// Hoisted to a module constant so every <ReactMarkdown> shares one stable array
+// instead of allocating a fresh plugins list on each render.
+const REMARK_PLUGINS = [remarkGfm];
 
 type ChatSearch = { c?: string };
 type MessageSource = "library" | "general" | "interlink" | "visuals";
@@ -2709,6 +2726,244 @@ function cleanAiResponseMarkdown(markdown: string): string {
     .replace(/\*/g, "");
 }
 
+/**
+ * Common capitalized words that START sentences or are otherwise NOT worth a web
+ * lookup. Used to suppress false positives from the key-term heuristic below so
+ * we don't underline generic openers like "This" or "However".
+ */
+const KEY_TERM_STOPWORDS = new Set([
+  "the",
+  "this",
+  "that",
+  "these",
+  "those",
+  "there",
+  "then",
+  "they",
+  "their",
+  "them",
+  "here",
+  "however",
+  "therefore",
+  "because",
+  "although",
+  "meanwhile",
+  "overall",
+  "finally",
+  "first",
+  "second",
+  "third",
+  "next",
+  "note",
+  "important",
+  "example",
+  "for",
+  "and",
+  "but",
+  "with",
+  "your",
+  "you",
+  "our",
+  "when",
+  "while",
+  "what",
+  "which",
+  "where",
+  "how",
+  "why",
+  "who",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+  "january",
+  "february",
+  "march",
+  "april",
+  "may",
+  "june",
+  "july",
+  "august",
+  "september",
+  "october",
+  "november",
+  "december",
+]);
+
+const MAX_KEY_TERMS = 8;
+
+/**
+ * Lightweight, client-only heuristic that picks the most "searchable" phrases in
+ * a FINISHED assistant answer — the ones worth offering a one-tap web lookup for.
+ *
+ * WHY heuristic (not NLP): this runs on every rendered answer with zero network
+ * cost, so it must be cheap and predictable. We favour precision over recall —
+ * better to underline 5 solid proper/technical nouns than 30 noisy ones.
+ *
+ * Rules:
+ *  - Strip code fences, inline code, headings, and markdown links first so we
+ *    never surface a term that lives inside them.
+ *  - Match capitalized word runs ("Multiple Sclerosis") and ALL-CAPS acronyms
+ *    ("MRI", "COPD").
+ *  - Drop single capitalized words that merely open a sentence (likely just
+ *    grammar, not a proper noun) and anything in KEY_TERM_STOPWORDS.
+ *  - Rank multi-word phrases and acronyms first, then by frequency, and cap the
+ *    result so an answer never lights up like a Christmas tree.
+ *
+ * LIMITS (honest): it misses lowercase domain jargon, over-matches ordinary
+ * capitalized names (people, places), and is English/Latin-script only. That's
+ * an accepted trade-off for a tap-only convenience feature.
+ */
+function detectKeyTerms(text: string): string[] {
+  if (!text) return [];
+
+  const cleaned = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`]*`/g, " ")
+    .replace(/^\s{0,3}#{1,6}\s.*$/gm, " ")
+    .replace(/\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/https?:\/\/\S+/g, " ");
+
+  // Capitalized run (2+ letters/word, up to 4 words) OR a 2-5 char ALL-CAPS acronym.
+  const re =
+    /\b([A-Z][a-zA-Z]{1,}(?:\s+[A-Z][a-zA-Z]{1,}){0,3}|[A-Z]{2,5})\b/g;
+
+  type Candidate = { term: string; count: number; multiword: boolean };
+  const byKey = new Map<string, Candidate>();
+  let match: RegExpExecArray | null;
+
+  while ((match = re.exec(cleaned)) !== null) {
+    const term = match[1].trim();
+    const words = term.split(/\s+/);
+    const multiword = words.length > 1;
+    const isAcronym = /^[A-Z]{2,5}$/.test(term);
+
+    // A lone capitalized word that opens a sentence is usually just grammar.
+    if (!multiword && !isAcronym) {
+      const preceding = cleaned.slice(0, match.index).trimEnd();
+      const atSentenceStart = preceding === "" || /[.!?:;]$/.test(preceding);
+      if (atSentenceStart) continue;
+      if (KEY_TERM_STOPWORDS.has(term.toLowerCase())) continue;
+      if (term.length < 4) continue; // skip short one-off caps like "Dr" or initials
+    }
+    if (KEY_TERM_STOPWORDS.has(term.toLowerCase())) continue;
+
+    const key = term.toLowerCase();
+    const existing = byKey.get(key);
+    if (existing) existing.count += 1;
+    else byKey.set(key, { term, count: 1, multiword });
+  }
+
+  return Array.from(byKey.values())
+    .sort((a, b) => {
+      if (a.multiword !== b.multiword) return a.multiword ? -1 : 1;
+      if (a.count !== b.count) return b.count - a.count;
+      return b.term.length - a.term.length;
+    })
+    .slice(0, MAX_KEY_TERMS)
+    .map((candidate) => candidate.term);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Build a single case-sensitive regex that matches any detected term, longest
+ * first (so "Multiple Sclerosis" wins over "Multiple"). Returns null when there
+ * are no terms so callers can cheaply skip wrapping entirely.
+ */
+function buildTermRegex(terms: string[]): RegExp | null {
+  if (!terms.length) return null;
+  const ordered = [...terms].sort((a, b) => b.length - a.length).map(escapeRegExp);
+  return new RegExp(`\\b(?:${ordered.join("|")})\\b`, "g");
+}
+
+/**
+ * Split a raw text node and wrap the FIRST occurrence of each detected term in a
+ * dotted-underline lookup button. Only the first hit per term is wrapped (the
+ * shared `used` set enforces this across the whole answer) so we stay near the
+ * ~8-term cap and keep the answer readable rather than peppered with buttons.
+ */
+function wrapStringWithTerms(
+  text: string,
+  termRegex: RegExp,
+  used: Set<string>,
+  onTermClick: (term: string, anchor: HTMLElement) => void,
+): ReactNode {
+  termRegex.lastIndex = 0;
+  const out: ReactNode[] = [];
+  let last = 0;
+  let key = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = termRegex.exec(text)) !== null) {
+    const term = match[0];
+    const termKey = term.toLowerCase();
+    if (used.has(termKey)) continue; // already underlined this term once
+    used.add(termKey);
+
+    if (match.index > last) out.push(text.slice(last, match.index));
+    out.push(
+      <button
+        key={`term-${key++}-${match.index}`}
+        type="button"
+        // Tap = lookup. We stop the click from bubbling to the container's
+        // selection handler; a bare click carries no selection anyway, so the
+        // inline-composer path stays untouched and the two features coexist.
+        onClick={(event) => {
+          event.stopPropagation();
+          onTermClick(term, event.currentTarget);
+        }}
+        className="ai-term-trigger"
+        title={`Look up "${term}"`}
+      >
+        {term}
+      </button>,
+    );
+    last = match.index + term.length;
+  }
+
+  if (last === 0) return text; // nothing matched — return the plain string
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
+/**
+ * Recursively walk react-markdown children, wrapping detected terms in text
+ * nodes. Never descends into <a> or <code> (we must not underline terms inside
+ * links or code); other inline wrappers like <strong>/<em> are traversed so a
+ * bolded term is still tappable.
+ */
+function wrapTermsInChildren(
+  children: ReactNode,
+  termRegex: RegExp | null,
+  used: Set<string>,
+  onTermClick: (term: string, anchor: HTMLElement) => void,
+): ReactNode {
+  if (!termRegex) return children;
+
+  return Children.map(children, (child) => {
+    if (typeof child === "string") {
+      return wrapStringWithTerms(child, termRegex, used, onTermClick);
+    }
+    if (isValidElement(child)) {
+      if (child.type === "a" || child.type === "code") return child;
+      const grandChildren = (child.props as { children?: ReactNode }).children;
+      if (grandChildren == null) return child;
+      return cloneElement(
+        child,
+        undefined,
+        wrapTermsInChildren(grandChildren, termRegex, used, onTermClick),
+      );
+    }
+    return child;
+  });
+}
+
 function selectionHasEditableTarget(range: Range): boolean {
   const node = range.commonAncestorContainer;
   const element = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
@@ -2757,6 +3012,20 @@ function Message({
   const [inlineThreads, setInlineThreads] = useState<InlineThread[]>([]);
   const [inlineComposer, setInlineComposer] = useState<InlineComposerState | null>(null);
   const [inlineInput, setInlineInput] = useState("");
+  // Key-term web-lookup popover. `termPopover` holds the open term + its screen
+  // anchor; `termState` mirrors the lookup's streaming/final state for render.
+  const [termPopover, setTermPopover] = useState<{
+    term: string;
+    top: number;
+    left: number;
+  } | null>(null);
+  const [termState, setTermState] = useState<TermLookupState | null>(null);
+  // Per-message cache so re-tapping a term is instant and never re-hits the web.
+  const termCacheRef = useRef<Map<string, TermLookupState>>(new Map());
+  // Tracks which term is live so a slow stream can't overwrite a newer selection.
+  const activeTermRef = useRef<string | null>(null);
+  // Lets us cancel an in-flight lookup when the popover closes or the term changes.
+  const termAbortRef = useRef<AbortController | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const inlineComposerRef = useRef<HTMLFormElement>(null);
   const selectedRangeRef = useRef<Range | null>(null);
@@ -2770,6 +3039,88 @@ function Message({
         ? visualParts.markdown || "Animation preview ready."
         : msg.content;
   const displayContent = rawContent ? cleanAiResponseMarkdown(rawContent.replace(/—/g, " - ")) : "";
+
+  // Only surface tappable key terms once the answer has FINISHED streaming — mid
+  // stream the text is still shifting, and firing lookups then would be wasteful.
+  const keyTerms = useMemo(
+    () => (streaming ? [] : detectKeyTerms(displayContent)),
+    [streaming, displayContent],
+  );
+  // One combined matcher for all detected terms (null when there are none, so the
+  // markdown renderers can cheaply skip all term-wrapping work).
+  const termRegex = useMemo(() => buildTermRegex(keyTerms), [keyTerms]);
+
+  const closeTermPopover = () => {
+    termAbortRef.current?.abort();
+    termAbortRef.current = null;
+    activeTermRef.current = null;
+    setTermPopover(null);
+    setTermState(null);
+  };
+
+  const handleTermClick = (term: string, anchor: HTMLElement) => {
+    // Position the popover just under the tapped term, clamped to the viewport.
+    const rect = anchor.getBoundingClientRect();
+    const popoverWidth = Math.min(320, window.innerWidth - 24);
+    const left = Math.max(12, Math.min(window.innerWidth - popoverWidth - 12, rect.left));
+    const top = Math.min(window.innerHeight - 120, rect.bottom + 8);
+
+    // Cancel any lookup still streaming for a previous term.
+    termAbortRef.current?.abort();
+    activeTermRef.current = term;
+    setTermPopover({ term, top, left });
+
+    const cached = termCacheRef.current.get(term);
+    if (isTermLookupComplete(cached)) {
+      // Instant path — we already have a finished blurb for this term.
+      setTermState(cached ?? null);
+      return;
+    }
+
+    const controller = new AbortController();
+    termAbortRef.current = controller;
+    lookupTerm({
+      term,
+      profile,
+      signal: controller.signal,
+      onUpdate: (state) => {
+        // Always keep the cache warm; only paint if this term is still the live one.
+        termCacheRef.current.set(term, state);
+        if (activeTermRef.current === term) setTermState(state);
+      },
+    });
+  };
+
+  // Dismiss the term popover on outside tap or Esc (touch-friendly + keyboard).
+  useEffect(() => {
+    if (!termPopover) return;
+
+    const dismissOnOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Element | null;
+      // Ignore taps on the popover itself or on another term (which opens its own).
+      if (target?.closest(".ai-term-popover")) return;
+      if (target?.closest(".ai-term-trigger")) return;
+      closeTermPopover();
+    };
+    const dismissOnEsc = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeTermPopover();
+    };
+
+    window.addEventListener("mousedown", dismissOnOutside);
+    window.addEventListener("touchstart", dismissOnOutside);
+    window.addEventListener("keydown", dismissOnEsc);
+    return () => {
+      window.removeEventListener("mousedown", dismissOnOutside);
+      window.removeEventListener("touchstart", dismissOnOutside);
+      window.removeEventListener("keydown", dismissOnEsc);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [termPopover]);
+
+  // Abort any in-flight lookup if the message unmounts.
+  useEffect(() => {
+    return () => termAbortRef.current?.abort();
+  }, []);
 
   useEffect(() => {
     if (!inlineComposer) return;
@@ -3017,8 +3368,60 @@ function Message({
       );
     }
 
+    // Wrap detected key terms in dotted-underline lookup buttons. `termUsed` is
+    // shared across every markdown segment of THIS answer so each term is only
+    // underlined on its first occurrence (keeps the answer readable, not noisy).
+    const termUsed = new Set<string>();
+    const termComponents: Components | undefined = termRegex
+      ? {
+          p({ node, children, ...props }) {
+            void node;
+            return (
+              <p {...props}>{wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}</p>
+            );
+          },
+          li({ node, children, ...props }) {
+            void node;
+            return (
+              <li {...props}>
+                {wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}
+              </li>
+            );
+          },
+          td({ node, children, ...props }) {
+            void node;
+            return (
+              <td {...props}>
+                {wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}
+              </td>
+            );
+          },
+          th({ node, children, ...props }) {
+            void node;
+            return (
+              <th {...props}>
+                {wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}
+              </th>
+            );
+          },
+          blockquote({ node, children, ...props }) {
+            void node;
+            return (
+              <blockquote {...props}>
+                {wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}
+              </blockquote>
+            );
+          },
+        }
+      : undefined;
+    const renderMd = (content: string, key?: string) => (
+      <ReactMarkdown key={key} remarkPlugins={REMARK_PLUGINS} components={termComponents}>
+        {content}
+      </ReactMarkdown>
+    );
+
     if (!inlineThreads.length && !inlineComposer) {
-      return <ReactMarkdown>{displayContent}</ReactMarkdown>;
+      return renderMd(displayContent);
     }
 
     const ordered = [
@@ -3061,9 +3464,7 @@ function Message({
 
       if (position > cursor) {
         rendered.push(
-          <ReactMarkdown key={`before-${item.key}`}>
-            {displayContent.slice(cursor, position)}
-          </ReactMarkdown>,
+          renderMd(displayContent.slice(cursor, position), `before-${item.key}`),
         );
       }
 
@@ -3120,7 +3521,7 @@ function Message({
 
     if (cursor < displayContent.length) {
       rendered.push(
-        <ReactMarkdown key="after-inline-threads">{displayContent.slice(cursor)}</ReactMarkdown>,
+        renderMd(displayContent.slice(cursor), "after-inline-threads"),
       );
     }
 
@@ -3167,9 +3568,9 @@ function Message({
     );
   }
   return (
-    <div className="group flex gap-2 sm:gap-3">
-      <AiMark active={streaming} className="mt-0.5 scale-90 opacity-75" />
-      <div className="min-w-0 flex-1">
+    // Full-width answer column, ChatGPT-style: no per-response avatar/logo gutter.
+    <div className="group">
+      <div className="min-w-0">
         {((msg.source && msg.source !== "general") || msg.webSources?.length) && (
           <div className="mb-3 flex items-center gap-2">
             {msg.source && msg.source !== "general" && <SourceBadge source={msg.source} />}
@@ -3185,6 +3586,62 @@ function Message({
         >
           {renderInlineMarkdown()}
         </div>
+        {termPopover && (
+          <div
+            className="ai-term-popover fixed z-50 w-[min(320px,calc(100vw-24px))] rounded-xl border border-border/70 bg-background/95 p-3 shadow-[0_18px_50px_rgba(0,0,0,0.16)] backdrop-blur-xl"
+            style={{ top: termPopover.top, left: termPopover.left }}
+            role="dialog"
+            aria-label={`About ${termPopover.term}`}
+          >
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <span className="text-[13px] font-semibold text-foreground">{termPopover.term}</span>
+              <button
+                type="button"
+                onClick={closeTermPopover}
+                aria-label="Close"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {termState?.error ? (
+              <p className="text-[12px] text-muted-foreground">
+                Couldn't look that up right now.{" "}
+                <a
+                  className="text-primary underline"
+                  href={`https://www.google.com/search?q=${encodeURIComponent(termPopover.term)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open web search
+                </a>
+              </p>
+            ) : termState?.text ? (
+              <p className="text-[12.5px] leading-relaxed text-foreground/90">{termState.text}</p>
+            ) : (
+              <div className="flex items-center gap-2 py-1 text-[12px] text-muted-foreground">
+                <span className="gd-loading-bar w-24" />
+                Searching the web...
+              </div>
+            )}
+            {termState?.sources?.length ? (
+              <div className="mt-2 flex flex-wrap gap-1.5 border-t border-border/50 pt-2">
+                {termState.sources.slice(0, 3).map((source, index) => (
+                  <a
+                    key={`${source.url}-${index}`}
+                    href={source.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded-md bg-foreground/[0.05] px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <ExternalLink className="h-2.5 w-2.5" />
+                    <span className="max-w-[150px] truncate">{source.title || source.url}</span>
+                  </a>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        )}
         {inlineComposer && (
           <form
             ref={inlineComposerRef}
@@ -3339,7 +3796,9 @@ function InlineThreadView({
             <p className="text-sm text-destructive">{thread.error}</p>
           ) : thread.response ? (
             <div className="medai-prose text-sm">
-              <ReactMarkdown>{thread.response.replace(/—/g, " - ")}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>
+                {thread.response.replace(/—/g, " - ")}
+              </ReactMarkdown>
             </div>
           ) : (
             <div className="flex flex-col gap-2 py-1.5" aria-busy="true">
