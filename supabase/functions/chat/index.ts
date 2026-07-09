@@ -34,6 +34,7 @@ interface DocumentCtx {
 interface WebSource {
   title: string;
   url: string;
+  image?: string;
 }
 
 interface WebAnnotation {
@@ -127,6 +128,74 @@ function webSourcesFromAnnotations(annotations: WebAnnotation[]): WebSource[] {
       }))
       .filter((source) => source.url),
   );
+}
+
+const OG_IMAGE_FETCH_TIMEOUT_MS = 2_500;
+const OG_IMAGE_MAX_BYTES = 50_000;
+
+// Best-effort og:image (falling back to twitter:image) scrape for a source
+// URL. Reads only the first ~50KB of HTML so a huge page can't stall the
+// request, and swallows every failure - a source simply keeps no `image`.
+async function fetchOgImage(url: string): Promise<string | undefined> {
+  try {
+    const resp = await fetchWithTimeout(
+      url,
+      {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (compatible; GDStudyBot/1.0; +https://gd1.online) AppleWebKit/537.36",
+          Accept: "text/html",
+        },
+      },
+      OG_IMAGE_FETCH_TIMEOUT_MS,
+    );
+
+    if (!resp.ok || !resp.body) return undefined;
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let html = "";
+    try {
+      while (html.length < OG_IMAGE_MAX_BYTES) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        html += decoder.decode(value, { stream: true });
+      }
+    } finally {
+      reader.cancel().catch(() => {});
+    }
+
+    const match =
+      html.match(/<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]*content=["']([^"']+)["']/i) ||
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:image(?::secure_url)?["']/i) ||
+      html.match(/<meta[^>]+name=["']twitter:image(?::src)?["'][^>]*content=["']([^"']+)["']/i) ||
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]*name=["']twitter:image(?::src)?["']/i);
+
+    const raw = match?.[1];
+    if (!raw) return undefined;
+
+    try {
+      return new URL(raw, url).toString();
+    } catch {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+}
+
+// Enriches sources with a preview image in parallel, tolerating individual
+// failures/timeouts so a slow or broken page never blocks the others.
+async function attachSourceImages(sources: WebSource[]): Promise<WebSource[]> {
+  if (sources.length === 0) return sources;
+
+  const results = await Promise.allSettled(sources.map((source) => fetchOgImage(source.url)));
+
+  return sources.map((source, index) => {
+    const result = results[index];
+    const image = result.status === "fulfilled" ? result.value : undefined;
+    return image ? { ...source, image } : source;
+  });
 }
 
 function cleanWebAnswerText(text: string, annotations: WebAnnotation[]): string {
@@ -586,7 +655,7 @@ Keep it short enough to paste into another answer prompt.`,
   const annotations = (
     Array.isArray(message?.annotations) ? message.annotations : []
   ) as WebAnnotation[];
-  const sources = webSourcesFromAnnotations(annotations);
+  const sources = await attachSourceImages(webSourcesFromAnnotations(annotations));
 
   return {
     text: cleanWebAnswerText(message?.content ?? "", annotations),
@@ -649,7 +718,7 @@ RULES:
   const annotations = (
     Array.isArray(message?.annotations) ? message.annotations : []
   ) as WebAnnotation[];
-  const sources = webSourcesFromAnnotations(annotations);
+  const sources = await attachSourceImages(webSourcesFromAnnotations(annotations));
 
   return {
     text: withLengthLimitNote(
@@ -716,7 +785,7 @@ Visual request: ${studentQuestion}`,
   const annotations = (
     Array.isArray(message?.annotations) ? message.annotations : []
   ) as WebAnnotation[];
-  const sources = webSourcesFromAnnotations(annotations);
+  const sources = await attachSourceImages(webSourcesFromAnnotations(annotations));
 
   return {
     text: withLengthLimitNote(

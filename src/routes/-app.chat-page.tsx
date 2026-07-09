@@ -22,6 +22,7 @@ import {
   type WebSource,
 } from "@/lib/chat-client";
 import { takePendingChatDoc } from "@/lib/chat-handoff";
+import { isNativeApp } from "@/lib/native";
 import { lookupTerm, isTermLookupComplete, type TermLookupState } from "@/lib/term-lookup";
 import { embedQuery } from "@/lib/embeddings";
 import { getCached, setCached } from "@/lib/data-cache";
@@ -59,8 +60,11 @@ import {
   Volume2,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Copy,
   Scissors,
+  Pencil,
+  Check,
 } from "lucide-react";
 import { LoadingDots } from "@/components/loading-dots";
 
@@ -100,10 +104,26 @@ type SpeechWindow = Window &
     webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
   };
 
+// A past answer/question pairing kept around after an edit-and-rerun so the
+// user can browse back to it. `userContent` is the question that produced
+// `content` — flipping versions swaps both bubbles together.
+type AnswerVersion = {
+  content: string;
+  userContent: string;
+  source?: MessageSource;
+  model?: string;
+  webSources?: WebSource[];
+};
+
 type DisplayMessage = ChatMessage & {
   source?: MessageSource;
   model?: string;
   webSources?: WebSource[];
+  // Present on an assistant message that has been regenerated at least once
+  // (via editing the user question above it). `content`/`source`/`model`/
+  // `webSources` always mirror `versions[activeVersion]`.
+  versions?: AnswerVersion[];
+  activeVersion?: number;
 };
 
 type InlineThread = {
@@ -473,10 +493,13 @@ function webSourcesFromJson(value: unknown): WebSource[] | undefined {
       const record = item as Record<string, unknown>;
       const url = typeof record.url === "string" ? record.url : "";
       if (!url) return null;
-      return {
+      const image = typeof record.image === "string" ? record.image : undefined;
+      const source: WebSource = {
         title: typeof record.title === "string" ? record.title : "Web source",
         url,
+        ...(image ? { image } : {}),
       };
+      return source;
     })
     .filter((source): source is WebSource => Boolean(source));
 
@@ -633,6 +656,10 @@ export function ChatPage() {
   const search = useSearch({ from: "/app/chat" }) as ChatSearch;
   const conversationId = search.c;
   const isGuest = !user;
+  // Native Android WebView's Samsung-keyboard composing path breaks typing when
+  // autocorrect/spellcheck are on, so those stay off there. In the browser we
+  // can safely enable them for a normal typing experience.
+  const nativeApp = isNativeApp();
 
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
@@ -1235,9 +1262,44 @@ export function ChatPage() {
     };
   };
 
-  const send = async (text?: string) => {
+  const send = async (
+    text?: string,
+    opts?: { baseMessages?: DisplayMessage[]; priorVersions?: AnswerVersion[] },
+  ) => {
     const content = (text ?? input).trim();
     if (!content || streaming) return;
+    // Edit-and-rerun passes an explicitly truncated history (everything before
+    // the edited message) rather than relying on `messages` state having
+    // already been updated synchronously, plus the answer versions carried
+    // forward from before the edit.
+    const baseMessages = opts?.baseMessages ?? messages;
+    const priorVersions = opts?.priorVersions ?? [];
+    // The fallback the assistant bubble reverts to if this rerun fails/cancels
+    // before producing any new content - the last-known-good prior answer,
+    // instead of just vanishing.
+    const fallbackAssistantMessage: DisplayMessage | null =
+      priorVersions.length > 0
+        ? {
+            role: "assistant",
+            content: priorVersions[priorVersions.length - 1].content,
+            source: priorVersions[priorVersions.length - 1].source,
+            model: priorVersions[priorVersions.length - 1].model,
+            webSources: priorVersions[priorVersions.length - 1].webSources,
+            versions: priorVersions,
+            activeVersion: priorVersions.length - 1,
+          }
+        : null;
+    const restorePriorOrDrop = () => {
+      setMessages((prev) => {
+        if (!fallbackAssistantMessage) return prev.slice(0, -1);
+        const copy = [...prev];
+        if (copy.length > 0 && copy[copy.length - 1]?.role === "assistant") {
+          copy[copy.length - 1] = fallbackAssistantMessage;
+          return copy;
+        }
+        return [...prev, fallbackAssistantMessage];
+      });
+    };
     const requestStartedAt = performance.now();
     const logTiming = (label: string, extra: Record<string, unknown> = {}) => {
       console.info(`[G&D timing] ${label}`, {
@@ -1272,8 +1334,17 @@ export function ChatPage() {
         });
     }
 
-    const next: DisplayMessage[] = [...messages, { role: "user", content }];
-    setMessages([...next, { role: "assistant", content: "" }]);
+    const next: DisplayMessage[] = [...baseMessages, { role: "user", content }];
+    setMessages([
+      ...next,
+      {
+        role: "assistant",
+        content: "",
+        ...(priorVersions.length > 0
+          ? { versions: priorVersions, activeVersion: priorVersions.length }
+          : {}),
+      },
+    ]);
     setStreaming(true);
     const requestController = new AbortController();
     chatAbortRef.current = requestController;
@@ -1281,7 +1352,7 @@ export function ChatPage() {
     const cid = await ensureConversation(content);
     if (!cid || requestController.signal.aborted) {
       if (requestController.signal.aborted) logTiming("response cancelled");
-      setMessages(next);
+      setMessages(fallbackAssistantMessage ? [...next, fallbackAssistantMessage] : next);
       setStreaming(false);
       if (chatAbortRef.current === requestController) chatAbortRef.current = null;
       return;
@@ -1309,7 +1380,7 @@ export function ChatPage() {
         console.error("prepare library context", err);
         toast.error("Couldn't prepare your library context");
       }
-      setMessages((prev) => prev.slice(0, -1));
+      restorePriorOrDrop();
       setStreaming(false);
       if (chatAbortRef.current === requestController) chatAbortRef.current = null;
       return;
@@ -1317,7 +1388,7 @@ export function ChatPage() {
 
     if (requestController.signal.aborted) {
       logTiming("response cancelled");
-      setMessages((prev) => prev.slice(0, -1));
+      restorePriorOrDrop();
       setStreaming(false);
       if (chatAbortRef.current === requestController) chatAbortRef.current = null;
       return;
@@ -1356,6 +1427,13 @@ export function ChatPage() {
 
     if (contextResult.noLibraryMatch && contextResult.noMatchScope) {
       const noMatchText = studyMaterialMissMessage(contextResult.noMatchScope);
+      const noMatchVersions: AnswerVersion[] =
+        priorVersions.length > 0
+          ? [
+              ...priorVersions,
+              { content: noMatchText, userContent: content, source: "library", model: "library-search" },
+            ]
+          : [];
       setMessages([
         ...next,
         {
@@ -1363,6 +1441,9 @@ export function ChatPage() {
           content: noMatchText,
           source: "library",
           model: "library-search",
+          ...(noMatchVersions.length > 0
+            ? { versions: noMatchVersions, activeVersion: noMatchVersions.length - 1 }
+            : {}),
         },
       ]);
       setStreaming(false);
@@ -1412,6 +1493,12 @@ export function ChatPage() {
           source: metaSource,
           model: metaModel,
           webSources,
+          // The freshly-generated version isn't appended to `versions` until
+          // it finishes (see onDone) - until then this just carries the prior
+          // versions along so the nav row's data stays intact mid-stream.
+          ...(priorVersions.length > 0
+            ? { versions: priorVersions, activeVersion: priorVersions.length }
+            : {}),
         };
         if (copy.length === 0 || copy[copy.length - 1]?.role !== "assistant") {
           copy.push(assistantMessage);
@@ -1452,7 +1539,7 @@ export function ChatPage() {
       if (assistant) {
         setAssistantMessage(visibleAssistant || assistant);
       } else {
-        setMessages((prev) => prev.slice(0, -1));
+        restorePriorOrDrop();
       }
     };
 
@@ -1511,7 +1598,7 @@ export function ChatPage() {
           logTiming("ai error", { error: err });
           stopReveal();
           toast.error(err);
-          setMessages((prev) => prev.slice(0, -1));
+          restorePriorOrDrop();
         },
         onCancel: finishCancelled,
         onDone: async () => {
@@ -1519,6 +1606,26 @@ export function ChatPage() {
           stopReveal();
           visibleAssistant = assistant;
           setAssistantMessage(assistant);
+          if (priorVersions.length > 0) {
+            // Finalize versioning: the just-finished answer becomes the newest
+            // entry, appended after the versions carried over from the edit.
+            const finalVersions: AnswerVersion[] = [
+              ...priorVersions,
+              { content: assistant, userContent: content, source: metaSource, model: metaModel, webSources },
+            ];
+            setMessages((prev) => {
+              const copy = [...prev];
+              const last = copy[copy.length - 1];
+              if (last?.role === "assistant") {
+                copy[copy.length - 1] = {
+                  ...last,
+                  versions: finalVersions,
+                  activeVersion: finalVersions.length - 1,
+                };
+              }
+              return copy;
+            });
+          }
           logTiming("ai stream done", { chars: assistant.length });
           if (assistant && user) {
             await supabase.from("messages").insert({
@@ -1588,6 +1695,65 @@ export function ChatPage() {
     window.addEventListener("gd:new-chat", handleNewChat);
     return () => window.removeEventListener("gd:new-chat", handleNewChat);
   });
+
+  // ChatGPT-style edit: rewrite a sent question and rerun its answer. The old
+  // answer (and its question) is kept as a browsable version rather than
+  // being thrown away.
+  const editUserMessage = (messageIndex: number, newText: string) => {
+    if (streaming) return;
+    const trimmed = newText.trim();
+    const target = messages[messageIndex];
+    if (!trimmed || target?.role !== "user") return;
+
+    const truncated = messages.slice(0, messageIndex);
+    const oldAssistant = messages[messageIndex + 1];
+    let priorVersions: AnswerVersion[] = [];
+    if (oldAssistant?.role === "assistant") {
+      priorVersions =
+        oldAssistant.versions && oldAssistant.versions.length > 0
+          ? oldAssistant.versions
+          : [
+              {
+                content: oldAssistant.content,
+                userContent: target.content,
+                source: oldAssistant.source,
+                model: oldAssistant.model,
+                webSources: oldAssistant.webSources,
+              },
+            ];
+    }
+
+    void send(trimmed, { baseMessages: truncated, priorVersions });
+  };
+
+  // Flips an assistant answer (and its paired question bubble) to a
+  // previously-generated version.
+  const setAnswerVersion = (assistantIndex: number, versionIndex: number) => {
+    setMessages((prev) => {
+      const assistantMsg = prev[assistantIndex];
+      const versions = assistantMsg?.versions;
+      if (!versions || versionIndex < 0 || versionIndex >= versions.length) return prev;
+
+      const version = versions[versionIndex];
+      const copy = [...prev];
+      copy[assistantIndex] = {
+        ...assistantMsg,
+        content: version.content,
+        source: version.source,
+        model: version.model,
+        webSources: version.webSources,
+        activeVersion: versionIndex,
+      };
+
+      const userIndex = assistantIndex - 1;
+      const userMsg = copy[userIndex];
+      if (userMsg?.role === "user") {
+        copy[userIndex] = { ...userMsg, content: version.userContent };
+      }
+
+      return copy;
+    });
+  };
 
   const deleteConversation = async (id: string) => {
     if (!user) return;
@@ -1805,6 +1971,9 @@ export function ChatPage() {
                     mode={mode}
                     isLast={i === messages.length - 1}
                     streaming={streaming && i === messages.length - 1}
+                    canEdit={!streaming}
+                    onEditUserMessage={(newText) => editUserMessage(i, newText)}
+                    onVersionChange={(versionIndex) => setAnswerVersion(i, versionIndex)}
                   />
                 ))}
               </div>
@@ -2004,13 +2173,15 @@ export function ChatPage() {
                     send();
                   }
                 }}
-                // Disable predictive/composing text - the Samsung keyboard's
-                // composing path doesn't commit into the Android WebView, so
-                // typed text never appears. Plain (non-composing) input works.
-                autoCapitalize="none"
-                autoCorrect="off"
+                // Disable predictive/composing text ONLY in the native app - the
+                // Samsung keyboard's composing path doesn't commit into the
+                // Android WebView there, so typed text never appears. Plain
+                // (non-composing) input works. The browser has no such bug, so
+                // give it normal autocorrect/autocapitalize/spellcheck.
+                autoCapitalize={nativeApp ? "none" : "sentences"}
+                autoCorrect={nativeApp ? "off" : "on"}
                 autoComplete="off"
-                spellCheck={false}
+                spellCheck={!nativeApp}
                 rows={1}
                 placeholder=""
                 className="min-h-[44px] max-h-[180px] flex-1 resize-none rounded-2xl border border-border/80 bg-background px-4 py-2.5 text-sm shadow-[0_8px_24px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-ring sm:px-5"
@@ -2424,14 +2595,56 @@ function SourceFavicon({ source, index }: { source: WebSource; index: number }) 
   );
 }
 
+/** Small preview thumbnail for a web source's og:image, falling back to the favicon chip on load failure. */
+function SourceThumbnail({ source, index }: { source: WebSource; index: number }) {
+  const [failed, setFailed] = useState(false);
+  const host = sourceHostname(source.url);
+  const label = source.title || host || source.url;
+
+  if (!source.image || failed) {
+    return <SourceFavicon source={source} index={index} />;
+  }
+
+  return (
+    <a
+      href={source.url}
+      target="_blank"
+      rel="noreferrer"
+      title={label}
+      aria-label={`Open web source ${index + 1}: ${label}`}
+      className="group/thumb relative block h-12 w-14 shrink-0 overflow-hidden rounded-lg border border-border bg-foreground/[0.03] transition-colors hover:border-primary/35 sm:h-14 sm:w-16"
+    >
+      <img
+        src={source.image}
+        alt={label}
+        loading="lazy"
+        className="h-full w-full object-cover transition-transform duration-300 group-hover/thumb:scale-105"
+        onError={() => setFailed(true)}
+      />
+    </a>
+  );
+}
+
 function WebSourceIcons({ sources }: { sources?: WebSource[] }) {
   if (!sources?.length) return null;
 
+  const shown = sources.slice(0, 6);
+  const withImages = shown.filter((source) => source.image).slice(0, 4);
+
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-      {sources.slice(0, 6).map((source, index) => (
-        <SourceFavicon key={`${source.url}-${index}`} source={source} index={index} />
-      ))}
+    <div className="mt-2 flex flex-col gap-1.5">
+      {withImages.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {withImages.map((source, index) => (
+            <SourceThumbnail key={`thumb-${source.url}-${index}`} source={source} index={index} />
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {shown.map((source, index) => (
+          <SourceFavicon key={`${source.url}-${index}`} source={source} index={index} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -3001,14 +3214,23 @@ function Message({
   streaming,
   profile,
   mode,
+  canEdit,
+  onEditUserMessage,
+  onVersionChange,
 }: {
   msg: DisplayMessage;
   profile: Profile;
   mode: ChatMode;
   isLast: boolean;
   streaming: boolean;
+  canEdit?: boolean;
+  onEditUserMessage?: (newText: string) => void;
+  onVersionChange?: (versionIndex: number) => void;
 }) {
   const [speaking, setSpeaking] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState(msg.content);
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [inlineThreads, setInlineThreads] = useState<InlineThread[]>([]);
   const [inlineComposer, setInlineComposer] = useState<InlineComposerState | null>(null);
   const [inlineInput, setInlineInput] = useState("");
@@ -3559,8 +3781,87 @@ function Message({
   };
 
   if (msg.role === "user") {
+    const startEdit = () => {
+      if (!canEdit) return;
+      setEditDraft(msg.content);
+      setIsEditing(true);
+    };
+    const cancelEdit = () => {
+      setIsEditing(false);
+      setEditDraft(msg.content);
+    };
+    const saveEdit = () => {
+      const trimmed = editDraft.trim();
+      if (!trimmed) return;
+      setIsEditing(false);
+      if (trimmed !== msg.content) onEditUserMessage?.(trimmed);
+    };
+
+    if (isEditing) {
+      return (
+        <div className="flex justify-end">
+          <div className="w-full max-w-[88%] rounded-2xl rounded-br-md border border-primary/40 bg-background px-3.5 py-2.5 shadow-sm sm:max-w-[85%] sm:px-4">
+            <textarea
+              ref={editTextareaRef}
+              autoFocus
+              value={editDraft}
+              onChange={(e) => setEditDraft(e.target.value)}
+              onFocus={(e) => e.currentTarget.select()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  saveEdit();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancelEdit();
+                }
+              }}
+              rows={1}
+              className="min-h-[24px] max-h-[240px] w-full resize-none bg-transparent text-sm leading-relaxed text-foreground outline-none"
+              style={{ height: "auto" }}
+              onInput={(e) => {
+                const t = e.currentTarget;
+                t.style.height = "auto";
+                t.style.height = Math.min(t.scrollHeight, 240) + "px";
+              }}
+            />
+            <div className="mt-2 flex items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={cancelEdit}
+                className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveEdit}
+                disabled={!editDraft.trim()}
+                className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                <Check className="h-3 w-3" />
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="flex justify-end">
+      <div className="group/user flex items-start justify-end gap-1.5">
+        {canEdit && onEditUserMessage && (
+          <button
+            type="button"
+            onClick={startEdit}
+            title="Edit message"
+            aria-label="Edit message"
+            className="mt-2 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/[0.06] hover:text-foreground group-hover/user:opacity-100 focus-visible:opacity-100"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        )}
         <div className="max-w-[88%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2.5 text-sm leading-relaxed text-primary-foreground shadow-sm break-words sm:max-w-[85%] sm:px-4">
           {msg.content}
         </div>
@@ -3582,7 +3883,7 @@ function Message({
           onMouseUp={openInlineComposer}
           onKeyUp={openInlineComposer}
           onTouchEnd={openInlineComposer}
-          className="ai-response-document medai-prose text-[15px]"
+          className="ai-response-document medai-prose text-[16px]"
         >
           {renderInlineMarkdown()}
         </div>
@@ -3731,6 +4032,37 @@ function Message({
         )}
         {htmlAnimation && <VisualPreview html={htmlAnimation} />}
         <WebSourceIcons sources={msg.webSources} />
+        {msg.versions && msg.versions.length > 1 && (
+          <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+            <button
+              type="button"
+              onClick={() => onVersionChange?.(Math.max(0, (msg.activeVersion ?? 0) - 1))}
+              disabled={(msg.activeVersion ?? 0) <= 0}
+              title="Previous answer"
+              aria-label="Previous answer"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <span className="tabular-nums select-none">
+              {(msg.activeVersion ?? 0) + 1} / {msg.versions.length}
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                onVersionChange?.(
+                  Math.min(msg.versions!.length - 1, (msg.activeVersion ?? 0) + 1),
+                )
+              }
+              disabled={(msg.activeVersion ?? 0) >= msg.versions.length - 1}
+              title="Next answer"
+              aria-label="Next answer"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

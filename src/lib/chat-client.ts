@@ -28,6 +28,7 @@ export type DocumentMode = "none" | "smart" | "selected";
 export type WebSource = {
   title: string;
   url: string;
+  image?: string;
 };
 
 function readWithAbort(

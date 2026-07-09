@@ -304,9 +304,9 @@ html.gd-low-power .gd-loading-bar::after {
 /* Markdown prose styling */
 .medai-prose {
   color: var(--foreground);
-  line-height: 1.72;
+  line-height: 1.75;
   /* AI replies read a touch bolder than the thin 300 body weight for legibility. */
-  font-weight: 400;
+  font-weight: 450;
 }
 .medai-prose p {
   margin: 0.65rem 0;
