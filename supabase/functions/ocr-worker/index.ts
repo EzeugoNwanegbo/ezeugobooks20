@@ -55,6 +55,12 @@ type OcrJob = {
   page_start: number;
   page_end: number;
   attempts: number;
+  // Part-split fields (migration 20260709120000). storage_path is the PART file
+  // this job's pages live in; part_first_page is the ABSOLUTE document page that
+  // is page 1 of that part. Both are absent/NULL for jobs enqueued before the
+  // split, where the whole document is one object (fallbacks handle that).
+  storage_path?: string | null;
+  part_first_page?: number | null;
 };
 
 type RawImage = { data: Uint8ClampedArray | Uint8Array; width: number; height: number };
@@ -441,8 +447,10 @@ Deno.serve(async (req: Request) => {
     }
 
     try {
-      // 1. Download + open the PDF (each invocation is stateless; pdf.js only
-      //    parses the pages we actually touch, so this is cheaper than it looks).
+      // 1. Download + open the PART that holds this job's pages. A part is a
+      //    <=50 MB slice the web client split off the book, so this download is
+      //    small even for a 200 MB textbook. Jobs enqueued before the part split
+      //    have no storage_path - fall back to the document's own single object.
       const { data: doc, error: docErr } = await admin
         .from("documents")
         .select("id, user_id, storage_path")
@@ -450,9 +458,10 @@ Deno.serve(async (req: Request) => {
         .single();
       if (docErr || !doc) throw new Error("Document row disappeared.");
 
+      const downloadPath = job.storage_path ?? doc.storage_path;
       const { data: file, error: dlErr } = await admin.storage
         .from("documents")
-        .download(doc.storage_path);
+        .download(downloadPath);
       if (dlErr || !file) throw new Error("Could not download the file from storage.");
 
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -460,10 +469,20 @@ Deno.serve(async (req: Request) => {
       const { OPS } = await getResolvedPDFJS();
       const engine = await getEngine();
 
-      // 2. OCR this job's page range.
+      // 2. OCR this job's ABSOLUTE page range, mapped into the part. Labels and
+      //    chunk_index stay absolute (chunkJobPages uses job.page_start below);
+      //    only the page we pull from THIS pdf is relative to the part's first
+      //    page. Keep the array aligned to the absolute range even if a page is
+      //    somehow missing, so page labels never drift.
+      const partFirstPage = job.part_first_page ?? 1;
       const pageTexts: string[] = [];
-      for (let p = job.page_start; p <= Math.min(job.page_end, pdf.numPages); p += 1) {
-        pageTexts.push(await readPage(pdf, p, OPS, engine));
+      for (let p = job.page_start; p <= job.page_end; p += 1) {
+        const relative = p - partFirstPage + 1;
+        if (relative < 1 || relative > pdf.numPages) {
+          pageTexts.push("");
+          continue;
+        }
+        pageTexts.push(await readPage(pdf, relative, OPS, engine));
       }
 
       // 3. Idempotent save: this job owns exactly its page range, so delete +

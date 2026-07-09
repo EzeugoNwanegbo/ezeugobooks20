@@ -733,7 +733,17 @@ export function LibraryPage() {
       .eq("id", doc.id)
       .single();
     if (row?.storage_path && !row.storage_path.startsWith("text-only/")) {
-      await supabase.storage.from("documents").remove([row.storage_path]);
+      const path = row.storage_path;
+      if (path.startsWith("serverocr/")) {
+        // Server-OCR documents store the parts FOLDER here (many <=50 MB part
+        // files, see src/lib/server-ocr.ts), not a single object. List and
+        // remove them all so storage doesn't drift from the table.
+        const { data: objects } = await supabase.storage.from("documents").list(path);
+        const paths = (objects ?? []).map((o) => `${path}/${o.name}`);
+        if (paths.length) await supabase.storage.from("documents").remove(paths);
+      } else {
+        await supabase.storage.from("documents").remove([path]);
+      }
     }
     const { error } = await supabase.from("documents").delete().eq("id", doc.id);
     if (error) toast.error(error.message);
