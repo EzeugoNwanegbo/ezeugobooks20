@@ -36,6 +36,7 @@ import {
   type TopicRow,
 } from "@/lib/studybody-data";
 import { getCached, setCached } from "@/lib/data-cache";
+import { recordGamificationEvent, recordRoadmapCompletedOnce } from "@/lib/gamification";
 
 type PracticeSearch = { plan?: string; session?: string; mode?: PracticeMode };
 
@@ -162,6 +163,18 @@ const TYPE_LABEL: Record<StudyQuestionType, string> = {
 function clampCount(value: number): number {
   if (Number.isNaN(value)) return 1;
   return Math.min(Math.max(Math.round(value), 1), 60);
+}
+
+async function awardRoadmapIfComplete(userId: string, planId: string) {
+  const { data } = await db
+    .from("study_topics")
+    .select("status")
+    .eq("user_id", userId)
+    .eq("plan_id", planId);
+  const topics = (data as Array<{ status: string | null }> | null) ?? [];
+  if (topics.length > 0 && topics.every((topic) => topic.status === "mastered")) {
+    recordRoadmapCompletedOnce(userId, planId);
+  }
 }
 
 export function PracticePage() {
@@ -1158,6 +1171,15 @@ function SessionView({
         updated_at: new Date().toISOString(),
       });
 
+      const correct = answerRows.filter(
+        (row) => row.is_correct === true || Number(row.score ?? 0) >= 0.5,
+      ).length;
+      const failed = Math.max(0, answerRows.length - correct);
+      if (correct) recordGamificationEvent(user.id, "coach_question_correct", { count: correct });
+      if (failed) recordGamificationEvent(user.id, "coach_question_failed", { count: failed });
+      recordGamificationEvent(user.id, "coach_session_completed");
+      if (mastered) await awardRoadmapIfComplete(user.id, session.plan_id);
+
       setReview(result);
       setCompleted(true);
       toast.success(
@@ -1274,6 +1296,12 @@ function SessionView({
       updated_at: new Date().toISOString(),
     });
     setCompleted(true);
+    const correct = questions.filter((question) => isGradeCorrect(map[question.id])).length;
+    const failed = Math.max(0, questions.length - correct);
+    if (correct) recordGamificationEvent(user.id, "coach_question_correct", { count: correct });
+    if (failed) recordGamificationEvent(user.id, "coach_question_failed", { count: failed });
+    recordGamificationEvent(user.id, "coach_session_completed");
+    if (mastered) await awardRoadmapIfComplete(user.id, session.plan_id);
     return { mastered, percentage };
   };
 
@@ -1342,8 +1370,14 @@ function SessionView({
         .from("study_sessions")
         .update({ status: "completed", score: percentage, completed_at: new Date().toISOString() })
         .eq("id", session.id);
-      await finalizeTopicMastery(session.topic_id, percentage);
+      const mastered = await finalizeTopicMastery(session.topic_id, percentage);
       setCompleted(true);
+      if (gotIt) recordGamificationEvent(user.id, "coach_question_correct", { count: gotIt });
+      if (total - gotIt) {
+        recordGamificationEvent(user.id, "coach_question_failed", { count: total - gotIt });
+      }
+      recordGamificationEvent(user.id, "coach_session_completed");
+      if (mastered) await awardRoadmapIfComplete(user.id, session.plan_id);
       toast.success("Flashcards reviewed");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save flashcard results");

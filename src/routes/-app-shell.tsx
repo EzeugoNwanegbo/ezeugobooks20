@@ -13,6 +13,7 @@ import {
   Plus,
   Settings,
   TimerReset,
+  Trophy,
   Trash2,
   X,
 } from "lucide-react";
@@ -33,6 +34,13 @@ import { AppShellSkeleton } from "@/components/app-skeletons";
 import { useAuth } from "@/lib/auth-context";
 import { isGuestUser } from "@/lib/guest-session";
 import { rememberRoute } from "@/lib/last-route";
+import {
+  emptyGamificationStats,
+  levelFromPoints,
+  loadGamificationStats,
+  recordGamificationEvent,
+  type GamificationStats,
+} from "@/lib/gamification";
 import { supabase } from "@/integrations/supabase/client";
 
 type ConversationRow = {
@@ -57,6 +65,8 @@ function AppLayout() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [hideMobileTopbar, setHideMobileTopbar] = useState(false);
+  const [gamification, setGamification] =
+    useState<GamificationStats>(emptyGamificationStats);
 
   useEffect(() => {
     const handleChatScroll = (e: Event) => {
@@ -89,6 +99,20 @@ function AppLayout() {
       navigate({ to: "/app/chat", replace: true });
     }
   }, [loading, user, profile, navigate, location.pathname]);
+
+  useEffect(() => {
+    if (!user) {
+      setGamification(emptyGamificationStats());
+      return;
+    }
+    const stats = location.pathname.startsWith("/app/chat")
+      ? recordGamificationEvent(user.id, "chat_entered", { oncePerDay: true })
+      : loadGamificationStats(user.id);
+    setGamification(stats);
+    const onGamification = () => setGamification(loadGamificationStats(user.id));
+    window.addEventListener("gd:gamification", onGamification);
+    return () => window.removeEventListener("gd:gamification", onGamification);
+  }, [user, location.pathname]);
 
   useEffect(() => {
     if (!user) {
@@ -261,14 +285,19 @@ function AppLayout() {
     }
   };
 
-  const navItem = (to: string, icon: ReactNode, label: string, accent: "blue" | "violet" | "coral" | "slate" = "slate") => {
+  const navItem = (
+    to: string,
+    icon: ReactNode,
+    label: string,
+    accent: "blue" | "violet" | "coral" | "amber" | "slate" = "slate",
+  ) => {
     const active = location.pathname.startsWith(to);
     return (
       <Link
         to={to}
-        className={`gd-side-nav-item gd-side-nav-${accent} ${active ? "gd-side-nav-active" : ""} group/nav relative flex items-center overflow-hidden rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-300 ${
+        className={`gd-side-nav-item gd-side-nav-${accent} ${active ? "gd-side-nav-active" : ""} group/nav relative flex items-center overflow-hidden rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-200 ${
           active
-            ? "bg-gradient-to-r from-primary/15 via-primary/8 to-transparent text-foreground shadow-[inset_3px_0_0_var(--primary)]"
+            ? "text-foreground"
             : "text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground"
         } ${isSidebarCollapsed ? "justify-center gap-0" : "gap-3"}`}
         title={isSidebarCollapsed ? label : undefined}
@@ -385,6 +414,7 @@ function AppLayout() {
           <div className="space-y-1 border-t border-border/60 pt-5">
             {!isSidebarCollapsed && <p className="gd-nav-label px-3">Your work</p>}
             {navItem("/app/history", <Clock className="h-4 w-4 shrink-0" />, "History")}
+            {navItem("/app/leaderboard", <Trophy className="h-4 w-4 shrink-0" />, "Leaderboard", "amber")}
             {navItem("/app/feedback", <Heart className="h-4 w-4 shrink-0" />, "Feedback")}
             {navItem("/app/settings", <Settings className="h-4 w-4 shrink-0" />, "Settings")}
           </div>
@@ -404,7 +434,13 @@ function AppLayout() {
           >
             <div className="flex items-center gap-2">
               <span className="gd-profile-mark">{(profile.name || "S").slice(0, 1).toUpperCase()}</span>
-              <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
+                <div className="truncate text-[11px] text-muted-foreground">
+                  {gamification.points} pts - L{levelFromPoints(gamification.points)} -{" "}
+                  {gamification.currentStreak}d
+                </div>
+              </div>
             </div>
             <div className="truncate text-xs text-muted-foreground">
               {[profile.year, profile.university].filter(Boolean).join(" - ")}
@@ -539,6 +575,15 @@ function AppLayout() {
                 icon={<Clock className="h-4 w-4" />}
                 label="History"
                 onPick={() => goToMobileRoute("/app/history")}
+              />
+              <MobileDrawerNavItem
+                active={location.pathname.includes("leaderboard")}
+                icon={<Trophy className="h-4 w-4" />}
+                label="Leaderboard"
+                onPick={() => {
+                  setMobileMenuOpen(false);
+                  navigate({ to: "/app/leaderboard" });
+                }}
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("feedback")}

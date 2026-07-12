@@ -1457,19 +1457,21 @@ html.gd-native-app .luxury-app-shell .animate-spin {
   transform: scaleY(0.45);
   transition: opacity 180ms ease, transform 180ms ease;
 }
-.gd-side-nav-item.gd-side-nav-active::after,
-.gd-side-nav-item:hover::after { opacity: 1; transform: scaleY(1); }
+.gd-side-nav-item.gd-side-nav-active::after { opacity: 1; transform: scaleY(1); }
+.gd-side-nav-item:hover::after { opacity: 0.55; transform: scaleY(0.82); }
 .gd-side-nav-blue { --gd-nav-accent: #3b82f6; }
 .gd-side-nav-violet { --gd-nav-accent: #8b5cf6; }
 .gd-side-nav-coral { --gd-nav-accent: #f9735b; }
+.gd-side-nav-amber { --gd-nav-accent: #f59e0b; }
 .gd-side-nav-slate { --gd-nav-accent: #64748b; }
 .gd-side-nav-blue svg { color: #3b82f6; }
 .gd-side-nav-violet svg { color: #8b5cf6; }
 .gd-side-nav-coral svg { color: #f9735b; }
+.gd-side-nav-amber svg { color: #f59e0b; }
 .gd-side-nav-slate svg { color: #64748b; }
-.gd-side-nav-item:hover { background: color-mix(in srgb, var(--gd-nav-accent) 7%, transparent) !important; }
+.gd-side-nav-item:hover { background: color-mix(in srgb, var(--gd-nav-accent) 5%, transparent) !important; }
 .gd-side-nav-item:has(svg) { isolation: isolate; }
-.gd-sidebar-profile { border-top: 1px solid color-mix(in srgb, var(--border) 80%, transparent); }
+.gd-sidebar-profile { border-top: 0; }
 .gd-profile-mark {
   display: inline-flex;
   width: 1.7rem;
@@ -1531,6 +1533,11 @@ html.gd-native-app .luxury-app-shell .animate-spin {
 }
 .gd-last-minute-page .luxury-panel { border-color: rgba(249,115,91,0.15); }
 .gd-last-minute-page .luxury-panel:first-child { box-shadow: 0 18px 45px rgba(249,115,91,0.065); }
+.gd-leaderboard-header {
+  background:
+    linear-gradient(120deg, rgba(245, 158, 11, 0.13), rgba(255, 255, 255, 0) 58%),
+    var(--card);
+}
 
 @media (max-width: 767px) {
   .gd-library-header, .gd-coach-header { padding: 1.15rem; }

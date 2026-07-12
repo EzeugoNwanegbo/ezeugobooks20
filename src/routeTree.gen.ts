@@ -19,6 +19,7 @@ import { Route as AppStudybodyRouteImport } from './routes/app.studybody'
 import { Route as AppSettingsRouteImport } from './routes/app.settings'
 import { Route as AppPracticeRouteImport } from './routes/app.practice'
 import { Route as AppLibraryRouteImport } from './routes/app.library'
+import { Route as AppLeaderboardRouteImport } from './routes/app.leaderboard'
 import { Route as AppLastMinuteRouteImport } from './routes/app.last-minute'
 import { Route as AppHistoryRouteImport } from './routes/app.history'
 import { Route as AppFeedbackRouteImport } from './routes/app.feedback'
@@ -74,6 +75,11 @@ const AppLibraryRoute = AppLibraryRouteImport.update({
   path: '/library',
   getParentRoute: () => AppRoute,
 } as any)
+const AppLeaderboardRoute = AppLeaderboardRouteImport.update({
+  id: '/leaderboard',
+  path: '/leaderboard',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppLastMinuteRoute = AppLastMinuteRouteImport.update({
   id: '/last-minute',
   path: '/last-minute',
@@ -106,6 +112,7 @@ export interface FileRoutesByFullPath {
   '/app/feedback': typeof AppFeedbackRoute
   '/app/history': typeof AppHistoryRoute
   '/app/last-minute': typeof AppLastMinuteRoute
+  '/app/leaderboard': typeof AppLeaderboardRoute
   '/app/library': typeof AppLibraryRoute
   '/app/practice': typeof AppPracticeRoute
   '/app/settings': typeof AppSettingsRoute
@@ -122,6 +129,7 @@ export interface FileRoutesByTo {
   '/app/feedback': typeof AppFeedbackRoute
   '/app/history': typeof AppHistoryRoute
   '/app/last-minute': typeof AppLastMinuteRoute
+  '/app/leaderboard': typeof AppLeaderboardRoute
   '/app/library': typeof AppLibraryRoute
   '/app/practice': typeof AppPracticeRoute
   '/app/settings': typeof AppSettingsRoute
@@ -139,6 +147,7 @@ export interface FileRoutesById {
   '/app/feedback': typeof AppFeedbackRoute
   '/app/history': typeof AppHistoryRoute
   '/app/last-minute': typeof AppLastMinuteRoute
+  '/app/leaderboard': typeof AppLeaderboardRoute
   '/app/library': typeof AppLibraryRoute
   '/app/practice': typeof AppPracticeRoute
   '/app/settings': typeof AppSettingsRoute
@@ -157,6 +166,7 @@ export interface FileRouteTypes {
     | '/app/feedback'
     | '/app/history'
     | '/app/last-minute'
+    | '/app/leaderboard'
     | '/app/library'
     | '/app/practice'
     | '/app/settings'
@@ -173,6 +183,7 @@ export interface FileRouteTypes {
     | '/app/feedback'
     | '/app/history'
     | '/app/last-minute'
+    | '/app/leaderboard'
     | '/app/library'
     | '/app/practice'
     | '/app/settings'
@@ -189,6 +200,7 @@ export interface FileRouteTypes {
     | '/app/feedback'
     | '/app/history'
     | '/app/last-minute'
+    | '/app/leaderboard'
     | '/app/library'
     | '/app/practice'
     | '/app/settings'
@@ -276,6 +288,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppLibraryRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/leaderboard': {
+      id: '/app/leaderboard'
+      path: '/leaderboard'
+      fullPath: '/app/leaderboard'
+      preLoaderRoute: typeof AppLeaderboardRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/last-minute': {
       id: '/app/last-minute'
       path: '/last-minute'
@@ -312,6 +331,7 @@ interface AppRouteChildren {
   AppFeedbackRoute: typeof AppFeedbackRoute
   AppHistoryRoute: typeof AppHistoryRoute
   AppLastMinuteRoute: typeof AppLastMinuteRoute
+  AppLeaderboardRoute: typeof AppLeaderboardRoute
   AppLibraryRoute: typeof AppLibraryRoute
   AppPracticeRoute: typeof AppPracticeRoute
   AppSettingsRoute: typeof AppSettingsRoute
@@ -323,6 +343,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppFeedbackRoute: AppFeedbackRoute,
   AppHistoryRoute: AppHistoryRoute,
   AppLastMinuteRoute: AppLastMinuteRoute,
+  AppLeaderboardRoute: AppLeaderboardRoute,
   AppLibraryRoute: AppLibraryRoute,
   AppPracticeRoute: AppPracticeRoute,
   AppSettingsRoute: AppSettingsRoute,

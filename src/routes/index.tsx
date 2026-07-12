@@ -712,12 +712,14 @@ const GD_CSS = `
 .gd-btn .material-symbols-outlined { font-size: 20px; }
 .gd-btn:focus-visible { outline: 2px solid var(--beige); outline-offset: 3px; }
 .gd-btn-primary {
-  background: linear-gradient(135deg, var(--yellow), var(--teal));
+  background: var(--beige);
   color: #10120c;
+  box-shadow: 0 16px 42px rgba(228,228,204,0.12);
 }
 .gd-btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 16px 44px rgba(110,231,216,0.18), 0 12px 36px rgba(248,214,109,0.18);
+  background: #f1f0db;
+  box-shadow: 0 18px 48px rgba(228,228,204,0.16);
 }
 .gd-btn-primary:active { transform: translateY(0); }
 .gd-btn-primary:disabled { opacity: 0.75; cursor: progress; transform: none; box-shadow: none; }
