@@ -4,7 +4,7 @@
 // from the correct side. Kept module-level (not context) so it survives the
 // route swap that happens between two separate screen mounts.
 
-export const TAB_ROUTES = ["/chat", "/library", "/links", "/coach"] as const;
+export const TAB_ROUTES = ["/chat", "/library", "/last-minute", "/coach"] as const;
 
 let pendingDir: -1 | 0 | 1 = 0;
 

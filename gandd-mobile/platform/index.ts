@@ -2,6 +2,7 @@
 // back-navigation logic lives here (spec §8) instead of being scattered.
 export { BottomNav, BOTTOM_NAV_HEIGHT } from "./BottomNav";
 export { Drawer } from "./Drawer";
+export { ConversationProvider, useConversation } from "./conversation-context";
 export { DrawerProvider, useDrawer } from "./drawer-context";
 export { MainTabContainer } from "./MainTabContainer";
 export { ModalProvider, useModal } from "./modal-context";

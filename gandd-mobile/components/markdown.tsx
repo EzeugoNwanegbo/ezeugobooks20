@@ -3,6 +3,12 @@
 // raw asterisks and run everything together. This parses the common subset into
 // React Native text/rows so answers read cleanly. Deliberately dependency-free
 // and forgiving — partial markup mid-stream just renders as plain text.
+//
+// Optional interactions (all off unless the caller opts in, so Last Minute /
+// Coach render exactly as before):
+//   • terms + onTermPress → underline detected key terms and make them tappable.
+//   • selectable → let the user drag-select the answer text (highlight + Copy via
+//     the OS menu). Chat also disables its tab-swipe so the drag isn't stolen.
 
 import { Fragment, type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
@@ -11,7 +17,69 @@ import { colors, fonts, radius } from "@/lib/theme";
 // Inline spans: **bold** / __bold__, *italic* / _italic_, `code`.
 const INLINE = /(\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\n]+)\*|_([^_\n]+)_|`([^`]+)`)/g;
 
-function renderInline(text: string, keyBase: string): ReactNode[] {
+// Shared across one whole answer render: the term matcher, the tap handler, and
+// the set of terms already underlined (so each is only wrapped on first use).
+type TermCtx = {
+  regex: RegExp;
+  used: Set<string>;
+  onPress: (term: string) => void;
+};
+
+function buildTermRegex(terms: string[]): RegExp | null {
+  if (!terms.length) return null;
+  const ordered = [...terms]
+    .sort((a, b) => b.length - a.length)
+    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(`\\b(?:${ordered.join("|")})\\b`, "g");
+}
+
+// Split a plain-text run and wrap the first (not-yet-used) occurrence of each
+// detected term in a tappable, dotted-underline <Text>.
+function wrapTermsInText(text: string, keyBase: string, ctx: TermCtx): ReactNode[] {
+  ctx.regex.lastIndex = 0;
+  const out: ReactNode[] = [];
+  let last = 0;
+  let k = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = ctx.regex.exec(text)) !== null) {
+    const term = match[0];
+    const key = term.toLowerCase();
+    if (ctx.used.has(key)) continue; // already underlined once in this answer
+    ctx.used.add(key);
+
+    if (match.index > last) {
+      out.push(<Fragment key={`${keyBase}-p${k}`}>{text.slice(last, match.index)}</Fragment>);
+    }
+    out.push(
+      <Text
+        key={`${keyBase}-term${k}`}
+        style={styles.term}
+        suppressHighlighting
+        onPress={() => ctx.onPress(term)}
+      >
+        {term}
+      </Text>,
+    );
+    last = match.index + term.length;
+    k += 1;
+  }
+
+  if (last === 0) return [<Fragment key={`${keyBase}-p0`}>{text}</Fragment>];
+  if (last < text.length)
+    out.push(<Fragment key={`${keyBase}-p${k}`}>{text.slice(last)}</Fragment>);
+  return out;
+}
+
+function pushPlain(out: ReactNode[], text: string, key: string, ctx?: TermCtx) {
+  if (!ctx) {
+    out.push(<Fragment key={key}>{text}</Fragment>);
+    return;
+  }
+  for (const node of wrapTermsInText(text, key, ctx)) out.push(node);
+}
+
+function renderInline(text: string, keyBase: string, ctx?: TermCtx): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   let match: RegExpExecArray | null;
@@ -19,7 +87,7 @@ function renderInline(text: string, keyBase: string): ReactNode[] {
   INLINE.lastIndex = 0;
   while ((match = INLINE.exec(text)) !== null) {
     if (match.index > last) {
-      out.push(<Fragment key={`${keyBase}-t${i}`}>{text.slice(last, match.index)}</Fragment>);
+      pushPlain(out, text.slice(last, match.index), `${keyBase}-t${i}`, ctx);
     }
     const key = `${keyBase}-m${i}`;
     if (match[2] != null || match[3] != null) {
@@ -45,13 +113,18 @@ function renderInline(text: string, keyBase: string): ReactNode[] {
     i += 1;
   }
   if (last < text.length) {
-    out.push(<Fragment key={`${keyBase}-t${i}`}>{text.slice(last)}</Fragment>);
+    pushPlain(out, text.slice(last), `${keyBase}-t${i}`, ctx);
   }
   return out;
 }
 
 // Render one run of (non-code) markdown text into block elements.
-function renderLines(text: string, keyBase: string): ReactNode[] {
+function renderLines(
+  text: string,
+  keyBase: string,
+  ctx?: TermCtx,
+  selectable?: boolean,
+): ReactNode[] {
   const blocks: ReactNode[] = [];
   text.split("\n").forEach((raw, idx) => {
     const line = raw.replace(/\s+$/, "");
@@ -61,8 +134,8 @@ function renderLines(text: string, keyBase: string): ReactNode[] {
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);
     if (heading) {
       blocks.push(
-        <Text key={key} style={styles.heading}>
-          {renderInline(heading[2], `${key}h`)}
+        <Text key={key} selectable={selectable} style={styles.heading}>
+          {renderInline(heading[2], `${key}h`, ctx)}
         </Text>,
       );
       return;
@@ -73,7 +146,9 @@ function renderLines(text: string, keyBase: string): ReactNode[] {
       blocks.push(
         <View key={key} style={styles.row}>
           <Text style={styles.bulletDot}>•</Text>
-          <Text style={[styles.body, styles.flex]}>{renderInline(bullet[1], `${key}b`)}</Text>
+          <Text selectable={selectable} style={[styles.body, styles.flex]}>
+            {renderInline(bullet[1], `${key}b`, ctx)}
+          </Text>
         </View>,
       );
       return;
@@ -84,22 +159,39 @@ function renderLines(text: string, keyBase: string): ReactNode[] {
       blocks.push(
         <View key={key} style={styles.row}>
           <Text style={styles.bulletNum}>{numbered[1]}.</Text>
-          <Text style={[styles.body, styles.flex]}>{renderInline(numbered[2], `${key}n`)}</Text>
+          <Text selectable={selectable} style={[styles.body, styles.flex]}>
+            {renderInline(numbered[2], `${key}n`, ctx)}
+          </Text>
         </View>,
       );
       return;
     }
 
     blocks.push(
-      <Text key={key} style={styles.body}>
-        {renderInline(line, `${key}p`)}
+      <Text key={key} selectable={selectable} style={styles.body}>
+        {renderInline(line, `${key}p`, ctx)}
       </Text>,
     );
   });
   return blocks;
 }
 
-export function Markdown({ content }: { content: string }) {
+export function Markdown({
+  content,
+  terms,
+  onTermPress,
+  selectable,
+}: {
+  content: string;
+  terms?: string[];
+  onTermPress?: (term: string) => void;
+  selectable?: boolean;
+}) {
+  const regex = terms && terms.length && onTermPress ? buildTermRegex(terms) : null;
+  // One ctx per render → one shared `used` set across every block of this answer.
+  const ctx: TermCtx | undefined =
+    regex && onTermPress ? { regex, used: new Set(), onPress: onTermPress } : undefined;
+
   // Split out ```fenced``` code blocks so their contents are shown verbatim in a
   // mono block instead of being parsed as markdown (which would mangle the code).
   const parts = content.replace(/\r/g, "").split(/(```[\s\S]*?```)/g);
@@ -111,24 +203,26 @@ export function Markdown({ content }: { content: string }) {
       const inner = part.replace(/^```[^\n]*\n?/, "").replace(/```\s*$/, "");
       blocks.push(
         <View key={`c${pi}`} style={styles.codeBlock}>
-          <Text style={styles.codeBlockText}>{inner.trim()}</Text>
+          <Text selectable={selectable} style={styles.codeBlockText}>
+            {inner.trim()}
+          </Text>
         </View>,
       );
       return;
     }
-    blocks.push(...renderLines(part, `s${pi}`));
+    blocks.push(...renderLines(part, `s${pi}`, ctx, selectable));
   });
 
   return <View style={styles.container}>{blocks}</View>;
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 7 },
+  container: { gap: 8 },
   body: {
     color: colors.muted,
     fontFamily: fonts.body,
-    fontSize: 15,
-    lineHeight: 23,
+    fontSize: 16.5,
+    lineHeight: 26,
   },
   flex: { flex: 1 },
   bold: {
@@ -140,14 +234,20 @@ const styles = StyleSheet.create({
   },
   code: {
     fontFamily: fonts.mono,
-    fontSize: 13.5,
+    fontSize: 14.5,
     color: colors.accent,
+  },
+  term: {
+    color: colors.accent,
+    textDecorationLine: "underline",
+    textDecorationStyle: "dotted",
+    textDecorationColor: colors.accent,
   },
   heading: {
     color: colors.text,
     fontFamily: fonts.soraSemibold,
-    fontSize: 16.5,
-    lineHeight: 23,
+    fontSize: 18.5,
+    lineHeight: 26,
     marginTop: 2,
   },
   row: {
@@ -158,15 +258,15 @@ const styles = StyleSheet.create({
   bulletDot: {
     color: colors.accent,
     fontFamily: fonts.body,
-    fontSize: 15,
-    lineHeight: 23,
+    fontSize: 16.5,
+    lineHeight: 26,
   },
   bulletNum: {
     color: colors.accent,
     fontFamily: fonts.bodySemibold,
-    fontSize: 14,
-    lineHeight: 23,
-    minWidth: 18,
+    fontSize: 15.5,
+    lineHeight: 26,
+    minWidth: 20,
   },
   codeBlock: {
     backgroundColor: colors.surfaceLowest,
@@ -178,7 +278,7 @@ const styles = StyleSheet.create({
   codeBlockText: {
     color: colors.muted,
     fontFamily: fonts.mono,
-    fontSize: 12.5,
-    lineHeight: 19,
+    fontSize: 13.5,
+    lineHeight: 20,
   },
 });

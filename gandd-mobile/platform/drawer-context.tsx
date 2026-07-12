@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { Keyboard } from "react-native";
 import {
   Easing,
   runOnJS,
@@ -29,6 +30,9 @@ export function DrawerProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
 
   const open = useCallback(() => {
+    // Drop the keyboard first so it never covers the drawer (e.g. opening the
+    // menu straight from a focused chat input).
+    Keyboard.dismiss();
     setIsOpen(true);
     progress.value = withTiming(1, OPEN);
     haptics.light();

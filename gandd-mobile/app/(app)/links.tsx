@@ -1,15 +1,16 @@
-import {
-  Activity,
-  FileText,
-  Link2,
-  Plus,
-  Sparkles,
-  Trash2,
-  User,
-  Zap,
-} from "lucide-react-native";
+import { router } from "expo-router";
+import { Activity, FileText, Link2, Plus, Sparkles, Trash2, Zap } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button, Eyebrow, Tag } from "@/components/ui";
 import {
@@ -24,7 +25,7 @@ import {
   uploadAndExtract,
 } from "@/lib/links-client";
 import { colors, fonts, radius } from "@/lib/theme";
-import { BOTTOM_NAV_HEIGHT, MainTabContainer, TopBar, useDrawer } from "@/platform";
+import { ScreenContainer, TopBar } from "@/platform";
 
 function formatBytes(bytes: number | null): string {
   if (!bytes) return "";
@@ -46,7 +47,6 @@ function statusTag(doc: LinkDocument) {
 }
 
 export default function LinksScreen() {
-  const { open } = useDrawer();
   const insets = useSafeAreaInsets();
 
   const [docs, setDocs] = useState<LinkDocument[]>([]);
@@ -115,7 +115,10 @@ export default function LinksScreen() {
         failures.join("\n\n"),
         anyOversize
           ? [
-              { text: "Open gd1.online", onPress: () => void Linking.openURL("https://gd1.online") },
+              {
+                text: "Open gd1.online",
+                onPress: () => void Linking.openURL("https://gd1.online"),
+              },
               { text: "OK", style: "cancel" },
             ]
           : undefined,
@@ -168,28 +171,18 @@ export default function LinksScreen() {
   const nodes = (synth?.nodes ?? []).slice(0, 5);
 
   return (
-    <MainTabContainer>
-      <TopBar
-        onMenu={open}
-        right={
-          <View style={styles.avatar}>
-            <User size={18} color={colors.muted} />
-          </View>
-        }
-      />
+    <ScreenContainer swipeBack onBack={() => router.back()}>
+      <TopBar title="Links" onBack={() => router.back()} />
 
       <ScrollView
-        contentContainerStyle={[
-          styles.scroll,
-          { paddingBottom: BOTTOM_NAV_HEIGHT + insets.bottom + 24 },
-        ]}
+        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 24 }]}
         showsVerticalScrollIndicator={false}
       >
         <Eyebrow>Academic Engine · Concept Interlinks</Eyebrow>
         <Text style={styles.h1}>Cross-Document Synthesis</Text>
         <Text style={styles.sub}>
-          Upload your focused notes and G&D's AI connects the dots — surfacing the shared themes that
-          run across separate documents.
+          Upload your focused notes and G&D's AI connects the dots — surfacing the shared themes
+          that run across separate documents.
         </Text>
 
         {/* Upload zone */}
@@ -217,9 +210,7 @@ export default function LinksScreen() {
               ) : (
                 <Plus size={22} color={colors.accent} />
               )}
-              <Text style={styles.dropTitle}>
-                {uploading ? "Uploading…" : "Upload PDFs"}
-              </Text>
+              <Text style={styles.dropTitle}>{uploading ? "Uploading…" : "Upload PDFs"}</Text>
               <Text style={styles.dropHint}>
                 PDFs only · under 30 MB and {LINK_MAX_PAGES} pages each
               </Text>
@@ -347,7 +338,9 @@ export default function LinksScreen() {
             {synth.strongestLink ? (
               <View style={styles.strongest}>
                 <View style={styles.strongestHead}>
-                  <Eyebrow style={{ color: colors.primaryFg, opacity: 0.7 }}>Strongest Link</Eyebrow>
+                  <Eyebrow style={{ color: colors.primaryFg, opacity: 0.7 }}>
+                    Strongest Link
+                  </Eyebrow>
                   <Link2 size={16} color={colors.primaryFg} />
                 </View>
                 <Text style={styles.strongestTitle}>{synth.strongestLink.title}</Text>
@@ -402,9 +395,7 @@ export default function LinksScreen() {
                       <View style={styles.clusterTitleRow}>
                         <Text style={styles.clusterTitle}>{cluster.title}</Text>
                         {typeof cluster.match === "number" ? (
-                          <Text style={styles.clusterMatch}>
-                            {cluster.match.toFixed(2)} Match
-                          </Text>
+                          <Text style={styles.clusterMatch}>{cluster.match.toFixed(2)} Match</Text>
                         ) : null}
                       </View>
                       {cluster.description ? (
@@ -418,19 +409,11 @@ export default function LinksScreen() {
           </>
         ) : null}
       </ScrollView>
-    </MainTabContainer>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 999,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   scroll: {
     paddingHorizontal: 16,
     paddingTop: 4,

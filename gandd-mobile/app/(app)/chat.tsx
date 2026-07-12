@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Paperclip, Plus, Send, X } from "lucide-react-native";
+import { Globe, Paperclip, Plus, Send, Square, X } from "lucide-react-native";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,7 +27,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChatDocPicker } from "@/components/chat-doc-picker";
 import { Markdown } from "@/components/markdown";
 import { SymbioteOrb } from "@/components/symbiote";
-import { Eyebrow, Tag } from "@/components/ui";
+import { TermLookupSheet } from "@/components/term-lookup-sheet";
+import { Eyebrow } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import {
   type ChatMode,
@@ -32,13 +37,23 @@ import {
   looksCasualMessage,
   retrieveChatContext,
   streamChat,
+  type WebSource,
 } from "@/lib/chat-client";
+import {
+  createConversation,
+  deriveTitle,
+  loadConversationMessages,
+  saveMessage,
+  touchConversation,
+} from "@/lib/conversations";
 import { type LinkDocument, listDocuments } from "@/lib/links-client";
+import { detectKeyTerms } from "@/lib/term-lookup";
 import { colors, fonts, radius } from "@/lib/theme";
 import {
   BOTTOM_NAV_HEIGHT,
   MainTabContainer,
   TopBar,
+  useConversation,
   useDrawer,
   useHaptics,
   useModal,
@@ -60,7 +75,7 @@ type Msg =
       role: "assistant";
       mode: string;
       text: string;
-      cites: string[];
+      sources: WebSource[];
       streaming?: boolean;
     };
 
@@ -80,8 +95,34 @@ export default function ChatScreen() {
   const [libraryDocs, setLibraryDocs] = useState<LinkDocument[]>([]);
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
   const [keyboardShown, setKeyboardShown] = useState(false);
+  const [headerH, setHeaderH] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
+  const { openId, clearOpen } = useConversation();
+
+  // Composer auto-hide: collapse the input away when the user scrolls down
+  // through an answer (more reading room), restore it on scroll-up. Disabled
+  // while the keyboard is up. Mirrors the web chat's hide-composer-on-scroll.
+  const [footerH, setFooterH] = useState(0);
+  const collapse = useSharedValue(0);
+  const lastScrollY = useRef(0);
+
+  const footerAnimStyle = useAnimatedStyle(() => ({
+    height: footerH > 0 && !keyboardShown ? footerH * (1 - collapse.value) : undefined,
+    opacity: 1 - collapse.value * 0.5,
+  }));
+
+  const onListScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    // Don't fight the keyboard, and don't toggle while an answer streams (the
+    // auto-scroll would flicker the composer open/closed).
+    if (keyboardShown || sending) return;
+    const y = e.nativeEvent.contentOffset.y;
+    const dy = y - lastScrollY.current;
+    if (Math.abs(dy) < 20) return;
+    collapse.value = withTiming(dy > 0 && y > 150 ? 1 : 0, { duration: 200 });
+    lastScrollY.current = y;
+  };
 
   // While the keyboard is up the composer is lifted, so we drop the reserved
   // bottom-nav + safe-area padding — otherwise the input floats far above the
@@ -89,13 +130,16 @@ export default function ChatScreen() {
   useEffect(() => {
     const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-    const show = Keyboard.addListener(showEvt, () => setKeyboardShown(true));
+    const show = Keyboard.addListener(showEvt, () => {
+      setKeyboardShown(true);
+      collapse.value = 0; // never leave the composer hidden while typing
+    });
     const hide = Keyboard.addListener(hideEvt, () => setKeyboardShown(false));
     return () => {
       show.remove();
       hide.remove();
     };
-  }, []);
+  }, [collapse]);
 
   // Load the whole library so the attach picker can list every file. Only
   // "ready" files have the chunks retrieval needs, so the picker shows the
@@ -112,6 +156,44 @@ export default function ChatScreen() {
       /* picker just shows an empty state if the library can't load */
     });
   }, [reloadDocs]);
+
+  // Open a past chat when one is tapped in the drawer: load its messages and
+  // adopt its conversation id so new turns append to it.
+  useEffect(() => {
+    if (!openId) return;
+    let active = true;
+    void (async () => {
+      try {
+        const stored = await loadConversationMessages(openId);
+        if (!active) return;
+        abortRef.current?.abort();
+        setSending(false);
+        conversationIdRef.current = openId;
+        setMessages(
+          stored.map((m) =>
+            m.role === "user"
+              ? { id: m.id, role: "user" as const, text: m.content }
+              : {
+                  id: m.id,
+                  role: "assistant" as const,
+                  mode: m.mode || "Detailed Mode",
+                  text: m.content,
+                  sources: m.sources,
+                  streaming: false,
+                },
+          ),
+        );
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 120);
+      } catch (e) {
+        Alert.alert("Couldn't open chat", e instanceof Error ? e.message : "Try again.");
+      } finally {
+        if (active) clearOpen();
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [openId, clearOpen]);
 
   const attachedDocs = libraryDocs.filter((d) => selectedDocIds.includes(d.id));
 
@@ -130,11 +212,39 @@ export default function ChatScreen() {
     ));
   }, [present, libraryDocs, selectedDocIds, reloadDocs]);
 
+  // Tapping a dotted-underlined key term opens a quick web-grounded lookup sheet.
+  const handleTermPress = useCallback(
+    (term: string) => {
+      if (!profile) return;
+      Keyboard.dismiss();
+      present((close) => <TermLookupSheet term={term} profile={profile} close={close} />);
+    },
+    [present, profile],
+  );
+
   const scrollToEnd = () =>
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
 
-  const send = async () => {
-    const text = draft.trim();
+  // Persist the user's turn (creating the conversation on the first message).
+  // Returns the conversation id so the assistant's answer can be saved to it.
+  const persistUserTurn = async (text: string): Promise<string | null> => {
+    try {
+      let cid = conversationIdRef.current;
+      if (!cid) {
+        cid = await createConversation(deriveTitle(text));
+        conversationIdRef.current = cid;
+      }
+      await saveMessage({ conversationId: cid, role: "user", content: text, mode });
+      return cid;
+    } catch (err) {
+      console.warn("[chat] failed to save user message", err);
+      return conversationIdRef.current;
+    }
+  };
+
+  // Runs one full Q&A turn for an arbitrary prompt — the composer's draft, or a
+  // highlight-and-explain follow-up — streaming the answer into a new message.
+  const runTurn = async (text: string) => {
     if (!text || sending) return;
     if (!profile) {
       Alert.alert("Almost there", "Finish onboarding before chatting with G&D.");
@@ -152,16 +262,27 @@ export default function ChatScreen() {
     setMessages((cur) => [
       ...cur,
       { id: nextId(), role: "user", text },
-      { id: assistantId, role: "assistant", mode: `${mode} Mode`, text: "", cites: [], streaming: true },
+      {
+        id: assistantId,
+        role: "assistant",
+        mode: `${mode} Mode`,
+        text: "",
+        sources: [],
+        streaming: true,
+      },
     ]);
-    setDraft("");
     setSending(true);
     scrollToEnd();
+
+    // Kick off persistence in parallel (creates the conversation on first msg).
+    const cidPromise = persistUserTurn(text);
 
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const patch = (fn: (m: Extract<Msg, { role: "assistant" }>) => Extract<Msg, { role: "assistant" }>) =>
+    const patch = (
+      fn: (m: Extract<Msg, { role: "assistant" }>) => Extract<Msg, { role: "assistant" }>,
+    ) =>
       setMessages((cur) =>
         cur.map((m) => (m.id === assistantId && m.role === "assistant" ? fn(m) : m)),
       );
@@ -171,7 +292,10 @@ export default function ChatScreen() {
     const manuallySelected = selectedDocIds.length > 0;
     let documents: Awaited<ReturnType<typeof retrieveChatContext>> = [];
     if (manuallySelected || !looksCasualMessage(text)) {
-      const recentText = messages.slice(-6).map((m) => m.text).join(" ");
+      const recentText = messages
+        .slice(-6)
+        .map((m) => m.text)
+        .join(" ");
       documents = await retrieveChatContext(text, selectedDocIds, recentText);
     }
     const documentMode: DocumentMode = manuallySelected
@@ -180,9 +304,15 @@ export default function ChatScreen() {
         ? "smart"
         : "none";
 
+    // Accumulate the final answer for persistence (state updates are async, so
+    // we can't read the message back synchronously after the stream).
+    let finalText = "";
+    const finalSources: WebSource[] = [];
+
     // No file attached (whether or not the library auto-matched): tell the user
     // to add one, then let the AI answer right below the tip. Skip pure greetings.
     if (!manuallySelected && !looksCasualMessage(text)) {
+      finalText = ATTACH_TIP;
       patch((m) => ({ ...m, text: ATTACH_TIP }));
     }
 
@@ -193,12 +323,20 @@ export default function ChatScreen() {
       documents,
       documentMode,
       signal: controller.signal,
-      onDelta: (chunk) => patch((m) => ({ ...m, text: m.text + chunk })),
+      onDelta: (chunk) => {
+        finalText += chunk;
+        patch((m) => ({ ...m, text: m.text + chunk }));
+      },
       onSources: (sources) =>
-        patch((m) => ({
-          ...m,
-          cites: [...m.cites, ...sources.map((s) => s.title).filter(Boolean)].slice(0, 6),
-        })),
+        patch((m) => {
+          const merged = [...m.sources];
+          for (const s of sources) {
+            if (s.url && !merged.some((x) => x.url === s.url)) merged.push(s);
+          }
+          const capped = merged.slice(0, 6);
+          finalSources.splice(0, finalSources.length, ...capped);
+          return { ...m, sources: capped };
+        }),
       onError: (message) =>
         patch((m) => ({ ...m, text: m.text || `⚠️ ${message}`, streaming: false })),
       onDone: () => patch((m) => ({ ...m, streaming: false })),
@@ -207,6 +345,31 @@ export default function ChatScreen() {
     setSending(false);
     abortRef.current = null;
     scrollToEnd();
+
+    // Persist the assistant's answer and float the conversation to the top.
+    const cid = await cidPromise;
+    if (cid && finalText.trim()) {
+      void saveMessage({
+        conversationId: cid,
+        role: "assistant",
+        content: finalText,
+        mode,
+        sources: finalSources,
+      }).catch((err) => console.warn("[chat] failed to save assistant message", err));
+      void touchConversation(cid).catch(() => {});
+    }
+  };
+
+  const send = () => {
+    const text = draft.trim();
+    if (!text || sending) return;
+    setDraft("");
+    void runTurn(text);
+  };
+
+  const stopStreaming = () => {
+    haptics.light();
+    abortRef.current?.abort();
   };
 
   const newChat = () => {
@@ -214,29 +377,38 @@ export default function ChatScreen() {
     abortRef.current?.abort();
     setSending(false);
     setMessages([]);
+    conversationIdRef.current = null;
   };
 
   return (
-    <MainTabContainer>
-      <TopBar
-        onMenu={open}
-        right={
-          <Pressable hitSlop={10} onPress={newChat} style={styles.topBtn}>
-            <Plus size={20} color={colors.text} />
-          </Pressable>
-        }
-      />
+    <MainTabContainer swipeEnabled={false}>
+      <View onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}>
+        <TopBar
+          onMenu={open}
+          right={
+            <Pressable hitSlop={10} onPress={newChat} style={styles.topBtn}>
+              <Plus size={20} color={colors.text} />
+            </Pressable>
+          }
+        />
+      </View>
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={8}
+        keyboardVerticalOffset={headerH}
       >
         <ScrollView
           ref={scrollRef}
           style={{ flex: 1 }}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          onScroll={onListScroll}
+          scrollEventThrottle={16}
+          onContentSizeChange={() => {
+            // Keep the newest content in view as an answer streams in.
+            if (sending) scrollRef.current?.scrollToEnd({ animated: false });
+          }}
         >
           {messages.map((m) =>
             m.role === "user" ? (
@@ -249,21 +421,24 @@ export default function ChatScreen() {
                   <SymbioteOrb size={14} />
                   <Eyebrow>{`Assistant · ${m.mode}`}</Eyebrow>
                   {m.streaming ? (
-                    <ActivityIndicator size="small" color={colors.mutedDim} style={{ marginLeft: 2 }} />
+                    <ActivityIndicator
+                      size="small"
+                      color={colors.mutedDim}
+                      style={{ marginLeft: 2 }}
+                    />
                   ) : null}
                 </View>
                 {m.text ? (
-                  <Markdown content={m.text} />
+                  <Markdown
+                    content={m.text}
+                    terms={m.streaming ? undefined : detectKeyTerms(m.text)}
+                    onTermPress={handleTermPress}
+                    selectable={!m.streaming}
+                  />
                 ) : m.streaming ? (
                   <Text style={[styles.assistantText, { color: colors.mutedDim }]}>Thinking…</Text>
                 ) : null}
-                {m.cites.length > 0 ? (
-                  <View style={styles.cites}>
-                    {m.cites.map((c) => (
-                      <Tag key={c} label={c} />
-                    ))}
-                  </View>
-                ) : null}
+                {m.sources.length > 0 ? <ChatSources sources={m.sources} /> : null}
               </View>
             ),
           )}
@@ -278,64 +453,71 @@ export default function ChatScreen() {
           ) : null}
         </ScrollView>
 
-        <View
-          style={[
-            styles.footer,
-            { paddingBottom: keyboardShown ? 8 : BOTTOM_NAV_HEIGHT + insets.bottom + 8 },
-          ]}
-        >
-          <ModeSelector value={mode} onChange={setMode} />
+        <Animated.View style={[styles.footerAnim, footerAnimStyle]}>
+          <View
+            onLayout={(e) => {
+              const h = e.nativeEvent.layout.height;
+              // Capture the natural (keyboard-down, expanded) height to animate from.
+              if (!keyboardShown && collapse.value === 0) setFooterH(h);
+            }}
+            style={[
+              styles.footer,
+              { paddingBottom: keyboardShown ? 0 : BOTTOM_NAV_HEIGHT + insets.bottom + 8 },
+            ]}
+          >
+            <ModeSelector value={mode} onChange={setMode} />
 
-          {attachedDocs.length > 0 ? (
-            <View style={styles.chipRow}>
-              {attachedDocs.map((doc) => (
-                <Pressable
-                  key={doc.id}
-                  onPress={() => {
-                    haptics.selection();
-                    setSelectedDocIds((cur) => cur.filter((id) => id !== doc.id));
-                  }}
-                  style={styles.chip}
-                >
-                  <Paperclip size={11} color={colors.accent} />
-                  <Text style={styles.chipText} numberOfLines={1}>
-                    {doc.file_name}
-                  </Text>
-                  <X size={12} color={colors.mutedDim} />
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
+            {attachedDocs.length > 0 ? (
+              <View style={styles.chipRow}>
+                {attachedDocs.map((doc) => (
+                  <Pressable
+                    key={doc.id}
+                    onPress={() => {
+                      haptics.selection();
+                      setSelectedDocIds((cur) => cur.filter((id) => id !== doc.id));
+                    }}
+                    style={styles.chip}
+                  >
+                    <Paperclip size={11} color={colors.accent} />
+                    <Text style={styles.chipText} numberOfLines={1}>
+                      {doc.file_name}
+                    </Text>
+                    <X size={12} color={colors.mutedDim} />
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
 
-          <View style={styles.inputBar}>
-            <Pressable onPress={openPicker} hitSlop={8} style={styles.attachBtn}>
-              <Paperclip
-                size={19}
-                color={attachedDocs.length > 0 ? colors.accent : colors.mutedDim}
+            <View style={styles.inputBar}>
+              <Pressable onPress={openPicker} hitSlop={8} style={styles.attachBtn}>
+                <Paperclip
+                  size={19}
+                  color={attachedDocs.length > 0 ? colors.accent : colors.mutedDim}
+                />
+              </Pressable>
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                placeholder="Ask about your study material..."
+                placeholderTextColor={colors.mutedDim}
+                style={styles.input}
+                multiline
+                onSubmitEditing={send}
               />
-            </Pressable>
-            <TextInput
-              value={draft}
-              onChangeText={setDraft}
-              placeholder="Ask about your study material..."
-              placeholderTextColor={colors.mutedDim}
-              style={styles.input}
-              multiline
-              onSubmitEditing={send}
-            />
-            <Pressable
-              onPress={send}
-              disabled={sending || draft.trim().length === 0}
-              style={[styles.sendBtn, (sending || draft.trim().length === 0) && { opacity: 0.5 }]}
-            >
-              {sending ? (
-                <ActivityIndicator size="small" color={colors.primaryFg} />
-              ) : (
-                <Send size={18} color={colors.primaryFg} />
-              )}
-            </Pressable>
+              <Pressable
+                onPress={sending ? stopStreaming : send}
+                disabled={!sending && draft.trim().length === 0}
+                style={[styles.sendBtn, !sending && draft.trim().length === 0 && { opacity: 0.5 }]}
+              >
+                {sending ? (
+                  <Square size={15} color={colors.primaryFg} fill={colors.primaryFg} />
+                ) : (
+                  <Send size={18} color={colors.primaryFg} />
+                )}
+              </Pressable>
+            </View>
           </View>
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </MainTabContainer>
   );
@@ -378,7 +560,9 @@ function ModeSelector({ value, onChange }: { value: ChatMode; onChange: (m: Chat
             }}
             style={styles.modeChip}
           >
-            <Text style={[styles.modeLabel, { color: active ? colors.primaryFg : colors.mutedDim }]}>
+            <Text
+              style={[styles.modeLabel, { color: active ? colors.primaryFg : colors.mutedDim }]}
+            >
               {mm}
             </Text>
           </Pressable>
@@ -386,6 +570,77 @@ function ModeSelector({ value, onChange }: { value: ChatMode; onChange: (m: Chat
       })}
     </View>
   );
+}
+
+// Renders the web sources under an answer: up to 3 og:image preview thumbnails,
+// then a row of tappable favicon chips (host name). Everything opens in the
+// system browser. Mirrors the web app's WebSourceIcons.
+function ChatSources({ sources }: { sources: WebSource[] }) {
+  const shown = sources.slice(0, 6);
+  const withImages = shown.filter((s) => s.image).slice(0, 3);
+  return (
+    <View style={styles.sources}>
+      {withImages.length > 0 ? (
+        <View style={styles.thumbRow}>
+          {withImages.map((s, i) => (
+            <SourceThumb key={`thumb-${s.url}-${i}`} source={s} />
+          ))}
+        </View>
+      ) : null}
+      <View style={styles.faviconRow}>
+        {shown.map((s, i) => (
+          <Pressable
+            key={`${s.url}-${i}`}
+            onPress={() => void Linking.openURL(s.url)}
+            style={({ pressed }) => [styles.sourceChip, pressed && { opacity: 0.6 }]}
+          >
+            <SourceFavicon url={s.url} />
+            <Text style={styles.sourceChipText} numberOfLines={1}>
+              {hostFromUrl(s.url) || s.title}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// og:image preview; on load failure it removes itself (the favicon chip below
+// still represents the source).
+function SourceThumb({ source }: { source: WebSource }) {
+  const [failed, setFailed] = useState(false);
+  if (failed || !source.image) return null;
+  return (
+    <Pressable onPress={() => void Linking.openURL(source.url)} style={styles.thumb}>
+      <Image
+        source={{ uri: source.image }}
+        style={styles.thumbImg}
+        onError={() => setFailed(true)}
+        resizeMode="cover"
+      />
+    </Pressable>
+  );
+}
+
+function SourceFavicon({ url }: { url: string }) {
+  const host = hostFromUrl(url);
+  const [failed, setFailed] = useState(false);
+  if (!host || failed) return <Globe size={12} color={colors.mutedDim} />;
+  return (
+    <Image
+      source={{ uri: `https://www.google.com/s2/favicons?domain=${host}&sz=64` }}
+      style={styles.favicon}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function hostFromUrl(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
 }
 
 const styles = StyleSheet.create({
@@ -425,7 +680,7 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingHorizontal: 16,
-    paddingBottom: 16,
+    paddingBottom: 28,
     gap: 16,
   },
   userBubble: {
@@ -440,17 +695,13 @@ const styles = StyleSheet.create({
   userText: {
     color: colors.text,
     fontFamily: fonts.body,
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 16.5,
+    lineHeight: 24,
   },
   assistantBubble: {
-    alignSelf: "flex-start",
-    maxWidth: "92%",
-    backgroundColor: colors.card,
-    borderRadius: radius.lg,
-    borderBottomLeftRadius: radius.sm,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    alignSelf: "stretch",
+    maxWidth: "100%",
+    paddingVertical: 2,
     gap: 10,
   },
   assistantHead: {
@@ -464,11 +715,54 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 23,
   },
-  cites: {
+  sources: {
+    gap: 8,
+    marginTop: 2,
+  },
+  thumbRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  thumb: {
+    width: 132,
+    height: 84,
+    borderRadius: radius.md,
+    overflow: "hidden",
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  thumbImg: {
+    width: "100%",
+    height: "100%",
+  },
+  faviconRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 6,
-    marginTop: 2,
+  },
+  sourceChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    maxWidth: "100%",
+    backgroundColor: colors.surface,
+    borderRadius: radius.full,
+    paddingLeft: 8,
+    paddingRight: 10,
+    paddingVertical: 5,
+  },
+  sourceChipText: {
+    flexShrink: 1,
+    fontFamily: fonts.mono,
+    fontSize: 10.5,
+    color: colors.muted,
+  },
+  favicon: {
+    width: 14,
+    height: 14,
+    borderRadius: 3,
   },
   emptyChat: {
     alignItems: "center",
@@ -488,6 +782,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "center",
     lineHeight: 19,
+  },
+  footerAnim: {
+    overflow: "hidden",
+    backgroundColor: colors.bg,
   },
   footer: {
     paddingHorizontal: 12,

@@ -17,12 +17,19 @@ const CHAT_TIMEOUT_MS = 160_000;
 
 export type ChatMode = "Simplified" | "Detailed" | "Storytelling" | "Visuals";
 export type ChatTurn = { role: "user" | "assistant"; content: string };
-export type WebSource = { title: string; url: string };
+// `image` is the source's og:image when the server found one — used to render a
+// preview thumbnail, falling back to a favicon chip when absent.
+export type WebSource = { title: string; url: string; image?: string };
 
 // A grounded excerpt the chat function styles its answer from. The function does
 // no retrieval itself — it answers from the documents the client passes here, so
 // this is what makes mobile chat cite the user's actual material (web parity).
-export type ChatDocument = { id: string; file_name: string; folder: string | null; excerpt: string };
+export type ChatDocument = {
+  id: string;
+  file_name: string;
+  folder: string | null;
+  excerpt: string;
+};
 export type DocumentMode = "none" | "smart" | "selected";
 
 type ChunkRow = {
@@ -35,7 +42,11 @@ type ChunkRow = {
   content: string;
 };
 
-function chunkLabel(c: { page_start: number | null; page_end: number | null; chunk_index: number }): string {
+function chunkLabel(c: {
+  page_start: number | null;
+  page_end: number | null;
+  chunk_index: number;
+}): string {
   return c.page_start || c.page_end
     ? `[Page ${c.page_start ?? "?"}${c.page_end && c.page_end !== c.page_start ? `-${c.page_end}` : ""}]`
     : `[Chunk ${c.chunk_index + 1}]`;
@@ -44,7 +55,8 @@ function chunkLabel(c: { page_start: number | null; page_end: number | null; chu
 // Greetings / thanks / one-word replies shouldn't trigger a library search — it
 // just adds latency and risks dragging in irrelevant excerpts. Mirrors the web's
 // looksCasualMessage guard.
-const CASUAL = /^(hi|hey|hello|yo|sup|thanks|thank you|thx|ok|okay|cool|nice|great|got it|lol|yes|no|yep|nope|sure)\b/i;
+const CASUAL =
+  /^(hi|hey|hello|yo|sup|thanks|thank you|thx|ok|okay|cool|nice|great|got it|lol|yes|no|yep|nope|sure)\b/i;
 export function looksCasualMessage(text: string): boolean {
   const t = text.trim();
   return t.length <= 3 || (t.length < 40 && CASUAL.test(t));
@@ -101,6 +113,9 @@ export type StreamChatHandlers = {
   mode: ChatMode;
   documents?: ChatDocument[];
   documentMode?: DocumentMode;
+  // Force the backend down its web-search route (used by the term-lookup popover
+  // so a tapped key term gets a fresh, web-grounded blurb).
+  forceWebSearch?: boolean;
   onDelta: (chunk: string) => void;
   onSources?: (sources: WebSource[]) => void;
   onDone: () => void;
@@ -134,6 +149,7 @@ export async function streamChat({
   mode,
   documents = [],
   documentMode = "none",
+  forceWebSearch = false,
   onDelta,
   onSources,
   onDone,
@@ -176,6 +192,7 @@ export async function streamChat({
         // general answer (no excerpts found / casual message).
         documents,
         documentMode,
+        forceWebSearch,
       }),
     });
 

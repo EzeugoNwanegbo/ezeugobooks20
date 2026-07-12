@@ -1,40 +1,89 @@
 import { router } from "expo-router";
-import { Clock, Heart, type LucideIcon, LogOut, Settings } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { LogOut, MessageSquare, Search, Settings } from "lucide-react-native";
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
 import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BrandText } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
+import { type ConversationSummary, listConversations } from "@/lib/conversations";
 import { colors, fonts, radius } from "@/lib/theme";
+import { useConversation } from "./conversation-context";
 import { useDrawer } from "./drawer-context";
 import { useDrawerGestures } from "./useDrawerGestures";
 
 export const DRAWER_WIDTH = 304;
 const WIDTH = DRAWER_WIDTH;
 
-const ITEMS: { label: string; icon: LucideIcon; route: string }[] = [
-  { label: "History", icon: Clock, route: "/history" },
-  { label: "Settings", icon: Settings, route: "/settings" },
-  { label: "Feedback", icon: Heart, route: "/feedback" },
-];
-
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-// Overlay drawer (spec §1): content stays visible behind it (not push layout).
-// Opens via hamburger; closes via swipe-left (useDrawerGestures), backdrop tap,
-// or the Android back button (useBackNavigation). Always mounted so it can
-// animate; pointer events disabled while closed.
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const s = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+// Overlay drawer: logo → search → past chats → (Settings + Sign out) pinned at
+// the bottom. Conversations load each time the drawer opens so the list is
+// always fresh, and tapping one hands its id to the chat screen to reopen.
 export function Drawer() {
   const { isOpen, close } = useDrawer();
+  const { requestOpen } = useConversation();
   const { gesture, backdropStyle, panelStyle } = useDrawerGestures(WIDTH);
   const insets = useSafeAreaInsets();
-  const { user, profile, signOut } = useAuth();
+  const { signOut } = useAuth();
+  const [query, setQuery] = useState("");
+  const [convos, setConvos] = useState<ConversationSummary[]>([]);
+  const [loadingConvos, setLoadingConvos] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    setLoadingConvos(true);
+    listConversations()
+      .then((list) => {
+        if (active) setConvos(list);
+      })
+      .catch(() => {
+        /* leave the list empty on failure */
+      })
+      .finally(() => {
+        if (active) setLoadingConvos(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isOpen]);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q ? convos.filter((c) => c.title.toLowerCase().includes(q)) : convos;
 
   const go = (route: string) => {
     close();
-    // Let the close animation start before the push.
     setTimeout(() => router.push(route as never), 60);
+  };
+
+  const openChat = (id: string) => {
+    requestOpen(id);
+    close();
+    setTimeout(() => router.replace("/chat" as never), 60);
   };
 
   const onSignOut = () => {
@@ -42,13 +91,8 @@ export function Drawer() {
     setTimeout(() => void signOut(), 60);
   };
 
-  const name = profile?.name?.trim() || user?.email?.split("@")[0] || "Student";
-
   return (
-    <View
-      style={StyleSheet.absoluteFill}
-      pointerEvents={isOpen ? "auto" : "none"}
-    >
+    <View style={StyleSheet.absoluteFill} pointerEvents={isOpen ? "auto" : "none"}>
       <AnimatedPressable
         style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]}
         onPress={close}
@@ -57,48 +101,77 @@ export function Drawer() {
         <Animated.View
           style={[
             styles.panel,
-            { width: WIDTH, paddingTop: insets.top + 24, paddingBottom: insets.bottom + 20 },
+            { width: WIDTH, paddingTop: insets.top + 24, paddingBottom: insets.bottom + 16 },
             panelStyle,
           ]}
         >
           <BrandText size={26} />
 
-          <View style={styles.account}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.accountName} numberOfLines={1}>
-                {name}
-              </Text>
-              {user?.email ? (
-                <Text style={styles.accountEmail} numberOfLines={1}>
-                  {user.email}
-                </Text>
-              ) : null}
-            </View>
+          {/* Search past chats */}
+          <View style={styles.search}>
+            <Search size={16} color={colors.mutedDim} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search chats"
+              placeholderTextColor={colors.mutedDim}
+              style={styles.searchInput}
+            />
           </View>
 
-          <View style={styles.items}>
-            {ITEMS.map(({ label, icon: Icon, route }) => (
-              <Pressable
-                key={route}
-                onPress={() => go(route)}
-                style={({ pressed }) => [styles.item, pressed && styles.itemPressed]}
-              >
-                <Icon size={20} color={colors.muted} />
-                <Text style={styles.itemLabel}>{label}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <Pressable
-            onPress={onSignOut}
-            style={({ pressed }) => [styles.signOut, pressed && styles.itemPressed]}
+          {/* Past chats */}
+          <Text style={styles.sectionLabel}>Recent chats</Text>
+          <ScrollView
+            style={styles.list}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
           >
-            <LogOut size={20} color={colors.danger} />
-            <Text style={[styles.itemLabel, { color: colors.danger }]}>Sign out</Text>
-          </Pressable>
+            {loadingConvos ? (
+              <ActivityIndicator size="small" color={colors.accent} style={{ marginTop: 20 }} />
+            ) : filtered.length === 0 ? (
+              <View style={styles.empty}>
+                <Text style={styles.emptyText}>
+                  {q
+                    ? "No chats match your search."
+                    : "Your past chats will appear here once you start a conversation."}
+                </Text>
+              </View>
+            ) : (
+              filtered.map((c) => (
+                <Pressable
+                  key={c.id}
+                  onPress={() => openChat(c.id)}
+                  style={({ pressed }) => [styles.chatRow, pressed && styles.itemPressed]}
+                >
+                  <MessageSquare size={16} color={colors.mutedDim} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.chatTitle} numberOfLines={1}>
+                      {c.title || "New conversation"}
+                    </Text>
+                    <Text style={styles.chatTime}>{timeAgo(c.updated_at)}</Text>
+                  </View>
+                </Pressable>
+              ))
+            )}
+          </ScrollView>
+
+          {/* Bottom: Settings + Sign out */}
+          <View style={styles.bottom}>
+            <Pressable
+              onPress={() => go("/settings")}
+              style={({ pressed }) => [styles.item, pressed && styles.itemPressed]}
+            >
+              <Settings size={20} color={colors.muted} />
+              <Text style={styles.itemLabel}>Settings</Text>
+            </Pressable>
+            <Pressable
+              onPress={onSignOut}
+              style={({ pressed }) => [styles.item, pressed && styles.itemPressed]}
+            >
+              <LogOut size={20} color={colors.danger} />
+              <Text style={[styles.itemLabel, { color: colors.danger }]}>Sign out</Text>
+            </Pressable>
+          </View>
         </Animated.View>
       </GestureDetector>
     </View>
@@ -119,40 +192,69 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: radius.xl,
     paddingHorizontal: 20,
   },
-  account: {
+  search: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 22,
+    backgroundColor: colors.surface,
+    borderRadius: radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 14,
+    color: colors.text,
+    padding: 0,
+  },
+  sectionLabel: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1,
+    color: colors.mutedDim,
+    textTransform: "uppercase",
+    marginTop: 22,
+    marginBottom: 6,
+  },
+  list: {
+    flex: 1,
+  },
+  empty: {
+    paddingVertical: 20,
+    paddingHorizontal: 4,
+  },
+  emptyText: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.mutedDim,
+    lineHeight: 19,
+  },
+  chatRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    marginTop: 28,
-    marginBottom: 28,
+    paddingVertical: 11,
+    paddingHorizontal: 10,
+    borderRadius: radius.md,
   },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 999,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: {
-    fontFamily: fonts.soraSemibold,
-    fontSize: 18,
-    color: colors.primaryFg,
-  },
-  accountName: {
-    fontFamily: fonts.bodySemibold,
-    fontSize: 15,
+  chatTitle: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14.5,
     color: colors.text,
   },
-  accountEmail: {
-    fontFamily: fonts.body,
-    fontSize: 12,
+  chatTime: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
     color: colors.mutedDim,
-    marginTop: 1,
+    marginTop: 2,
   },
-  items: {
-    flex: 1,
-    gap: 4,
+  bottom: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingTop: 10,
+    gap: 2,
   },
   item: {
     flexDirection: "row",
@@ -169,13 +271,5 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyMedium,
     fontSize: 15,
     color: colors.text,
-  },
-  signOut: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: radius.full,
   },
 });

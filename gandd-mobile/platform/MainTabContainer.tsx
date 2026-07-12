@@ -26,7 +26,13 @@ const EDGE = 28;
 //   • horizontal swipe anywhere else → moves to the next/previous tab, sliding
 //     the incoming screen in from the side it came from.
 // Vertical intent (failOffsetY) yields to the screen's ScrollView.
-export function MainTabContainer({ children }: { children: ReactNode }) {
+export function MainTabContainer({
+  children,
+  swipeEnabled = true,
+}: {
+  children: ReactNode;
+  swipeEnabled?: boolean;
+}) {
   const { width } = useWindowDimensions();
   const pathname = usePathname();
   const { progress, open, close, isOpen } = useDrawer();
@@ -95,6 +101,12 @@ export function MainTabContainer({ children }: { children: ReactNode }) {
     });
 
   const style = useAnimatedStyle(() => ({ transform: [{ translateX: tx.value }] }));
+
+  // Chat turns the swipe off so the tab-swipe pan doesn't steal the horizontal
+  // drag that native text selection needs. Tabs are still reachable via the bar.
+  if (!swipeEnabled) {
+    return <Animated.View style={[styles.root, style]}>{children}</Animated.View>;
+  }
 
   return (
     <GestureDetector gesture={pan}>

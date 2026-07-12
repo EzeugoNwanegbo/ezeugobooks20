@@ -1,11 +1,5 @@
 import { router, usePathname } from "expo-router";
-import {
-  BookOpen,
-  Compass,
-  type LucideIcon,
-  MessageSquare,
-  Share2,
-} from "lucide-react-native";
+import { BookOpen, type LucideIcon, MessageSquare, NotebookPen, Zap } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, fonts, radius } from "@/lib/theme";
@@ -18,8 +12,8 @@ export const BOTTOM_NAV_HEIGHT = 62;
 const TABS: { key: string; label: string; icon: LucideIcon; route: string }[] = [
   { key: "chat", label: "Chat", icon: MessageSquare, route: "/chat" },
   { key: "library", label: "Library", icon: BookOpen, route: "/library" },
-  { key: "links", label: "Links", icon: Share2, route: "/links" },
-  { key: "coach", label: "Coach", icon: Compass, route: "/coach" },
+  { key: "last-minute", label: "Last Min", icon: Zap, route: "/last-minute" },
+  { key: "coach", label: "Coach", icon: NotebookPen, route: "/coach" },
 ];
 
 // Persistent 4-tab bar shared across the main screens; hidden on secondary

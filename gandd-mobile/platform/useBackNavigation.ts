@@ -6,7 +6,7 @@ import { useModal } from "./modal-context";
 
 // The four primary tabs (Chat is the root). Anything else under (app) is a
 // "secondary" screen reached via the drawer and gets a normal back.
-const MAIN_ROUTES = ["/chat", "/library", "/links", "/coach"];
+const MAIN_ROUTES = ["/chat", "/library", "/last-minute", "/coach"];
 
 export function isMainRoute(pathname: string) {
   return MAIN_ROUTES.includes(pathname);
