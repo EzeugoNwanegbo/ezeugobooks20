@@ -6,11 +6,11 @@ import { useAuth } from "@/lib/auth-context";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "G&D - read a whole textbook in minutes, not hours" },
+      { title: "G&D - understand your files, practice smarter, pass" },
       {
         name: "description",
         content:
-          "Upload any textbook in under 15 seconds, ask anything, and get exact answers from your own pages - nothing made up. Then master it with practice questions built from your book.",
+          "Upload your textbook, lecture notes, PDFs, or slides. Get explanations, citations, general context when you need it, and practice questions from what you are studying.",
       },
     ],
   }),
@@ -198,31 +198,39 @@ function Landing() {
         {/* ------------------------------------------------------- */}
         <section className="gd-hero">
           <div className="gd-hero-copy">
-            <span className="gd-eyebrow gd-rise gd-rise-1">From textbook to mastery</span>
+            <span className="gd-eyebrow gd-rise gd-rise-1">Understand · verify · practice · pass</span>
             <h1 className="gd-h1 gd-rise gd-rise-2">
-              The textbook takes hours. G&amp;D takes <span className="gd-accent">minutes</span>.
+              Don&apos;t you want to understand every concept in your textbook?
             </h1>
             <p className="gd-lead gd-rise gd-rise-3">
-              Upload any textbook in seconds. Ask it anything and get exact answers from your
-              own pages - nothing made up. Then master it with practice questions built from
-              your book.
+              Not just read the pages. Actually know what your textbook, PDF, slide, or lecture
+              file is trying to teach you.
             </p>
             <div className="gd-actions gd-rise gd-rise-4">
-              <TryForFreeButton className="gd-btn-lg" />
+              <a
+                href="#how-it-works"
+                onClick={scrollToHow}
+                className="gd-btn gd-btn-primary gd-btn-lg"
+              >
+                Yes, show me
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  arrow_downward
+                </span>
+              </a>
               <a
                 href="#how-it-works"
                 onClick={scrollToHow}
                 className="gd-btn gd-btn-ghost gd-btn-lg"
               >
-                See how it works
+                I want to pass
                 <span className="material-symbols-outlined" aria-hidden="true">
-                  arrow_downward
+                  school
                 </span>
               </a>
             </div>
             <div className="gd-trust gd-rise gd-rise-5">
               <span className="material-symbols-outlined" aria-hidden="true">verified</span>
-              No account needed · every answer cites its page
+              Your files first · general knowledge when you choose it
             </div>
           </div>
 
@@ -274,11 +282,11 @@ function Landing() {
           <div className="gd-section-head gd-r">
             <span className="gd-eyebrow">01 · Upload</span>
             <h2 className="gd-h2">
-              Any textbook. Any size. Ready in under <span className="gd-accent">15 seconds</span>.
+              Don&apos;t you want your files to explain themselves?
             </h2>
             <p className="gd-lead">
-              Drop in the whole book - not a chapter, not a summary. G&amp;D makes every page
-              searchable before you've found the right highlighter.
+              Upload a textbook, PDF, lecture note, slide, or image. Ask in plain English and get
+              a clean explanation without fighting the document first.
             </p>
           </div>
 
@@ -331,12 +339,11 @@ function Landing() {
             <div className="gd-split-copy gd-r">
               <span className="gd-eyebrow">02 · Ask</span>
               <h2 className="gd-h2">
-                Answers from <span className="gd-accent">your pages</span>. Nowhere else.
+                Don&apos;t you want answers that show where they came from?
               </h2>
               <p className="gd-lead">
-                G&amp;D answers only from the file you uploaded. No made-up facts, no internet
-                noise - every answer carries the page it came from, so you can check it
-                yourself. And when something isn't in your material, it says so.
+                Use your files only when you need strict citations. Switch to files plus general
+                knowledge when you want a broader explanation. The source mode stays visible.
               </p>
               <ul className="gd-points">
                 <li>
@@ -404,7 +411,7 @@ function Landing() {
             <div className="gd-split-copy gd-r">
               <span className="gd-eyebrow">03 · Highlight</span>
               <h2 className="gd-h2">
-                Stuck on one line? <span className="gd-accent">Ask right there.</span>
+                Don&apos;t you want difficult lines explained right where you are?
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 Highlight any part of an answer and ask a focused follow-up. G&amp;D answers in
@@ -458,7 +465,7 @@ function Landing() {
             <div className="gd-split-copy gd-r">
               <span className="gd-eyebrow">04 · Last Minute</span>
               <h2 className="gd-h2">
-                Exam close? <span className="gd-accent">Build one master note.</span>
+                Don&apos;t you want scattered files turned into one clean study guide?
               </h2>
               <p className="gd-lead">
                 Last Minute reads up to 10 PDFs from the same course, connects related ideas,
@@ -526,7 +533,7 @@ function Landing() {
             <div className="gd-split-copy gd-r">
               <span className="gd-eyebrow">05 · Master</span>
               <h2 className="gd-h2">
-                Don't just read it. <span className="gd-accent">Master it.</span>
+                Don&apos;t you want practice questions that match what you are studying?
               </h2>
               <p className="gd-lead">
                 My Coach turns your book into the world's best practice questions - generated
@@ -581,18 +588,19 @@ function Landing() {
         {/* Closing CTA                                               */}
         {/* ------------------------------------------------------- */}
         <section className="gd-cta-banner gd-r">
-          <h2 className="gd-h2">Tonight's reading, done in minutes.</h2>
+          <h2 className="gd-h2">Don&apos;t you want to walk into exams ready?</h2>
           <p className="gd-lead">
-            Bring your hardest textbook. Ask it the question that matters.
+            Sign up for G&amp;D. Upload your files, understand the concepts, practice smarter,
+            and revise with confidence.
           </p>
-          <TryForFreeButton className="gd-btn-lg" />
-          <span className="gd-cta-micro">Free · no signup · answers from your own pages</span>
+          <TryForFreeButton className="gd-btn-lg" label="Sign up for G&D" />
+          <span className="gd-cta-micro">Understand · verify · practice · pass</span>
         </section>
       </main>
 
       <footer className="gd-footer">
         <span className="gd-logo gd-logo-sm">G&amp;D</span>
-        <span className="gd-footer-meta">From textbook to mastery, in minutes</span>
+        <span className="gd-footer-meta">Understand · verify · practice · pass</span>
         <span className="gd-footer-meta">© {new Date().getFullYear()} G&amp;D</span>
       </footer>
     </div>

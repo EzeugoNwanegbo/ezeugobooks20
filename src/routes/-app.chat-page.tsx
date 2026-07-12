@@ -211,6 +211,8 @@ const VISUAL_SUGGESTIONS = [
 ];
 
 const CHAT_MODES = ["Simplified", "Detailed", "Storytelling", "Visuals"] as const;
+const SOURCE_MODES = ["My files only", "Files + general", "General knowledge"] as const;
+type SourceMode = (typeof SOURCE_MODES)[number];
 
 const SMART_DOC_LIMIT = 5;
 const SNIPPET_WINDOW_CHARS = 3200;
@@ -668,6 +670,9 @@ export function ChatPage() {
   const [mode, setMode] = useState<ChatMode>(normalizeChatMode(profile.preferred_mode));
   const [useLibrary, setUseLibrary] = useState(() => Boolean(user));
   const [webSearch, setWebSearch] = useState(false);
+  const [sourceMode, setSourceMode] = useState<SourceMode>(() =>
+    user ? "My files only" : "General knowledge",
+  );
   const interlink = false;
   const [docs, setDocs] = useState<DocumentCtx[]>([]);
   const [docsLoaded, setDocsLoaded] = useState(false);
@@ -698,6 +703,22 @@ export function ChatPage() {
   const latestSessionRef = useRef<PersistedChatSession | null>(null);
   const persistTimerRef = useRef<number | null>(null);
   const previousPersistConversationRef = useRef<string | null>(conversationId ?? null);
+
+  const applySourceMode = (nextMode: SourceMode) => {
+    setSourceMode(nextMode);
+    if (nextMode === "My files only") {
+      setUseLibrary(true);
+      setWebSearch(false);
+    } else if (nextMode === "Files + general") {
+      setUseLibrary(true);
+      setWebSearch(true);
+    } else {
+      setUseLibrary(false);
+      setWebSearch(true);
+      setSelectedDocIds([]);
+      setLibraryNotice(null);
+    }
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1886,15 +1907,21 @@ export function ChatPage() {
             <div className="chat-header-controls -mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] xl:mx-0 xl:overflow-visible xl:px-0 xl:pb-0 [&::-webkit-scrollbar]:hidden">
               <>
                 <button
-                  onClick={() => setUseLibrary((v) => !v)}
-                  title="Toggle file search"
+                  onClick={() =>
+                    applySourceMode(
+                      sourceMode === "My files only" ? "Files + general" : "My files only",
+                    )
+                  }
+                  title="Choose how grounded the answer should be"
                   className={`hidden shrink-0 rounded-xl px-2.5 py-1.5 text-xs font-medium transition-colors sm:inline-flex ${
-                    useLibrary
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
+                    sourceMode === "General knowledge"
+                      ? "bg-sky-500/10 text-sky-600 dark:text-sky-300"
+                      : sourceMode === "Files + general"
+                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                        : "bg-primary/10 text-primary"
                   }`}
                 >
-                  Files {useLibrary ? "on" : "off"}
+                  {sourceMode}
                 </button>
                 <button
                   onClick={() => {
@@ -2035,6 +2062,22 @@ export function ChatPage() {
                 </button>
               ))}
             </div>
+            <div className="mb-2 flex overflow-x-auto rounded-xl border border-border/70 bg-background/95 p-1 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {SOURCE_MODES.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => applySourceMode(item)}
+                  className={`min-h-8 shrink-0 rounded-lg px-3 text-[11px] font-medium transition-colors sm:text-xs ${
+                    sourceMode === item
+                      ? "bg-foreground text-background shadow-sm"
+                      : "text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
+                  }`}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
             {mode === "Visuals" && (
               <div className="mb-2 hidden border-b border-border/60 px-1 pb-2 md:block">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -2072,7 +2115,7 @@ export function ChatPage() {
               </div>
             )}
             {useLibrary && (
-              <div className="mb-2 border-b border-border/60 px-1 pb-2">
+              <div className="mb-2 rounded-2xl border border-border/70 bg-background/85 px-3 py-2">
                 <div className="flex flex-nowrap items-center gap-1.5 sm:flex-wrap sm:gap-2">
                   <button
                     type="button"
@@ -2138,94 +2181,102 @@ export function ChatPage() {
                 e.preventDefault();
                 send();
               }}
-              className="flex items-end gap-1.5 sm:gap-2"
+              className="rounded-[1.35rem] border border-border/80 bg-background/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.16)] backdrop-blur-xl"
             >
-              {speechSupported && (
+              <div className="mb-2 flex flex-wrap items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
+                <span className="rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary">
+                  Sources: {sourceMode}
+                </span>
+                <span className="rounded-full bg-foreground/[0.04] px-2.5 py-1">
+                  Style: {mode}
+                </span>
+                <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-700 dark:text-emerald-300">
+                  Citations when available
+                </span>
+              </div>
+              <div className="flex items-end gap-1.5 sm:gap-2">
+                {speechSupported && (
+                  <button
+                    type="button"
+                    onClick={toggleVoiceInput}
+                    title={listening ? "Stop voice input" : "Use voice input"}
+                    aria-pressed={listening}
+                    aria-label={listening ? "Stop voice input" : "Start voice input"}
+                    className={`inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-xl border transition-colors ${
+                      listening
+                        ? "border-primary bg-primary text-primary-foreground shadow-glow ring-2 ring-primary/25"
+                        : "border-border/70 bg-background text-muted-foreground hover:border-primary/35 hover:bg-foreground/[0.04] hover:text-foreground"
+                    }`}
+                  >
+                    <Mic className="h-4 w-4" />
+                  </button>
+                )}
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onFocus={() => {
+                    setIsInputFocused(true);
+                    setHideComposer(false);
+                    window.dispatchEvent(
+                      new CustomEvent("gd:chat-scroll", { detail: { hide: false } }),
+                    );
+                  }}
+                  onBlur={() => setIsInputFocused(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      send();
+                    }
+                  }}
+                  autoCapitalize={nativeApp ? "none" : "sentences"}
+                  autoCorrect={nativeApp ? "off" : "on"}
+                  autoComplete="off"
+                  spellCheck={!nativeApp}
+                  rows={1}
+                  placeholder="Ask for an explanation, source, example, or exam question..."
+                  className="min-h-[44px] max-h-[180px] flex-1 resize-none border-0 bg-transparent px-2 py-2.5 text-sm focus:outline-none sm:px-3"
+                  style={{ height: "auto" }}
+                  onInput={(e) => {
+                    const t = e.currentTarget;
+                    t.style.height = "auto";
+                    t.style.height = Math.min(t.scrollHeight, 200) + "px";
+                  }}
+                />
                 <button
                   type="button"
-                  onClick={toggleVoiceInput}
-                  title={listening ? "Stop voice input" : "Use voice input"}
-                  aria-pressed={listening}
-                  aria-label={listening ? "Stop voice input" : "Start voice input"}
-                  className={`inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-xl border transition-colors ${
-                    listening
+                  onClick={() => applySourceMode(webSearch ? "My files only" : "Files + general")}
+                  title={webSearch ? "General context on" : "Add general context"}
+                  aria-pressed={webSearch}
+                  aria-label={webSearch ? "Turn general context off" : "Turn general context on"}
+                  className={`inline-flex h-[44px] shrink-0 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-medium transition-colors sm:px-3.5 ${
+                    webSearch
                       ? "border-primary bg-primary text-primary-foreground shadow-glow ring-2 ring-primary/25"
                       : "border-border/70 bg-background text-muted-foreground hover:border-primary/35 hover:bg-foreground/[0.04] hover:text-foreground"
                   }`}
                 >
-                  <Mic className="h-4 w-4" />
+                  <Search className="h-4 w-4" />
+                  <span className="hidden sm:inline">{webSearch ? "General" : "Context"}</span>
                 </button>
-              )}
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onFocus={() => {
-                  setIsInputFocused(true);
-                  setHideComposer(false);
-                  window.dispatchEvent(
-                    new CustomEvent("gd:chat-scroll", { detail: { hide: false } }),
-                  );
-                }}
-                onBlur={() => setIsInputFocused(false)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    send();
-                  }
-                }}
-                // Disable predictive/composing text ONLY in the native app - the
-                // Samsung keyboard's composing path doesn't commit into the
-                // Android WebView there, so typed text never appears. Plain
-                // (non-composing) input works. The browser has no such bug, so
-                // give it normal autocorrect/autocapitalize/spellcheck.
-                autoCapitalize={nativeApp ? "none" : "sentences"}
-                autoCorrect={nativeApp ? "off" : "on"}
-                autoComplete="off"
-                spellCheck={!nativeApp}
-                rows={1}
-                placeholder=""
-                className="min-h-[44px] max-h-[180px] flex-1 resize-none rounded-2xl border border-border/80 bg-background px-4 py-2.5 text-sm shadow-[0_8px_24px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-ring sm:px-5"
-                style={{ height: "auto" }}
-                onInput={(e) => {
-                  const t = e.currentTarget;
-                  t.style.height = "auto";
-                  t.style.height = Math.min(t.scrollHeight, 200) + "px";
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setWebSearch((v) => !v)}
-                title={webSearch ? "Web search on" : "Use web search"}
-                aria-pressed={webSearch}
-                aria-label={webSearch ? "Turn web search off" : "Turn web search on"}
-                className={`inline-flex h-[44px] shrink-0 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-medium transition-colors sm:px-3.5 ${
-                  webSearch
-                    ? "border-primary bg-primary text-primary-foreground shadow-glow ring-2 ring-primary/25"
-                    : "border-border/70 bg-background text-muted-foreground hover:border-primary/35 hover:bg-foreground/[0.04] hover:text-foreground"
-                }`}
-              >
-                <Search className="h-4 w-4" />
-                <span className="hidden sm:inline">{webSearch ? "Web on" : "Web"}</span>
-              </button>
-              {streaming ? (
-                <button
-                  type="button"
-                  onClick={cancelResponse}
-                  title="Cancel response"
-                  aria-label="Cancel response"
-                  className="h-[44px] w-[44px] flex items-center justify-center rounded-xl border border-destructive/40 bg-destructive/10 text-destructive transition-colors hover:bg-destructive/15"
-                >
-                  <Square className="h-3.5 w-3.5 fill-current" />
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={!input.trim()}
-                  className="h-[44px] w-[44px] flex items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm transition-opacity disabled:opacity-40"
-                >
-                  <Send className="h-4 w-4" />
-                </button>
-              )}
+                {streaming ? (
+                  <button
+                    type="button"
+                    onClick={cancelResponse}
+                    title="Cancel response"
+                    aria-label="Cancel response"
+                    className="h-[44px] w-[44px] flex items-center justify-center rounded-xl border border-destructive/40 bg-destructive/10 text-destructive transition-colors hover:bg-destructive/15"
+                  >
+                    <Square className="h-3.5 w-3.5 fill-current" />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={!input.trim()}
+                    className="h-[44px] w-[44px] flex items-center justify-center rounded-xl bg-foreground text-background shadow-sm transition-opacity disabled:opacity-40"
+                  >
+                    <Send className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             </form>
             <p className="mt-1.5 hidden text-center text-[11px] text-muted-foreground sm:block">
               G&D can be wrong. Always verify important work with your teacher, lecturer, or source
@@ -2612,7 +2663,7 @@ function SourceThumbnail({ source, index }: { source: WebSource; index: number }
       rel="noreferrer"
       title={label}
       aria-label={`Open web source ${index + 1}: ${label}`}
-      className="group/thumb relative block h-12 w-14 shrink-0 overflow-hidden rounded-lg border border-border bg-foreground/[0.03] transition-colors hover:border-primary/35 sm:h-14 sm:w-16"
+      className="group/thumb relative block h-24 w-36 shrink-0 overflow-hidden rounded-xl border border-border bg-foreground/[0.03] transition-colors hover:border-primary/35 sm:h-28 sm:w-44"
     >
       <img
         src={source.image}
@@ -2629,12 +2680,12 @@ function WebSourceIcons({ sources }: { sources?: WebSource[] }) {
   if (!sources?.length) return null;
 
   const shown = sources.slice(0, 6);
-  const withImages = shown.filter((source) => source.image).slice(0, 4);
+  const withImages = shown.filter((source) => source.image).slice(0, 3);
 
   return (
-    <div className="mt-2 flex flex-col gap-1.5">
+    <div className="mt-2 flex flex-col gap-2">
       {withImages.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
           {withImages.map((source, index) => (
             <SourceThumbnail key={`thumb-${source.url}-${index}`} source={source} index={index} />
           ))}
@@ -3583,9 +3634,23 @@ function Message({
   const renderInlineMarkdown = () => {
     if (!displayContent) {
       return (
-        <div className="flex flex-col gap-2 py-0.5" aria-live="polite" aria-busy="true">
-          <span className="text-xs font-medium text-muted-foreground">Preparing your answer</span>
-          <span className="gd-loading-bar" />
+        <div className="gd-answer-loader" aria-live="polite" aria-busy="true">
+          <div className="gd-loader-step is-active">
+            <span />
+            Reading selected material
+          </div>
+          <div className="gd-loader-step">
+            <span />
+            Finding the strongest context
+          </div>
+          <div className="gd-loader-step">
+            <span />
+            Checking citations
+          </div>
+          <div className="gd-loader-step">
+            <span />
+            Building your study answer
+          </div>
         </div>
       );
     }
@@ -3850,20 +3915,23 @@ function Message({
     }
 
     return (
-      <div className="group/user flex items-start justify-end gap-1.5">
+      <div className="group/user flex items-start gap-2">
         {canEdit && onEditUserMessage && (
           <button
             type="button"
             onClick={startEdit}
             title="Edit message"
             aria-label="Edit message"
-            className="mt-2 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/[0.06] hover:text-foreground group-hover/user:opacity-100 focus-visible:opacity-100"
+            className="order-2 mt-5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/[0.06] hover:text-foreground group-hover/user:opacity-100 focus-visible:opacity-100"
           >
             <Pencil className="h-3.5 w-3.5" />
           </button>
         )}
-        <div className="max-w-[88%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2.5 text-sm leading-relaxed text-primary-foreground shadow-sm break-words sm:max-w-[85%] sm:px-4">
-          {msg.content}
+        <div className="max-w-[760px] flex-1 border-l-2 border-primary/45 bg-primary/[0.035] px-4 py-3 text-sm leading-relaxed break-words">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-primary">
+            You asked
+          </div>
+          <div className="text-[15px] text-foreground">{msg.content}</div>
         </div>
       </div>
     );

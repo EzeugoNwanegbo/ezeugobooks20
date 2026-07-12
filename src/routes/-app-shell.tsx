@@ -265,10 +265,10 @@ function AppLayout() {
     return (
       <Link
         to={to}
-        className={`flex items-center overflow-hidden rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-300 ${
+        className={`group/nav relative flex items-center overflow-hidden rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-300 ${
           active
-            ? "bg-primary/10 text-foreground shadow-[inset_2px_0_0_var(--primary)]"
-            : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
+            ? "bg-gradient-to-r from-primary/15 via-primary/8 to-transparent text-foreground shadow-[inset_3px_0_0_var(--primary)]"
+            : "text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground"
         } ${isSidebarCollapsed ? "justify-center gap-0" : "gap-3"}`}
         title={isSidebarCollapsed ? label : undefined}
         aria-label={label}
@@ -342,7 +342,7 @@ function AppLayout() {
 
 
       <aside
-        className={`hidden md:flex flex-col overflow-hidden border-r border-border/70 bg-background transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] md:shrink-0 ${isSidebarCollapsed ? "md:w-16 xl:w-16" : "md:w-56 xl:w-64"}`}
+        className={`hidden md:flex flex-col overflow-hidden border-r border-border/70 bg-background/95 transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] md:shrink-0 ${isSidebarCollapsed ? "md:w-16 xl:w-16" : "md:w-56 xl:w-64"}`}
       >
         <div
           className={`flex items-center transition-[padding] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
@@ -429,26 +429,15 @@ function AppLayout() {
               Sign out
             </span>
           </button>
-          <button
-            onClick={() => setShowDeleteDialog(true)}
-            className={`flex items-center text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-destructive ${
-              isSidebarCollapsed
-                ? "justify-center rounded-lg p-2"
-                : "w-full gap-3 rounded-lg px-3 py-2 text-sm font-medium"
-            }`}
-            title={isSidebarCollapsed ? "Delete account" : undefined}
-          >
-            <Trash2 className="h-4 w-4 shrink-0" />
-            <span
-              className={`whitespace-nowrap transition-all duration-300 ${
-                isSidebarCollapsed
-                  ? "max-w-0 -translate-x-2 opacity-0"
-                  : "max-w-32 translate-x-0 opacity-100"
-              }`}
+          {!isSidebarCollapsed && (
+            <button
+              onClick={() => setShowDeleteDialog(true)}
+              className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
             >
-              Delete account
-            </span>
-          </button>
+              <Trash2 className="h-3.5 w-3.5 shrink-0" />
+              Account deletion
+            </button>
+          )}
         </div>
       </aside>
 

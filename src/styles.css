@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Hanken+Grotesk:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Hanken+Grotesk:wght@300;400;500;600&family=Nunito:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap");
 @import "tailwindcss" source(none);
 @source "../src";
@@ -55,6 +55,8 @@ html {
   --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  /* Friendly, rounded reading face for AI answers - warm but still professional. */
+  --font-reading: "Nunito", "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
@@ -301,12 +303,69 @@ html.gd-low-power .gd-loading-bar::after {
   animation-duration: 2s;
 }
 
+@keyframes gdLoaderPulse {
+  0%,
+  100% {
+    opacity: 0.42;
+    transform: scale(0.88);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.gd-answer-loader {
+  display: grid;
+  gap: 0.55rem;
+  max-width: 520px;
+  border-left: 2px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  background: color-mix(in srgb, var(--primary) 4%, transparent);
+  padding: 0.85rem 1rem;
+}
+
+.gd-loader-step {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+.gd-loader-step span {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--primary) 55%, transparent);
+  animation: gdLoaderPulse 1.45s ease-in-out infinite;
+}
+
+.gd-loader-step:nth-child(2) span {
+  animation-delay: 160ms;
+}
+
+.gd-loader-step:nth-child(3) span {
+  animation-delay: 320ms;
+}
+
+.gd-loader-step:nth-child(4) span {
+  animation-delay: 480ms;
+}
+
+.gd-loader-step.is-active {
+  color: var(--foreground);
+}
+
 /* Markdown prose styling */
 .medai-prose {
   color: var(--foreground);
   line-height: 1.75;
+  /* Friendly, rounded reading face - warm and a little fun, still professional. */
+  font-family: var(--font-reading);
   /* AI replies read a touch bolder than the thin 300 body weight for legibility. */
-  font-weight: 450;
+  font-weight: 500;
+  letter-spacing: 0.002em;
 }
 .medai-prose p {
   margin: 0.65rem 0;
@@ -325,10 +384,10 @@ html.gd-low-power .gd-loading-bar::after {
 .medai-prose h1,
 .medai-prose h2,
 .medai-prose h3 {
-  font-weight: 300;
+  font-weight: 700;
   margin: 1rem 0 0.5rem;
   color: var(--foreground);
-  font-family: var(--font-display);
+  font-family: var(--font-reading);
 }
 .medai-prose h2 {
   font-size: 1.35rem;
