@@ -10,14 +10,6 @@ import {
   type GamificationStats,
 } from "@/lib/gamification";
 
-const SAMPLE_USERS = [
-  { name: "Amina", points: 1420, weeklyPoints: 280, streak: 12 },
-  { name: "Tobi", points: 1185, weeklyPoints: 245, streak: 8 },
-  { name: "Maya", points: 1030, weeklyPoints: 210, streak: 6 },
-  { name: "Daniel", points: 890, weeklyPoints: 180, streak: 5 },
-  { name: "Zara", points: 760, weeklyPoints: 150, streak: 4 },
-];
-
 export function LeaderboardPage() {
   const { user, profile } = useAuth();
   const [stats, setStats] = useState<GamificationStats>(() =>
@@ -33,17 +25,17 @@ export function LeaderboardPage() {
   }, [user]);
 
   const rows = useMemo(() => {
-    const current = {
-      name: profile?.name || "You",
-      points: stats.points,
-      weeklyPoints: stats.weeklyPoints,
-      streak: stats.currentStreak,
-      current: true,
-    };
-    return [...SAMPLE_USERS, current].sort((a, b) => b.points - a.points);
+    return [
+      {
+        name: profile?.name || "You",
+        points: stats.points,
+        weeklyPoints: stats.weeklyPoints,
+        streak: stats.currentStreak,
+        current: true,
+      },
+    ];
   }, [profile?.name, stats]);
 
-  const rank = rows.findIndex((row) => "current" in row) + 1;
   const level = levelFromPoints(stats.points);
 
   return (
@@ -66,14 +58,16 @@ export function LeaderboardPage() {
           <StatCard icon={<Sparkles className="h-4 w-4" />} label="Total points" value={stats.points} />
           <StatCard icon={<Flame className="h-4 w-4" />} label="Current streak" value={`${stats.currentStreak}d`} />
           <StatCard icon={<Medal className="h-4 w-4" />} label="Level" value={level} />
-          <StatCard icon={<Trophy className="h-4 w-4" />} label="Your rank" value={`#${rank || "-"}`} />
+          <StatCard icon={<Trophy className="h-4 w-4" />} label="Global rank" value="Pending" />
         </section>
 
         <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="luxury-panel overflow-hidden rounded-lg">
             <div className="border-b border-border px-4 py-3">
-              <h2 className="text-sm font-semibold">All users</h2>
-              <p className="text-xs text-muted-foreground">Global ranking by total points.</p>
+              <h2 className="text-sm font-semibold">Your standing</h2>
+              <p className="text-xs text-muted-foreground">
+                Global ranking will appear here after leaderboard sync is connected.
+              </p>
             </div>
             <div className="divide-y divide-border/70">
               {rows.map((row, index) => (
