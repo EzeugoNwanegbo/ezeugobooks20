@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRight, FileText, History, Map as MapIcon, Sparkles } from "lucide-react";
+import { BrainCircuit, ChevronRight, FileText, History, Map as MapIcon, Route } from "lucide-react";
 import { LoadingDots } from "@/components/loading-dots";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
@@ -180,9 +180,9 @@ export function StudyBodyPage() {
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 lg:px-8">
+    <div className="gd-coach-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 overflow-x-hidden">
-        <header>
+        <header className="gd-coach-header">
           <div className="flex items-center gap-2 text-sm font-medium text-primary">
             <MapIcon className="h-4 w-4" />
             My Coach
@@ -216,7 +216,7 @@ export function StudyBodyPage() {
           {/* New roadmap */}
           <div className="luxury-panel rounded-lg p-4">
             <div className="mb-3 flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
+              <Route className="h-4 w-4 text-primary" />
               <h2 className="font-semibold">New roadmap</h2>
             </div>
             <input
@@ -317,7 +317,7 @@ export function StudyBodyPage() {
               disabled={loading}
               className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-60"
             >
-              {loading ? <LoadingDots /> : <Sparkles className="h-4 w-4" />}
+              {loading ? <LoadingDots /> : <BrainCircuit className="h-4 w-4" />}
               Build roadmap
             </button>
           </div>

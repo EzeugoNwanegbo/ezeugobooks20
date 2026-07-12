@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   BookOpen,
+  BrainCircuit,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -11,7 +12,7 @@ import {
   MessageSquare,
   Plus,
   Settings,
-  Sparkles,
+  TimerReset,
   Trash2,
   X,
 } from "lucide-react";
@@ -260,12 +261,12 @@ function AppLayout() {
     }
   };
 
-  const navItem = (to: string, icon: ReactNode, label: string) => {
+  const navItem = (to: string, icon: ReactNode, label: string, accent: "blue" | "violet" | "coral" | "slate" = "slate") => {
     const active = location.pathname.startsWith(to);
     return (
       <Link
         to={to}
-        className={`group/nav relative flex items-center overflow-hidden rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-300 ${
+        className={`gd-side-nav-item gd-side-nav-${accent} ${active ? "gd-side-nav-active" : ""} group/nav relative flex items-center overflow-hidden rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-300 ${
           active
             ? "bg-gradient-to-r from-primary/15 via-primary/8 to-transparent text-foreground shadow-[inset_3px_0_0_var(--primary)]"
             : "text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground"
@@ -342,7 +343,7 @@ function AppLayout() {
 
 
       <aside
-        className={`hidden md:flex flex-col overflow-hidden border-r border-border/70 bg-background/95 transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] md:shrink-0 ${isSidebarCollapsed ? "md:w-16 xl:w-16" : "md:w-56 xl:w-64"}`}
+        className={`gd-app-sidebar hidden md:flex flex-col overflow-hidden border-r border-border/70 bg-background/95 transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] md:shrink-0 ${isSidebarCollapsed ? "md:w-16 xl:w-16" : "md:w-60 xl:w-64"}`}
       >
         <div
           className={`flex items-center transition-[padding] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
@@ -351,7 +352,7 @@ function AppLayout() {
         >
           <Link
             to="/app/chat"
-            className={`luxury-brand-text overflow-hidden whitespace-nowrap transition-all duration-300 ${
+            className={`gd-sidebar-brand luxury-brand-text overflow-hidden whitespace-nowrap transition-all duration-300 ${
               isSidebarCollapsed
                 ? "max-w-0 -translate-x-2 opacity-0"
                 : "max-w-24 translate-x-0 opacity-100"
@@ -374,14 +375,16 @@ function AppLayout() {
           </button>
         </div>
         <nav className="flex-1 space-y-6 px-3 py-2">
+          {!isSidebarCollapsed && <p className="gd-nav-label px-3">Study space</p>}
           <div className="space-y-1">
-            {navItem("/app/chat", <MessageSquare className="h-4 w-4 shrink-0" />, "Chat")}
-            {navItem("/app/library", <BookOpen className="h-4 w-4 shrink-0" />, "Library")}
-            {navItem("/app/last-minute", <Sparkles className="h-4 w-4 shrink-0" />, "Last Minute")}
-            {navItem("/app/history", <Clock className="h-4 w-4 shrink-0" />, "History")}
+            {navItem("/app/chat", <MessageSquare className="h-4 w-4 shrink-0" />, "Chat", "blue")}
+            {navItem("/app/library", <BookOpen className="h-4 w-4 shrink-0" />, "Library", "blue")}
+            {navItem("/app/studybody", <BrainCircuit className="h-4 w-4 shrink-0" />, "My Coach", "violet")}
+            {navItem("/app/last-minute", <TimerReset className="h-4 w-4 shrink-0" />, "Last Minute", "coral")}
           </div>
           <div className="space-y-1 border-t border-border/60 pt-5">
-            {navItem("/app/studybody", <Map className="h-4 w-4 shrink-0" />, "My Coach")}
+            {!isSidebarCollapsed && <p className="gd-nav-label px-3">Your work</p>}
+            {navItem("/app/history", <Clock className="h-4 w-4 shrink-0" />, "History")}
             {navItem("/app/feedback", <Heart className="h-4 w-4 shrink-0" />, "Feedback")}
             {navItem("/app/settings", <Settings className="h-4 w-4 shrink-0" />, "Settings")}
           </div>
@@ -392,14 +395,17 @@ function AppLayout() {
           }`}
         >
           <div
-            className={`overflow-hidden px-2 transition-all duration-300 ${
+            className={`gd-sidebar-profile overflow-hidden px-2 transition-all duration-300 ${
               isSidebarCollapsed
                 ? "mb-0 max-h-0 -translate-y-1 opacity-0"
                 : "mb-3 max-h-14 translate-y-0 opacity-100"
             }`}
             aria-hidden={isSidebarCollapsed}
           >
-            <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
+            <div className="flex items-center gap-2">
+              <span className="gd-profile-mark">{(profile.name || "S").slice(0, 1).toUpperCase()}</span>
+              <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
+            </div>
             <div className="truncate text-xs text-muted-foreground">
               {[profile.year, profile.university].filter(Boolean).join(" - ")}
             </div>
@@ -518,21 +524,21 @@ function AppLayout() {
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("last-minute")}
-                icon={<Sparkles className="h-4 w-4" />}
+                icon={<TimerReset className="h-4 w-4" />}
                 label="Last Minute"
                 onPick={() => goToMobileRoute("/app/last-minute")}
+              />
+              <MobileDrawerNavItem
+                active={location.pathname.includes("studybody")}
+                icon={<BrainCircuit className="h-4 w-4" />}
+                label="My Coach"
+                onPick={() => goToMobileRoute("/app/studybody")}
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("history")}
                 icon={<Clock className="h-4 w-4" />}
                 label="History"
                 onPick={() => goToMobileRoute("/app/history")}
-              />
-              <MobileDrawerNavItem
-                active={location.pathname.includes("studybody")}
-                icon={<Map className="h-4 w-4" />}
-                label="My Coach"
-                onPick={() => goToMobileRoute("/app/studybody")}
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("feedback")}

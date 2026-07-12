@@ -802,7 +802,7 @@ export function LibraryPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="gd-library-page flex-1 overflow-y-auto">
       <div className="mx-auto max-w-5xl px-3 py-5 sm:px-4 sm:py-8 md:px-8">
         {isOnboarding && docs.length === 0 && (
           <div className="mb-8 rounded-lg bg-primary/10 border border-primary/20 p-6 text-center animate-in fade-in slide-in-from-top-4 duration-500">
@@ -814,9 +814,10 @@ export function LibraryPage() {
             </p>
           </div>
         )}
-        <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-start sm:justify-between">
+        <div className="gd-library-header mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="font-display text-4xl font-light leading-none sm:text-5xl">
+            <div className="gd-page-kicker"><BookOpen className="h-3.5 w-3.5" /> Your source shelf</div>
+            <h1 className="mt-3 font-display text-4xl font-light leading-none sm:text-5xl">
               Your library
             </h1>
             <p className="mt-2 max-w-lg text-sm text-muted-foreground sm:mt-1">
@@ -856,7 +857,7 @@ export function LibraryPage() {
             const files = Array.from(e.dataTransfer.files ?? []);
             if (files.length) onUploadFiles(files);
           }}
-          className={`block cursor-pointer rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 p-5 text-center transition-all hover:border-primary hover:bg-primary/10 sm:p-8 ${
+          className={`gd-library-dropzone block cursor-pointer rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 p-5 text-center transition-all hover:border-primary hover:bg-primary/10 sm:p-8 ${
             uploading ? "pointer-events-none opacity-70" : ""
           } ${isOnboarding && docs.length === 0 ? "ring-2 ring-primary ring-offset-4 ring-offset-background animate-pulse shadow-glow" : ""}`}
         >

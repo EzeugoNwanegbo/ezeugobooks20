@@ -7,7 +7,7 @@ import {
   FileText,
   GraduationCap,
   Presentation,
-  Sparkles,
+  TimerReset,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -263,13 +263,13 @@ export function LastMinutePage() {
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 lg:px-8">
+    <div className="gd-last-minute-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
-        <header className="rounded-lg border border-border/70 bg-surface/70 px-4 py-5 sm:px-5">
+        <header className="gd-last-minute-header rounded-lg border border-border/70 bg-surface/70 px-4 py-5 sm:px-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <div className="flex items-center gap-2 text-sm font-semibold text-primary">
-                <Sparkles className="h-4 w-4" />
+                <TimerReset className="h-4 w-4" />
                 Last Minute
               </div>
               <h1 className="mt-2 font-display text-2xl font-light tracking-normal sm:text-3xl md:text-4xl">
@@ -346,7 +346,7 @@ export function LastMinutePage() {
                 disabled={generating || selected.length === 0}
                 className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-45"
               >
-                {generating ? <LoadingDots /> : <Sparkles className="h-4 w-4" />}
+                {generating ? <LoadingDots /> : <TimerReset className="h-4 w-4" />}
                 {generating ? "Generating Master Note" : "Generate Master Note"}
               </button>
             </div>
