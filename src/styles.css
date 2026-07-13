@@ -501,6 +501,34 @@ html.gd-low-power .gd-loading-bar::after {
 .ai-inline-composer {
   animation: aiInlineComposerIn 140ms ease-out;
 }
+
+/* Fluid "liquid" reveal for the mobile style/source selectors when a
+   collapsed bubble is tapped and its full segmented bar unfurls. */
+@keyframes selectorReveal {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.55) translateY(3px);
+    filter: blur(5px);
+  }
+  55% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleX(1) translateY(0);
+    filter: blur(0);
+  }
+}
+.selector-reveal {
+  transform-origin: left center;
+  animation: selectorReveal 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .selector-reveal {
+    animation: none;
+  }
+}
 .ai-inline-thread {
   border-left: 2px solid color-mix(in srgb, var(--primary) 36%, transparent);
   padding: 0.25rem 0 0.25rem 0.85rem;

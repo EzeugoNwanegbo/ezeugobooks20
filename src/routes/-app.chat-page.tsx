@@ -214,6 +214,20 @@ const CHAT_MODES = ["Simplified", "Detailed", "Storytelling", "Visuals"] as cons
 const SOURCE_MODES = ["My files only", "Files + general", "General knowledge"] as const;
 type SourceMode = (typeof SOURCE_MODES)[number];
 
+// Short labels for the collapsed mobile "bubble" selectors, so a chosen
+// option shrinks to a compact pill instead of a full-width segmented bar.
+const MODE_SHORT: Record<ChatMode, string> = {
+  Simplified: "Simple",
+  Detailed: "Detailed",
+  Storytelling: "Story",
+  Visuals: "Visuals",
+};
+const SOURCE_SHORT: Record<SourceMode, string> = {
+  "My files only": "Files",
+  "Files + general": "Files + gen",
+  "General knowledge": "General",
+};
+
 const SMART_DOC_LIMIT = 5;
 const SNIPPET_WINDOW_CHARS = 3200;
 const MAX_SNIPPETS_PER_DOC = 5;
@@ -692,6 +706,9 @@ export function ChatPage() {
   const [listening, setListening] = useState(false);
   const [hideComposer, setHideComposer] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
+  // On mobile the style/source selectors collapse to small pills and only
+  // expand into their full segmented bar while the user is choosing.
+  const [expandedSelector, setExpandedSelector] = useState<null | "style" | "source">(null);
   const lastScrollY = useRef(0);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
@@ -2037,32 +2054,78 @@ export function ChatPage() {
                 </div>
               </div>
             )}
-            <div className="mb-2 flex overflow-x-auto rounded-xl border border-border/70 bg-foreground/[0.03] p-0.5 [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden">
-              {CHAT_MODES.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setMode(m)}
-                  title={
-                    m === "Visuals"
-                      ? "Create an animated visual explanation"
-                      : m === "Storytelling"
-                        ? "Explain as a story"
-                        : m === "Detailed"
-                          ? "Concepts + deeper detail"
-                          : "Plain English with an analogy"
-                  }
-                  className={`flex min-h-8 flex-1 items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-medium transition-colors ${
-                    mode === m ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
-                  }`}
-                >
-                  {m === "Storytelling" && <BookText className="h-3 w-3" />}
-                  {m === "Visuals" && <Sparkles className="h-3 w-3" />}
-                  {m}
-                </button>
-              ))}
+            {/* Mobile: collapsed style/source pills that expand to pick, then
+                shrink back to a small bubble showing the selection. */}
+            <div className="mb-2 md:hidden">
+              {expandedSelector === "style" ? (
+                <div className="selector-reveal flex overflow-x-auto rounded-xl border border-border/70 bg-foreground/[0.03] p-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {CHAT_MODES.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        setMode(m);
+                        setExpandedSelector(null);
+                      }}
+                      className={`flex min-h-8 flex-1 items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-medium transition-colors ${
+                        mode === m
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {m === "Storytelling" && <BookText className="h-3 w-3" />}
+                      {m === "Visuals" && <Sparkles className="h-3 w-3" />}
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              ) : expandedSelector === "source" ? (
+                <div className="selector-reveal flex overflow-x-auto rounded-xl border border-border/70 bg-background/95 p-1 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {SOURCE_MODES.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => {
+                        applySourceMode(item);
+                        setExpandedSelector(null);
+                      }}
+                      className={`min-h-8 flex-1 rounded-lg px-3 text-[11px] font-medium transition-colors ${
+                        sourceMode === item
+                          ? "bg-foreground text-background shadow-sm"
+                          : "text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
+                      }`}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedSelector("style")}
+                    title={`Answer style: ${mode}`}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-foreground/[0.03] px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-foreground/[0.06]"
+                  >
+                    {mode === "Storytelling" && <BookText className="h-3 w-3 text-muted-foreground" />}
+                    {mode === "Visuals" && <Sparkles className="h-3 w-3 text-primary" />}
+                    {MODE_SHORT[mode]}
+                    <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedSelector("source")}
+                    title={`Sources: ${sourceMode}`}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-background/95 px-2.5 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors hover:bg-foreground/[0.04]"
+                  >
+                    <FileText className="h-3 w-3 text-muted-foreground" />
+                    {SOURCE_SHORT[sourceMode]}
+                    <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                  </button>
+                </div>
+              )}
             </div>
-            <div className="mb-2 flex overflow-x-auto rounded-xl border border-border/70 bg-background/95 p-1 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="mb-2 hidden overflow-x-auto rounded-xl border border-border/70 bg-background/95 p-1 shadow-sm [scrollbar-width:none] md:flex [&::-webkit-scrollbar]:hidden">
               {SOURCE_MODES.map((item) => (
                 <button
                   key={item}
@@ -2183,17 +2246,6 @@ export function ChatPage() {
               }}
               className="rounded-[1.35rem] border border-border/80 bg-background/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.16)] backdrop-blur-xl"
             >
-              <div className="mb-2 flex flex-wrap items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
-                <span className="rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary">
-                  Sources: {sourceMode}
-                </span>
-                <span className="rounded-full bg-foreground/[0.04] px-2.5 py-1">
-                  Style: {mode}
-                </span>
-                <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-700 dark:text-emerald-300">
-                  Citations when available
-                </span>
-              </div>
               <div className="flex items-end gap-1.5 sm:gap-2">
                 {speechSupported && (
                   <button
