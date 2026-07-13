@@ -12,4 +12,5 @@ export { useBackNavigation, isMainRoute } from "./useBackNavigation";
 export { useDrawerGestures } from "./useDrawerGestures";
 export { useEdgeSwipe } from "./useEdgeSwipe";
 export { haptics, useHaptics } from "./useHaptics";
+export { useKeyboardHeight } from "./useKeyboardHeight";
 export { IS_NATIVE, useIsNative } from "./useIsNative";

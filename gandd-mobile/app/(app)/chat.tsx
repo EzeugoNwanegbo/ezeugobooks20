@@ -5,9 +5,7 @@ import {
   Alert,
   Image,
   Keyboard,
-  KeyboardAvoidingView,
   Linking,
-  Platform,
   Pressable,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -56,6 +54,7 @@ import {
   useConversation,
   useDrawer,
   useHaptics,
+  useKeyboardHeight,
   useModal,
 } from "@/platform";
 
@@ -94,8 +93,8 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [libraryDocs, setLibraryDocs] = useState<LinkDocument[]>([]);
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
-  const [keyboardShown, setKeyboardShown] = useState(false);
-  const [headerH, setHeaderH] = useState(0);
+  const keyboardHeight = useKeyboardHeight();
+  const keyboardShown = keyboardHeight > 0;
   const scrollRef = useRef<ScrollView>(null);
   const abortRef = useRef<AbortController | null>(null);
   const conversationIdRef = useRef<string | null>(null);
@@ -109,7 +108,13 @@ export default function ChatScreen() {
   const lastScrollY = useRef(0);
 
   const footerAnimStyle = useAnimatedStyle(() => ({
-    height: footerH > 0 && !keyboardShown ? footerH * (1 - collapse.value) : undefined,
+    // Force a height only for the scroll-collapse animation while the keyboard
+    // is down. When it's up, explicitly release to "auto" — returning undefined
+    // leaves the last forced height (measured keyboard-down, tab-bar padding
+    // included) stuck on the native view, which parked the input ~100px above
+    // the keyboard inside this overflow-hidden container. "auto" also lets the
+    // multiline input grow while typing.
+    height: footerH > 0 && !keyboardShown ? footerH * (1 - collapse.value) : ("auto" as const),
     opacity: 1 - collapse.value * 0.5,
   }));
 
@@ -124,22 +129,10 @@ export default function ChatScreen() {
     lastScrollY.current = y;
   };
 
-  // While the keyboard is up the composer is lifted, so we drop the reserved
-  // bottom-nav + safe-area padding — otherwise the input floats far above the
-  // keyboard with a large empty gap.
+  // Never leave the composer collapsed while the keyboard is up (typing).
   useEffect(() => {
-    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-    const show = Keyboard.addListener(showEvt, () => {
-      setKeyboardShown(true);
-      collapse.value = 0; // never leave the composer hidden while typing
-    });
-    const hide = Keyboard.addListener(hideEvt, () => setKeyboardShown(false));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, [collapse]);
+    if (keyboardShown) collapse.value = 0;
+  }, [keyboardShown, collapse]);
 
   // Load the whole library so the attach picker can list every file. Only
   // "ready" files have the chunks retrieval needs, so the picker shows the
@@ -382,22 +375,23 @@ export default function ChatScreen() {
 
   return (
     <MainTabContainer swipeEnabled={false}>
-      <View onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}>
-        <TopBar
-          onMenu={open}
-          right={
-            <Pressable hitSlop={10} onPress={newChat} style={styles.topBtn}>
-              <Plus size={20} color={colors.text} />
-            </Pressable>
-          }
-        />
-      </View>
+      <TopBar
+        onMenu={open}
+        right={
+          <Pressable hitSlop={10} onPress={newChat} style={styles.topBtn}>
+            <Plus size={20} color={colors.text} />
+          </Pressable>
+        }
+      />
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={headerH}
-      >
+      {/* Lift the column so the composer sits flush on the keyboard. Nothing
+          above this screen applies a bottom safe-area inset (root and (app)
+          layouts are plain flex:1 Views), so this column reaches the true
+          screen bottom — the same edge iOS measures the keyboard from. Lift by
+          the FULL reported height; subtracting insets.bottom here (unlike the
+          modal sheets, which pad their content by insets.bottom to compensate)
+          left the composer's bottom edge underneath the keyboard. */}
+      <View style={{ flex: 1, marginBottom: keyboardHeight }}>
         <ScrollView
           ref={scrollRef}
           style={{ flex: 1 }}
@@ -462,7 +456,7 @@ export default function ChatScreen() {
             }}
             style={[
               styles.footer,
-              { paddingBottom: keyboardShown ? 0 : BOTTOM_NAV_HEIGHT + insets.bottom + 8 },
+              { paddingBottom: keyboardShown ? 4 : BOTTOM_NAV_HEIGHT + insets.bottom + 8 },
             ]}
           >
             <ModeSelector value={mode} onChange={setMode} />
@@ -518,7 +512,7 @@ export default function ChatScreen() {
             </View>
           </View>
         </Animated.View>
-      </KeyboardAvoidingView>
+      </View>
     </MainTabContainer>
   );
 }

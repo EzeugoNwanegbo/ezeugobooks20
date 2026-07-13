@@ -1,13 +1,5 @@
 import { useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Redirect } from "expo-router";
 import { Eye, EyeOff } from "lucide-react-native";
@@ -95,16 +87,16 @@ export default function AuthScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
+    <View style={styles.flex}>
       <ScrollView
+        style={styles.flex}
         contentContainerStyle={[
           styles.scroll,
           { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 32 },
         ]}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
       >
         <View style={styles.brandRow}>
           <BrandText size={26} />
@@ -197,7 +189,9 @@ export default function AuthScreen() {
           </View>
 
           <View style={styles.switchRow}>
-            <Text style={styles.switchText}>{isSignup ? "Already have an account?" : "New here?"}</Text>
+            <Text style={styles.switchText}>
+              {isSignup ? "Already have an account?" : "New here?"}
+            </Text>
             <Pressable
               onPress={() => {
                 setAuthNotice(null);
@@ -210,7 +204,7 @@ export default function AuthScreen() {
           </View>
         </Card>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
