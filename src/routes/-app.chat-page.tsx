@@ -2100,7 +2100,7 @@ export function ChatPage() {
                   ))}
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   <button
                     type="button"
                     onClick={() => setExpandedSelector("style")}
@@ -2122,6 +2122,49 @@ export function ChatPage() {
                     {SOURCE_SHORT[sourceMode]}
                     <ChevronDown className="h-3 w-3 text-muted-foreground" />
                   </button>
+                  {useLibrary && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (docs.length === 0) {
+                          toast("Your library is empty", {
+                            description:
+                              "Upload your PDFs or notes to the Library first to study them here.",
+                            action: {
+                              label: "Go to Library",
+                              onClick: () => navigate({ to: "/app/library" }),
+                            },
+                          });
+                          return;
+                        }
+                        setFilePickerOpen(true);
+                      }}
+                      title={
+                        selectedDocs.length > 0
+                          ? selectedDocs.map((doc) => doc.file_name).join(", ")
+                          : "Choose files to search"
+                      }
+                      className="inline-flex min-w-0 shrink items-center gap-1 rounded-full border border-border/70 bg-background/95 px-2.5 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors hover:bg-foreground/[0.04]"
+                    >
+                      <BookOpen className="h-3 w-3 shrink-0 text-primary" />
+                      <span className="max-w-[8rem] truncate">
+                        {selectedDocs.length > 0
+                          ? `${selectedDocs[0]?.file_name}${selectedDocs.length > 1 ? ` +${selectedDocs.length - 1}` : ""}`
+                          : "Add files"}
+                      </span>
+                      {selectedDocs.length > 0 ? (
+                        <X
+                          className="h-3 w-3 shrink-0 text-muted-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedDocIds([]);
+                          }}
+                        />
+                      ) : (
+                        <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      )}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -2178,7 +2221,7 @@ export function ChatPage() {
               </div>
             )}
             {useLibrary && (
-              <div className="mb-2 rounded-2xl border border-border/70 bg-background/85 px-3 py-2">
+              <div className="mb-2 hidden rounded-2xl border border-border/70 bg-background/85 px-3 py-2 md:block">
                 <div className="flex flex-nowrap items-center gap-1.5 sm:flex-wrap sm:gap-2">
                   <button
                     type="button"
