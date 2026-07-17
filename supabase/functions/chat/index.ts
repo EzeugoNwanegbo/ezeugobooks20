@@ -402,7 +402,7 @@ The student wants connections drawn ACROSS subjects/folders.
 - List all cross-subject links clearly so the next stage can highlight them.`
     : "";
 
-  return `You are G&D's DeepSeek document-retrieval engine. Your job is to search the student's uploaded files and extract the exact evidence needed for a final teaching answer.
+  return `You are G&D's internal document-retrieval research engine. Your job is to search the student's uploaded files and extract the exact evidence needed for a final teaching answer.
 
 ${buildStudentIdentity(p, { usingWebCurriculum })}
 
@@ -420,14 +420,14 @@ YOUR TASK:
 4. Then write "Where found:" and list document names plus page/chunk labels wherever available. If there is no page label, keep the document name and chunk/source excerpt label.
 5. Then write "Evidence:" and include the relevant facts. Keep quotes short; prefer paraphrase with source labels.
 6. Only after genuinely checking every excerpt, if the relevant info is truly not in the files, clearly say "I could not find an exact hit in your files" before adding any "[General knowledge]". Do not give up early.
-7. Do not apply Simplified, Detailed, or Storytelling style. OpenAI will do that final explanation step.
+7. Do not apply Simplified, Detailed, or Storytelling style. A later step will do the final explanation.
 8. Keep document names and page/chunk labels visible. Never invent citations or page numbers.
 9. If you are uncertain about anything, say so explicitly.`;
 }
 
 /** System prompt for GPT - style rewriter, human touch. */
 function buildDeepSeekDirectSystemPrompt(p: Profile, usingWebCurriculum: boolean): string {
-  return `You are G&D's DeepSeek factual-draft engine. Prepare an accurate source-neutral draft for a final teaching answer.
+  return `You are G&D's internal factual-draft research engine. Prepare an accurate source-neutral draft for a final teaching answer.
 
 ${buildStudentIdentity(p, { usingWebCurriculum })}
 
@@ -437,7 +437,7 @@ YOUR TASK:
 3. Include exam-relevant points where useful.
 4. If unsure, say what needs verification.
 5. Never invent citations or page numbers.
-6. Do not apply Simplified, Detailed, or Storytelling style. OpenAI will do that final explanation step.`;
+6. Do not apply Simplified, Detailed, or Storytelling style. A later step will do the final explanation.`;
 }
 
 function buildGPTRewriterSystemPrompt(
@@ -456,8 +456,15 @@ INTERLINK STYLE:
 
   return `You are G&D, a precision answer app for students.
 
-You will receive a structured factual draft prepared by DeepSeek.
-Your job is to match the student's selected mode and turn that DeepSeek draft into the final answer.
+You will receive a structured factual research draft prepared by G&D's internal research step.
+Your job is to match the student's selected mode and turn that research draft into the final answer.
+
+IDENTITY (strict): You are G&D, and only G&D. Never mention, name, or hint at any
+underlying model, provider, or internal step - including "DeepSeek", "GPT",
+"OpenAI", "the draft", "the research engine", or "as an AI language model". Do not
+say the answer was "prepared" or "drafted" by anything. If the student asks what
+you are or what powers you, say you are G&D. If the research draft happens to
+mention any such name, silently strip it out.
 
 ${buildStudentIdentity(p, { usingWebCurriculum })}
 
@@ -466,11 +473,11 @@ ${modeInstruction(mode, p.exam_format || "MCQ")}
 ${interlinkBlock}
 
 RULES:
-- Use only the DeepSeek draft plus any supplied web-curriculum guidance. Do not invent new facts.
+- Use only the research draft plus any supplied web-curriculum guidance. Do not invent new facts.
 - Preserve every fact from the research summary; do not drop important evidence.
 - Lead with the direct answer, then the source evidence, then the explanation.
 - Keep source references (document names / page numbers) where they appear in the summary.
-- For uploaded-file answers, include a short "Source:" line near the top using the document name and page/chunk label from the DeepSeek result. Do not hide the source in prose.
+- For uploaded-file answers, include a short "Source:" line near the top using the document name and page/chunk label from the research draft. Do not hide the source in prose.
 - If a page number is not available, write the source as the document name plus the chunk/source excerpt label instead of omitting it.
 - If the summary says "[General knowledge]", keep that label so the student knows.
 - Write as if you are talking directly to ${p.name || "the student"} - warm, clear, encouraging.
@@ -716,6 +723,8 @@ async function callOpenAIWebAnswerSync(
           {
             role: "system",
             content: `You are G&D, a warm precision-answer app using web search because the student requested it.
+
+IDENTITY (strict): You are G&D, and only G&D. Never mention or hint at any underlying model, provider, or internal step - including "DeepSeek", "GPT", "OpenAI", or "as an AI language model". If asked what you are, say you are G&D.
 
 ${buildStudentIdentity(p)}
 
@@ -1366,12 +1375,12 @@ Answer the student's question by finding the exact relevant evidence in the uplo
             role: "user" as const,
             content: `Student question: ${lastUserMessage.content}
 
-DeepSeek document retrieval result:
+Research draft (document retrieval):
 """
 ${deepSeekText}
 """
 
-${curriculumGuidance ? `Web curriculum guidance used by DeepSeek:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer STRICTLY following the ${body.mode} mode rules in your system prompt. Do not exceed the length and structure limits for that mode. Do not add facts outside the DeepSeek result.`,
+${curriculumGuidance ? `Web curriculum guidance:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer STRICTLY following the ${body.mode} mode rules in your system prompt. Do not exceed the length and structure limits for that mode. Do not add facts outside the research draft. Never mention the research draft, DeepSeek, GPT, OpenAI, or any internal step in your answer.`,
           },
         ],
         model: useWebCurriculum
@@ -1420,12 +1429,12 @@ Prepare the factual draft for a final teaching answer.`,
             role: "user" as const,
             content: `Student question: ${lastUserMessage.content}
 
-DeepSeek factual draft:
+Research draft (factual):
 """
 ${deepSeekText}
 """
 
-${curriculumGuidance ? `Web curriculum guidance used by DeepSeek:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer STRICTLY following the ${body.mode} mode rules in your system prompt. Do not exceed the length and structure limits for that mode. Do not add facts outside the DeepSeek draft.`,
+${curriculumGuidance ? `Web curriculum guidance:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer STRICTLY following the ${body.mode} mode rules in your system prompt. Do not exceed the length and structure limits for that mode. Do not add facts outside the research draft. Never mention the research draft, DeepSeek, GPT, OpenAI, or any internal step in your answer.`,
           },
         ],
         model: useWebCurriculum ? "deepseek-to-openai-web-curriculum" : "deepseek-to-openai",
