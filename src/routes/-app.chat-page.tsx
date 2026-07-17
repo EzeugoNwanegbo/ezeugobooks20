@@ -1957,7 +1957,7 @@ export function ChatPage() {
                   }}
                   disabled={!useLibrary}
                   title="Choose files to search"
-                  className="hidden shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground disabled:opacity-40 sm:inline-flex"
+                  className="hidden shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-pop/10 hover:text-pop disabled:opacity-40 sm:inline-flex"
                 >
                   <FileText className="h-3.5 w-3.5" />
                   Files
@@ -2287,7 +2287,7 @@ export function ChatPage() {
                 e.preventDefault();
                 send();
               }}
-              className="rounded-[1.35rem] border border-border/80 bg-background/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.16)] backdrop-blur-xl"
+              className="rounded-[1.35rem] border border-border/80 bg-background/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.16)] backdrop-blur-xl transition-colors focus-within:border-pop/45 focus-within:ring-1 focus-within:ring-pop/25"
             >
               <div className="flex items-end gap-1.5 sm:gap-2">
                 {speechSupported && (
@@ -2299,8 +2299,8 @@ export function ChatPage() {
                     aria-label={listening ? "Stop voice input" : "Start voice input"}
                     className={`inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-xl border transition-colors ${
                       listening
-                        ? "border-primary bg-primary text-primary-foreground shadow-glow ring-2 ring-primary/25"
-                        : "border-border/70 bg-background text-muted-foreground hover:border-primary/35 hover:bg-foreground/[0.04] hover:text-foreground"
+                        ? "border-transparent bg-pop text-pop-foreground shadow-pop ring-2 ring-pop/30"
+                        : "border-border/70 bg-background text-muted-foreground hover:border-pop/40 hover:bg-pop/[0.06] hover:text-pop"
                     }`}
                   >
                     <Mic className="h-4 w-4" />
@@ -2345,8 +2345,8 @@ export function ChatPage() {
                   aria-label={webSearch ? "Turn general context off" : "Turn general context on"}
                   className={`inline-flex h-[44px] shrink-0 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-medium transition-colors sm:px-3.5 ${
                     webSearch
-                      ? "border-primary bg-primary text-primary-foreground shadow-glow ring-2 ring-primary/25"
-                      : "border-border/70 bg-background text-muted-foreground hover:border-primary/35 hover:bg-foreground/[0.04] hover:text-foreground"
+                      ? "border-transparent bg-pop text-pop-foreground shadow-pop ring-2 ring-pop/30"
+                      : "border-border/70 bg-background text-muted-foreground hover:border-pop/40 hover:bg-pop/[0.06] hover:text-pop"
                   }`}
                 >
                   <Search className="h-4 w-4" />
@@ -2366,7 +2366,7 @@ export function ChatPage() {
                   <button
                     type="submit"
                     disabled={!input.trim()}
-                    className="h-[44px] w-[44px] flex items-center justify-center rounded-xl bg-foreground text-background shadow-sm transition-opacity disabled:opacity-40"
+                    className="btn-pop h-[44px] w-[44px] flex items-center justify-center rounded-xl"
                   >
                     <Send className="h-4 w-4" />
                   </button>
@@ -2446,7 +2446,7 @@ function FilePickerDialog({
               value={fileSearch}
               onChange={(e) => onSearch(e.target.value)}
               placeholder="Search files..."
-              className="h-10 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+              className="h-10 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/45"
             />
           </div>
 
@@ -2675,7 +2675,7 @@ function AiMark({
 function SourceBadge({ source }: { source?: MessageSource }) {
   if (source === "visuals") {
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30">
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-pop/12 text-pop border border-pop/25">
         <Sparkles className="h-2.5 w-2.5" />
         Visuals
       </span>
@@ -2691,7 +2691,7 @@ function SourceBadge({ source }: { source?: MessageSource }) {
   }
   if (source === "library") {
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30">
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-pop/12 text-pop border border-pop/25">
         <BookOpen className="h-2.5 w-2.5" />
         From your files
       </span>
@@ -2797,7 +2797,7 @@ function WebSourceIcons({ sources }: { sources?: WebSource[] }) {
 
 function WebSourceBadge({ count }: { count: number }) {
   return (
-    <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30">
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-pop/12 text-pop border border-pop/25">
       <ExternalLink className="h-2.5 w-2.5" />
       Web sources · {count}
     </span>
@@ -4017,13 +4017,13 @@ function Message({
             onClick={startEdit}
             title="Edit message"
             aria-label="Edit message"
-            className="order-2 mt-5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/[0.06] hover:text-foreground group-hover/user:opacity-100 focus-visible:opacity-100"
+            className="order-2 mt-5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-100 transition-opacity hover:bg-pop/10 hover:text-pop focus-visible:opacity-100 sm:opacity-0 sm:group-hover/user:opacity-100"
           >
             <Pencil className="h-3.5 w-3.5" />
           </button>
         )}
-        <div className="max-w-[760px] flex-1 border-l-2 border-primary/45 bg-primary/[0.035] px-4 py-3 text-sm leading-relaxed break-words">
-          <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-primary">
+        <div className="max-w-[760px] flex-1 border-l-2 border-pop/50 bg-pop/[0.05] px-4 py-3 text-sm leading-relaxed break-words">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-pop">
             You asked
           </div>
           <div className="text-[15px] text-foreground">{msg.content}</div>
