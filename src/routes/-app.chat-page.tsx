@@ -210,6 +210,11 @@ const VISUAL_SUGGESTIONS = [
   "Create a visual explainer with scenes",
 ];
 
+// The copy-paste prompt the student runs inside whatever AI they already study
+// with. Its reply is a ready-made "who I am" that we import into G&D so answers
+// are personalized from day one instead of learning the student from scratch.
+const PERSONALIZATION_PROMPT = `Based on everything you know about me from our past conversations, write a concise profile of me for another study assistant. Use short bullet points and cover: my field and level of study, the exams or goals I'm working toward, my strong areas, my weak areas, how I learn best (analogies, examples, step-by-step, visuals?), and anything about my tone or preferences. Address it to the other AI, starting with "This student…".`;
+
 const CHAT_MODES = ["Simplified", "Detailed", "Storytelling", "Visuals"] as const;
 const SOURCE_MODES = ["My files only", "Files + general", "General knowledge"] as const;
 type SourceMode = (typeof SOURCE_MODES)[number];
@@ -270,6 +275,7 @@ const GUEST_PROFILE: Profile = {
   year: null,
   course: null,
   curriculum: "Use broad course-level exam priorities as the reference frame.",
+  personalization_background: null,
   exam_format: "MCQ",
   preferred_mode: "Simplified",
   weak_areas: null,
@@ -697,6 +703,7 @@ export function ChatPage() {
   const [convos, setConvos] = useState<ConversationRow[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [flashPillDismissed, setFlashPillDismissed] = useState(false);
+  const [personalizationDismissed, setPersonalizationDismissed] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   // The composer is absolutely positioned and its height varies (mode tabs,
   // library row, multi-line input). Track it so the message list can reserve
@@ -735,6 +742,20 @@ export function ChatPage() {
       setSelectedDocIds([]);
       setLibraryNotice(null);
     }
+  };
+
+  const savePersonalizationBackground = async (text: string) => {
+    if (!user || !savedProfile) return;
+    const { error } = await supabase
+      .from("user_profiles")
+      .update({ personalization_background: text || null })
+      .eq("id", savedProfile.id);
+    if (error) {
+      toast.error("Couldn't save your background — try again.");
+      return;
+    }
+    await refreshProfile();
+    toast.success("Saved — G&D now studies with you in mind.");
   };
 
   useEffect(() => {
@@ -1963,32 +1984,28 @@ export function ChatPage() {
                   Files
                 </button>
               </>
-              <div className="chat-mode-selector flex shrink-0 rounded-xl border border-border/70 bg-foreground/[0.03] p-0.5">
-                {CHAT_MODES.map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setMode(m)}
-                    title={
-                      m === "Visuals"
-                        ? "Create an animated visual explanation"
-                        : m === "Storytelling"
-                          ? "Explain as a story"
-                          : m === "Detailed"
-                            ? "Concepts + deeper detail"
-                            : "Plain English with an analogy"
-                    }
-                    className={`flex min-h-8 items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors sm:px-2.5 ${
-                      mode === m
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {m === "Storytelling" && <BookText className="h-3 w-3" />}
-                    {m === "Visuals" && <Sparkles className="h-3 w-3" />}
-                    {m}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl
+                className="chat-mode-selector shrink-0"
+                options={CHAT_MODES}
+                value={mode}
+                onChange={setMode}
+                getIcon={(m) =>
+                  m === "Storytelling" ? (
+                    <BookText className="h-3 w-3" />
+                  ) : m === "Visuals" ? (
+                    <Sparkles className="h-3 w-3" />
+                  ) : null
+                }
+                getTitle={(m) =>
+                  m === "Visuals"
+                    ? "Create an animated visual explanation"
+                    : m === "Storytelling"
+                      ? "Explain as a story"
+                      : m === "Detailed"
+                        ? "Concepts + deeper detail"
+                        : "Plain English with an analogy"
+                }
+              />
             </div>
           </div>
         </div>
@@ -2004,7 +2021,16 @@ export function ChatPage() {
                 <LoadingDots size="md" className="text-primary" />
               </div>
             ) : messages.length === 0 ? (
-              <EmptyState name={profile.name || "there"} onPick={(s) => send(s)} mode={mode} />
+              <>
+                {user && !savedProfile?.personalization_background && !personalizationDismissed && (
+                  <PersonalizationCard
+                    initialBackground={savedProfile?.personalization_background ?? ""}
+                    onSave={savePersonalizationBackground}
+                    onDismiss={() => setPersonalizationDismissed(true)}
+                  />
+                )}
+                <EmptyState name={profile.name || "there"} onPick={(s) => send(s)} mode={mode} />
+              </>
             ) : (
               <div className="space-y-6">
                 {messages.map((m, i) => (
@@ -2058,69 +2084,54 @@ export function ChatPage() {
                 shrink back to a small bubble showing the selection. */}
             <div className="mb-2 md:hidden">
               {expandedSelector === "style" ? (
-                <div className="selector-reveal flex overflow-x-auto rounded-xl border border-border/70 bg-foreground/[0.03] p-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  {CHAT_MODES.map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => {
-                        setMode(m);
-                        setExpandedSelector(null);
-                      }}
-                      className={`flex min-h-8 flex-1 items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-medium transition-colors ${
-                        mode === m
-                          ? "bg-background text-foreground shadow-sm"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      {m === "Storytelling" && <BookText className="h-3 w-3" />}
-                      {m === "Visuals" && <Sparkles className="h-3 w-3" />}
-                      {m}
-                    </button>
-                  ))}
-                </div>
+                <SegmentedControl
+                  className="selector-reveal"
+                  options={CHAT_MODES}
+                  value={mode}
+                  onChange={(m) => {
+                    setMode(m);
+                    setExpandedSelector(null);
+                  }}
+                  getIcon={(m) =>
+                    m === "Storytelling" ? (
+                      <BookText className="h-3 w-3" />
+                    ) : m === "Visuals" ? (
+                      <Sparkles className="h-3 w-3" />
+                    ) : null
+                  }
+                />
               ) : expandedSelector === "source" ? (
-                <div className="selector-reveal flex overflow-x-auto rounded-xl border border-border/70 bg-background/95 p-1 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  {SOURCE_MODES.map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      onClick={() => {
-                        applySourceMode(item);
-                        setExpandedSelector(null);
-                      }}
-                      className={`min-h-8 flex-1 rounded-lg px-3 text-[11px] font-medium transition-colors ${
-                        sourceMode === item
-                          ? "bg-foreground text-background shadow-sm"
-                          : "text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
-                      }`}
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
+                <SegmentedControl
+                  className="selector-reveal"
+                  options={SOURCE_MODES}
+                  value={sourceMode}
+                  onChange={(item) => {
+                    applySourceMode(item);
+                    setExpandedSelector(null);
+                  }}
+                />
               ) : (
                 <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   <button
                     type="button"
                     onClick={() => setExpandedSelector("style")}
                     title={`Answer style: ${mode}`}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-foreground/[0.03] px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-foreground/[0.06]"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/25 bg-pop/[0.06] px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-pop/10"
                   >
-                    {mode === "Storytelling" && <BookText className="h-3 w-3 text-muted-foreground" />}
-                    {mode === "Visuals" && <Sparkles className="h-3 w-3 text-primary" />}
+                    {mode === "Storytelling" && <BookText className="h-3 w-3 text-pop" />}
+                    {mode === "Visuals" && <Sparkles className="h-3 w-3 text-pop" />}
                     {MODE_SHORT[mode]}
-                    <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                    <ChevronDown className="h-3 w-3 text-pop" />
                   </button>
                   <button
                     type="button"
                     onClick={() => setExpandedSelector("source")}
                     title={`Sources: ${sourceMode}`}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-background/95 px-2.5 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors hover:bg-foreground/[0.04]"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/25 bg-pop/[0.06] px-2.5 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors hover:bg-pop/10"
                   >
-                    <FileText className="h-3 w-3 text-muted-foreground" />
+                    <FileText className="h-3 w-3 text-pop" />
                     {SOURCE_SHORT[sourceMode]}
-                    <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                    <ChevronDown className="h-3 w-3 text-pop" />
                   </button>
                   {useLibrary && (
                     <button
@@ -2648,6 +2659,118 @@ function EmptyState({
   );
 }
 
+// In-chat callout that teaches the student to bring their "who I am" summary
+// from another AI into G&D. Shows why, the how-to steps, a one-tap-copy prompt,
+// and a box to paste the reply back — which we save to their profile.
+function PersonalizationCard({
+  initialBackground,
+  onSave,
+  onDismiss,
+}: {
+  initialBackground: string;
+  onSave: (text: string) => Promise<void>;
+  onDismiss: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [draft, setDraft] = useState(initialBackground);
+  const [saving, setSaving] = useState(false);
+
+  const copyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(PERSONALIZATION_PROMPT);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Couldn't copy automatically — select the text and copy it.");
+    }
+  };
+
+  const save = async () => {
+    if (!draft.trim() || saving) return;
+    setSaving(true);
+    try {
+      await onSave(draft.trim());
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="relative mx-auto mb-6 max-w-2xl overflow-hidden rounded-2xl border border-pop/25 bg-pop/[0.04] p-4 text-left sm:p-5">
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+      >
+        <X className="h-4 w-4" />
+      </button>
+
+      <div className="flex items-center gap-1.5 text-pop">
+        <Sparkles className="h-4 w-4" />
+        <span className="text-[11px] font-semibold uppercase tracking-[0.14em]">
+          Personalize G&amp;D
+        </span>
+      </div>
+      <h3 className="mt-2 text-lg font-semibold tracking-[-0.01em] text-foreground">
+        Make G&amp;D understand you from day one
+      </h3>
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+        Already study with another AI? It has learned how you think and where you struggle. Bring
+        that over so every G&amp;D answer is tailored to you — no starting from scratch.
+      </p>
+
+      <ol className="mt-3 space-y-1.5 text-sm text-foreground">
+        <li className="flex gap-2">
+          <span className="font-semibold text-pop">1.</span> Copy the prompt below.
+        </li>
+        <li className="flex gap-2">
+          <span className="font-semibold text-pop">2.</span> Paste it into the AI you already study
+          with (ChatGPT, etc.).
+        </li>
+        <li className="flex gap-2">
+          <span className="font-semibold text-pop">3.</span> Copy its reply and paste it in the box.
+        </li>
+        <li className="flex gap-2">
+          <span className="font-semibold text-pop">4.</span> Save — and you're personalized.
+        </li>
+      </ol>
+
+      <div className="mt-3 rounded-xl border border-border/70 bg-background/70 p-3">
+        <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-muted-foreground">
+          {PERSONALIZATION_PROMPT}
+        </p>
+        <button
+          type="button"
+          onClick={copyPrompt}
+          className="btn-pop mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
+        >
+          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? "Copied" : "Copy prompt"}
+        </button>
+      </div>
+
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        rows={4}
+        placeholder="Paste what your AI said about you here…"
+        className="mt-3 w-full resize-y rounded-xl border border-input bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
+      />
+      <div className="mt-2 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={save}
+          disabled={!draft.trim() || saving}
+          className="btn-pop inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-semibold"
+        >
+          {saving ? "Saving…" : "Save background"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AiMark({
   size = "sm",
   className = "",
@@ -2669,6 +2792,63 @@ function AiMark({
     >
       <span className={`${dotSize} ai-symbiote-dot`} />
     </span>
+  );
+}
+
+// Animated segmented control: the active option is highlighted by a coloured
+// "thumb" that slides between segments (Simplified → Detailed, My files → General)
+// rather than snapping. Segments are equal-width so the thumb can be positioned
+// purely by index, no measurement needed.
+function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+  getIcon,
+  getTitle,
+  className,
+}: {
+  options: readonly T[];
+  value: T;
+  onChange: (value: T) => void;
+  getIcon?: (option: T) => ReactNode;
+  getTitle?: (option: T) => string;
+  className?: string;
+}) {
+  const count = options.length;
+  const activeIndex = Math.max(0, options.indexOf(value));
+
+  return (
+    <div
+      className={`relative flex rounded-xl border border-border/70 bg-foreground/[0.03] p-0.5 ${className ?? ""}`}
+    >
+      <span
+        aria-hidden
+        className="segmented-thumb pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 rounded-lg"
+        style={{
+          width: `calc((100% - 0.25rem) / ${count})`,
+          transform: `translateX(${activeIndex * 100}%)`,
+        }}
+      />
+      {options.map((option) => {
+        const active = option === value;
+        return (
+          <button
+            key={option}
+            type="button"
+            title={getTitle?.(option)}
+            onClick={() => onChange(option)}
+            className={`relative z-10 flex min-h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg px-2 text-center text-xs font-medium leading-tight transition-colors sm:px-2.5 ${
+              active
+                ? "text-pop-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {getIcon?.(option)}
+            {option}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

@@ -605,6 +605,19 @@ html.gd-low-power .gd-loading-bar::after {
     animation: none;
   }
 }
+
+/* Animated segmented control — the coloured "thumb" slides between options
+   (e.g. Simplified → Detailed) instead of hard-cutting. */
+.segmented-thumb {
+  background: var(--gradient-pop);
+  box-shadow: var(--shadow-pop);
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .segmented-thumb {
+    transition: none;
+  }
+}
 .ai-inline-thread {
   border-left: 2px solid color-mix(in srgb, var(--primary) 36%, transparent);
   padding: 0.25rem 0 0.25rem 0.85rem;

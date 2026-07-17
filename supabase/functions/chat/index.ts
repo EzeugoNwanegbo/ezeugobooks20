@@ -17,8 +17,10 @@ interface Profile {
   name?: string;
   university?: string;
   year?: string;
+  course?: string | null;
   exam_format?: string;
   curriculum?: string | null;
+  personalization_background?: string | null;
   preferred_mode?: string;
   weak_areas?: string[];
   recent_topics?: string[];
@@ -297,6 +299,51 @@ function questionNeedsWebCurriculumGuidance(
 
 // ─── Prompt builders ──────────────────────────────────────────────────────────
 
+/**
+ * THE single source of truth for "who this student is". Every prompt builder
+ * (fact-finding, final rewrite, web-search paths) feeds this same block to the
+ * model, so the AI knows the user consistently no matter which pipeline runs.
+ *
+ * `memories` are durable facts the student has revealed across past chats
+ * (ChatGPT-style memory). They slot in here so remembered preferences shape
+ * every answer. Until the memory store is wired up this is simply empty, and
+ * the block degrades gracefully to the saved profile.
+ */
+function buildStudentIdentity(
+  p: Profile,
+  opts: { usingWebCurriculum?: boolean; memories?: string[] } = {},
+): string {
+  const memories = (opts.memories ?? []).map((m) => m.trim()).filter(Boolean);
+  const memoryBlock = memories.length
+    ? `\nWHAT WE REMEMBER ABOUT THEM (learned from past chats - treat as true and honour it):\n${memories
+        .map((m) => `- ${m}`)
+        .join("\n")}`
+    : "";
+
+  // The student's own "who I am", imported from an AI they already study with.
+  const background = (p.personalization_background ?? "").trim();
+  const backgroundBlock = background
+    ? `\nTHE STUDENT'S OWN BACKGROUND (they brought this from another study AI - treat as an accurate description of them):\n${background}`
+    : "";
+
+  return `WHO THIS STUDENT IS:
+- Name: ${p.name || "Student"}
+- School: ${p.university || "Unknown"}
+- Level: ${p.year || "Unknown"}
+- Course / field of study: ${p.course || "Unknown"}
+- Assessment format: ${p.exam_format || "MCQ"}
+- ${curriculumRule(p, Boolean(opts.usingWebCurriculum))}
+- Weak areas: ${(p.weak_areas || []).join(", ") || "none recorded"}
+- Recent topics: ${(p.recent_topics || []).slice(0, 8).join(", ") || "none yet"}${backgroundBlock}${memoryBlock}
+
+PERSONALIZE FOR THEM:
+- Pitch the depth, vocabulary, and pace to their level and course.
+- Prefer examples, analogies, and framing that fit their field of study and anything we remember they connect with.
+- Where it fits naturally, tie the answer back to their weak areas and recent topics so it doubles as revision.
+- Aim study tips at their assessment format (${p.exam_format || "MCQ"}).
+- Use remembered details naturally to sound like you know them - never announce that you are using saved information.`;
+}
+
 function modeInstruction(mode: Mode, examFormat: string): string {
   if (mode === "Visuals") {
     return `Present the answer in VISUALS mode.
@@ -357,11 +404,7 @@ The student wants connections drawn ACROSS subjects/folders.
 
   return `You are G&D's DeepSeek document-retrieval engine. Your job is to search the student's uploaded files and extract the exact evidence needed for a final teaching answer.
 
-STUDENT CONTEXT:
-- Level: ${p.year || "Unknown"} at ${p.university || "Unknown"}
-- Assessment format: ${p.exam_format || "MCQ"}
-- ${curriculumRule(p, usingWebCurriculum)}
-- Weak areas: ${(p.weak_areas || []).join(", ") || "none"}
+${buildStudentIdentity(p, { usingWebCurriculum })}
 
 AVAILABLE DOCUMENTS:
 ${docList}
@@ -386,11 +429,7 @@ YOUR TASK:
 function buildDeepSeekDirectSystemPrompt(p: Profile, usingWebCurriculum: boolean): string {
   return `You are G&D's DeepSeek factual-draft engine. Prepare an accurate source-neutral draft for a final teaching answer.
 
-STUDENT CONTEXT:
-- Level: ${p.year || "Unknown"} at ${p.university || "Unknown"}
-- Assessment format: ${p.exam_format || "MCQ"}
-- ${curriculumRule(p, usingWebCurriculum)}
-- Weak areas: ${(p.weak_areas || []).join(", ") || "none"}
+${buildStudentIdentity(p, { usingWebCurriculum })}
 
 YOUR TASK:
 1. Start with the direct answer.
@@ -420,14 +459,7 @@ INTERLINK STYLE:
 You will receive a structured factual draft prepared by DeepSeek.
 Your job is to match the student's selected mode and turn that DeepSeek draft into the final answer.
 
-STUDENT PROFILE:
-- Name: ${p.name || "Student"}
-- School: ${p.university || "Unknown"}
-- Level: ${p.year || "Unknown"}
-- Assessment format: ${p.exam_format || "MCQ"}
-- ${curriculumRule(p, usingWebCurriculum)}
-- Weak areas: ${(p.weak_areas || []).join(", ") || "none recorded"}
-- Recent topics: ${(p.recent_topics || []).slice(0, 8).join(", ") || "none yet"}
+${buildStudentIdentity(p, { usingWebCurriculum })}
 
 STYLE INSTRUCTIONS:
 ${modeInstruction(mode, p.exam_format || "MCQ")}
@@ -685,11 +717,7 @@ async function callOpenAIWebAnswerSync(
             role: "system",
             content: `You are G&D, a warm precision-answer app using web search because the student requested it.
 
-STUDENT PROFILE:
-- Name: ${p.name || "Student"}
-- School: ${p.university || "Unknown"}
-- Level: ${p.year || "Unknown"}
-- Assessment format: ${p.exam_format || "MCQ"}
+${buildStudentIdentity(p)}
 
 ${modeInstruction(mode, p.exam_format || "MCQ")}
 

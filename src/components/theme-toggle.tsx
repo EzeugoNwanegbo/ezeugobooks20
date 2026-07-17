@@ -18,7 +18,13 @@ function applyTheme(theme: Theme) {
   root.style.colorScheme = theme;
 }
 
-export function ThemeToggle({ className = "" }: { className?: string }) {
+export function ThemeToggle({
+  className = "",
+  showLabel = false,
+}: {
+  className?: string;
+  showLabel?: boolean;
+}) {
   const [theme, setTheme] = useState<Theme>("dark");
 
   useEffect(() => {
@@ -28,6 +34,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
   }, []);
 
   const nextTheme: Theme = theme === "dark" ? "light" : "dark";
+  const label = theme === "dark" ? "Light mode" : "Dark mode";
 
   return (
     <button
@@ -39,9 +46,12 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
         applyTheme(nextTheme);
         window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
       }}
-      className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background/60 text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground ${className}`}
+      className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-pop/35 bg-pop/10 text-pop shadow-sm transition-colors hover:bg-pop/20 hover:text-pop ${
+        showLabel ? "w-full px-3 text-sm font-medium" : "w-9"
+      } ${className}`}
     >
       {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      {showLabel && <span>{label}</span>}
     </button>
   );
 }

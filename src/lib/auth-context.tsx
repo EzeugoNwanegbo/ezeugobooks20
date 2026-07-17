@@ -11,6 +11,7 @@ export type Profile = {
   year: string | null;
   course: string | null;
   curriculum: string | null;
+  personalization_background: string | null;
   exam_format: "MCQ" | "SAQ" | "OSCE" | "Viva" | null;
   preferred_mode: "Simplified" | "Detailed" | null;
   weak_areas: string[] | null;

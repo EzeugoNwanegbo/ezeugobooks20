@@ -447,7 +447,7 @@ function AppLayout() {
             </div>
           </div>
           <div className={isSidebarCollapsed ? "" : "mb-2 px-3"}>
-            <ThemeToggle className={isSidebarCollapsed ? "" : "w-full"} />
+            <ThemeToggle showLabel={!isSidebarCollapsed} />
           </div>
           <button
             onClick={async () => {

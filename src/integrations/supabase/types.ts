@@ -224,6 +224,7 @@ export type Database = {
           id: string;
           name: string | null;
           onboarded: boolean | null;
+          personalization_background: string | null;
           preferred_mode: Database["public"]["Enums"]["response_mode"] | null;
           recent_topics: string[] | null;
           university: string | null;
@@ -239,6 +240,7 @@ export type Database = {
           id: string;
           name?: string | null;
           onboarded?: boolean | null;
+          personalization_background?: string | null;
           preferred_mode?: Database["public"]["Enums"]["response_mode"] | null;
           recent_topics?: string[] | null;
           university?: string | null;
@@ -254,6 +256,7 @@ export type Database = {
           id?: string;
           name?: string | null;
           onboarded?: boolean | null;
+          personalization_background?: string | null;
           preferred_mode?: Database["public"]["Enums"]["response_mode"] | null;
           recent_topics?: string[] | null;
           university?: string | null;
