@@ -538,6 +538,34 @@ html.gd-low-power .gd-loading-bar::after {
   background: color-mix(in srgb, var(--foreground) 5%, transparent);
   font-weight: 600;
 }
+/* Inline auto-diagram (Mermaid). A calm card with a faint accent wash in one
+   corner - the diagram itself carries the colour, the frame stays quiet. */
+.medai-prose .gd-mermaid {
+  margin: 0.9rem 0;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background:
+    radial-gradient(
+      80% 130% at 0% 0%,
+      color-mix(in srgb, var(--primary) 7%, transparent),
+      transparent 60%
+    ),
+    var(--surface-elevated);
+  overflow-x: auto;
+  text-align: center;
+}
+.medai-prose .gd-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+.medai-prose .gd-mermaid-loading {
+  text-align: left;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+}
+
 /* `---` in an answer renders as a real, subtle section divider (ChatGPT-style). */
 .medai-prose hr {
   border: 0;

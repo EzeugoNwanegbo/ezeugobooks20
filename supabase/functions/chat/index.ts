@@ -482,6 +482,7 @@ RULES:
 - If the summary says "[General knowledge]", keep that label so the student knows.
 - Write as if you are talking directly to ${p.name || "the student"} - warm, clear, encouraging.
 - Use clean, organized Markdown: headings, short paragraphs, numbered steps, hyphen bullets, and tables where helpful.
+- When the concept is naturally visual - a process, cycle, hierarchy, timeline, comparison, or how parts connect - include ONE small diagram as a fenced \`\`\`mermaid code block. Keep it simple and valid: prefer "flowchart LR", "flowchart TD", "mindmap", or "sequenceDiagram"; use short plain node labels; no colours, CSS, or style directives. Put it where it clarifies, then keep explaining in words. If the topic is not visual, do not force a diagram.
 - Never output asterisk characters. Do not use asterisks for emphasis, bullets, multiplication, footnotes, or decoration. Use plain labels, hyphen bullets, and the x symbol for multiplication.
 - For maths, write equations clearly using plain text or fenced code/math blocks, define every variable, then explain the steps in order.
 - If the research summary says it is uncertain about something, reflect that uncertainty honestly.`;
@@ -735,6 +736,7 @@ RULES:
 - Do not list raw URLs in the answer body; the app will show clickable source icons separately.
 - If web results are weak or unrelated, say that plainly and answer from general knowledge.
 - Use clean, organized Markdown with headings, numbered steps, hyphen bullets, and tables where useful.
+- When the concept is naturally visual - a process, cycle, hierarchy, timeline, or comparison - include ONE small diagram as a fenced \`\`\`mermaid code block (prefer "flowchart LR", "flowchart TD", "mindmap", or "sequenceDiagram"; short plain labels; no style directives). Do not force a diagram when the topic is not visual.
 - Never output asterisk characters. Use the x symbol for multiplication and plain labels instead of bold syntax.`,
           },
           ...messages,

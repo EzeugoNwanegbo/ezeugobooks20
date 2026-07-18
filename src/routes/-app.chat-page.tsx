@@ -215,7 +215,10 @@ const VISUAL_SUGGESTIONS = [
 // are personalized from day one instead of learning the student from scratch.
 const PERSONALIZATION_PROMPT = `Based on everything you know about me from our past conversations, write a concise profile of me for another study assistant. Use short bullet points and cover: my field and level of study, the exams or goals I'm working toward, my strong areas, my weak areas, how I learn best (analogies, examples, step-by-step, visuals?), and anything about my tone or preferences. Address it to the other AI, starting with "This student…".`;
 
-const CHAT_MODES = ["Simplified", "Detailed", "Storytelling", "Visuals"] as const;
+// "Visuals" (the old animated-video mode) is retired - answers now draw inline
+// diagrams automatically when a concept is visual, in every mode. The backend
+// Visuals pipeline stays dormant; users just can't pick it any more.
+const CHAT_MODES = ["Simplified", "Detailed", "Storytelling"] as const;
 const SOURCE_MODES = ["My files only", "Files + general", "General knowledge"] as const;
 type SourceMode = (typeof SOURCE_MODES)[number];
 
@@ -529,7 +532,11 @@ function webSourcesFromJson(value: unknown): WebSource[] | undefined {
 }
 
 function normalizeChatMode(value: unknown): ChatMode {
-  return CHAT_MODES.includes(value as ChatMode) ? (value as ChatMode) : "Simplified";
+  // Note: the retired "Visuals" mode is no longer in CHAT_MODES, so an old
+  // persisted "Visuals" session falls back to Simplified here.
+  return (CHAT_MODES as readonly string[]).includes(value as string)
+    ? (value as ChatMode)
+    : "Simplified";
 }
 
 function totalMessageContentLength(messages: DisplayMessage[]): number {
@@ -3535,6 +3542,68 @@ function StudyTipCallout({ label, text }: { label: string; text: string }) {
   );
 }
 
+// Renders a ```mermaid code block as an inline diagram. Mermaid is heavy, so it
+// is dynamically imported only when an answer actually contains a diagram - it
+// never touches the initial bundle. Falls back to the raw code on any parse
+// error (e.g. while the block is still streaming in), and re-renders when the
+// app theme flips so the diagram always matches light/dark.
+function MermaidDiagram({ code }: { code: string }) {
+  const [svg, setSvg] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [themeTick, setThemeTick] = useState(0);
+
+  useEffect(() => {
+    if (typeof MutationObserver === "undefined") return;
+    const observer = new MutationObserver(() => setThemeTick((tick) => tick + 1));
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const mermaid = (await import("mermaid")).default;
+        const isLight = document.documentElement.classList.contains("light");
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: isLight ? "neutral" : "dark",
+          fontFamily: "inherit",
+        });
+        const { svg: rendered } = await mermaid.render(
+          `gdm-${Math.random().toString(36).slice(2)}`,
+          code,
+        );
+        if (!cancelled) {
+          setSvg(rendered);
+          setFailed(false);
+        }
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [code, themeTick]);
+
+  if (failed) {
+    return (
+      <pre>
+        <code>{code}</code>
+      </pre>
+    );
+  }
+  if (svg == null) {
+    return <div className="gd-mermaid gd-mermaid-loading">Drawing diagram…</div>;
+  }
+  return <div className="gd-mermaid" role="img" dangerouslySetInnerHTML={{ __html: svg }} />;
+}
+
 function selectionHasEditableTarget(range: Range): boolean {
   const node = range.commonAncestorContainer;
   const element = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
@@ -3967,6 +4036,21 @@ function Message({
     // underlined on its first occurrence (keeps the answer readable, not noisy).
     const termUsed = new Set<string>();
     const termComponents: Components = {
+      // A ```mermaid fenced block renders as an inline diagram instead of code.
+      pre({ node, children, ...props }) {
+        void node;
+        const first = Children.toArray(children)[0];
+        if (isValidElement(first)) {
+          const cls = (first.props as { className?: string }).className ?? "";
+          if (/\blanguage-mermaid\b/.test(cls)) {
+            const codeText = nodeToPlainText(
+              (first.props as { children?: ReactNode }).children,
+            ).trim();
+            if (codeText) return <MermaidDiagram code={codeText} />;
+          }
+        }
+        return <pre {...props}>{children}</pre>;
+      },
       // Always overridden: a "Study tip:" paragraph becomes an accent callout;
       // any other paragraph just gets key-term wrapping (a no-op when there are
       // no terms), so this is safe whether or not termRegex is set.
