@@ -1,12 +1,26 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, Scale, Stethoscope } from "lucide-react";
 import { FounderStory } from "@/components/founder-story";
 import { LoadingDots } from "@/components/loading-dots";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { ThemeToggle } from "@/components/theme-toggle";
+
+type Discipline = "medicine" | "law";
+
+// Sub-tracks per discipline. The chosen track is stored on the profile and
+// feeds the AI's reasoning framework (pitch/depth), so keep the labels concrete.
+const TRACKS: Record<Discipline, string[]> = {
+  medicine: ["Pre-clinical", "Clinical"],
+  law: ["LLB", "Bar / Professional", "Postgraduate"],
+};
+
+const DISCIPLINE_LABEL: Record<Discipline, string> = {
+  medicine: "Medicine",
+  law: "Law",
+};
 
 export function OnboardingPage() {
   return <OnboardingFlow />;
@@ -21,14 +35,14 @@ function OnboardingFlow() {
 
   // Step 0 fields
   const [name, setName] = useState("");
-  const [isStudent, setIsStudent] = useState<boolean | null>(null);
-  const [otherProfession, setOtherProfession] = useState("");
+  const [discipline, setDiscipline] = useState<Discipline | null>(null);
 
-  // Step 1 fields (students only)
+  // Step 1 fields
   const [university, setUniversity] = useState("");
   const [level, setLevel] = useState("100");
+  const [track, setTrack] = useState<string>("");
 
-  const totalSteps = isStudent === true ? 2 : 1;
+  const totalSteps = 2;
 
   useEffect(() => {
     if (loading) return;
@@ -46,26 +60,31 @@ function OnboardingFlow() {
   const next = () => setStep((s) => s + 1);
   const prev = () => setStep((s) => Math.max(s - 1, 0));
 
-  const canContinueStep0 =
-    name.trim().length > 0 &&
-    (isStudent === true || (isStudent === false && otherProfession.trim().length > 0));
+  const canContinueStep0 = name.trim().length > 0 && discipline !== null;
+  const canContinueStep1 = university.trim().length > 0 && track.length > 0;
 
-  const canContinueStep1 = university.trim().length > 0;
+  const chooseDiscipline = (d: Discipline) => {
+    setDiscipline(d);
+    // Default the track to the first option for that discipline so step 1 is
+    // valid immediately; the student can change it there.
+    setTrack(TRACKS[d][0]);
+  };
 
   const finish = async () => {
-    if (!user) return;
+    if (!user || !discipline) return;
     setSaving(true);
     try {
-      const profession = isStudent ? "Student" : otherProfession.trim();
+      const courseLabel = `${DISCIPLINE_LABEL[discipline]}${track ? ` - ${track}` : ""}`;
       const { error } = await supabase.from("user_profiles").upsert({
         id: user.id,
         name: name.trim(),
-        university: isStudent ? university.trim() : null,
-        year: isStudent ? level : null,
-        // NOTE: exam_format is a Postgres enum (MCQ/SAQ/OSCE/Viva) - writing a
-        // free-text profession into it makes the upsert fail and blocks onboarding.
-        // Store profession in the free-text `course` column instead.
-        course: profession,
+        university: university.trim(),
+        year: level,
+        discipline,
+        study_track: track,
+        // Keep the free-text `course` column populated for backward compatibility
+        // and any UI that still reads it.
+        course: courseLabel,
         onboarded: true,
       });
       if (error) throw error;
@@ -81,11 +100,7 @@ function OnboardingFlow() {
 
   const onNext = () => {
     if (step === 0) {
-      if (isStudent === true) {
-        next();
-      } else {
-        void finish();
-      }
+      next();
     } else {
       void finish();
     }
@@ -121,7 +136,8 @@ function OnboardingFlow() {
             <span className="ai-symbiote-dot h-3 w-3" />
           </span>
           <p className="mt-8 max-w-xs text-sm text-muted-foreground sm:text-base">
-            Upload your study files and get exact, source-backed answers in seconds.
+            The study AI built for medical and law students. Upload your material and get exact,
+            source-backed answers in seconds.
           </p>
           <button
             type="button"
@@ -166,17 +182,17 @@ function OnboardingFlow() {
           </div>
 
           <div className="luxury-panel rounded-lg p-5 shadow-elegant backdrop-blur sm:p-8">
-            {/* ── Step 0: Name + Profession ── */}
+            {/* ── Step 0: Name + Discipline ── */}
             {step === 0 && (
               <>
                 <h2 className="text-xs font-medium uppercase tracking-wider text-primary-glow">
                   About you
                 </h2>
                 <h1 className="mt-3 font-display text-3xl font-light leading-none sm:text-4xl">
-                  Tell us about yourself
+                  What are you studying?
                 </h1>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  This helps G&D tailor answers to you.
+                  G&D tunes its answers to your field, so this matters.
                 </p>
 
                 <div className="mt-6 space-y-4">
@@ -195,50 +211,31 @@ function OnboardingFlow() {
 
                   <div>
                     <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                      What best describes you?
+                      Your course
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsStudent(true)}
-                        className={`rounded-lg border py-3 text-sm font-medium transition-colors ${
-                          isStudent === true
-                            ? "border-primary bg-primary/15 text-primary"
-                            : "border-border bg-background hover:bg-surface-elevated"
-                        }`}
-                      >
-                        Student
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsStudent(false)}
-                        className={`rounded-lg border py-3 text-sm font-medium transition-colors ${
-                          isStudent === false
-                            ? "border-primary bg-primary/15 text-primary"
-                            : "border-border bg-background hover:bg-surface-elevated"
-                        }`}
-                      >
-                        Other profession
-                      </button>
-                    </div>
-
-                    {isStudent === false && (
-                      <textarea
-                        autoFocus
-                        value={otherProfession}
-                        onChange={(e) => setOtherProfession(e.target.value)}
-                        placeholder="What's your profession? (e.g. Doctor, Engineer, Teacher…)"
-                        rows={3}
-                        className="mt-2 w-full resize-none rounded-lg border border-input bg-background px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    <div className="grid grid-cols-2 gap-3">
+                      <DisciplineCard
+                        selected={discipline === "medicine"}
+                        onClick={() => chooseDiscipline("medicine")}
+                        icon={<Stethoscope className="h-6 w-6" />}
+                        title="Medicine"
+                        subtitle="Clinical reasoning, high-yield exam prep"
                       />
-                    )}
+                      <DisciplineCard
+                        selected={discipline === "law"}
+                        onClick={() => chooseDiscipline("law")}
+                        icon={<Scale className="h-6 w-6" />}
+                        title="Law"
+                        subtitle="IRAC, cases, statutes & problem questions"
+                      />
+                    </div>
                   </div>
                 </div>
               </>
             )}
 
-            {/* ── Step 1: School + Level (students only) ── */}
-            {step === 1 && (
+            {/* ── Step 1: School + Track + Level ── */}
+            {step === 1 && discipline && (
               <>
                 <h2 className="text-xs font-medium uppercase tracking-wider text-primary-glow">
                   Your studies
@@ -247,7 +244,8 @@ function OnboardingFlow() {
                   Where are you studying?
                 </h1>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Your school and level help answers fit your course.
+                  Your school, stage, and level help answers fit your{" "}
+                  {DISCIPLINE_LABEL[discipline].toLowerCase()} course.
                 </p>
 
                 <div className="mt-6 space-y-4">
@@ -258,6 +256,28 @@ function OnboardingFlow() {
                     placeholder="School, college, or university"
                     className="w-full rounded-lg border border-input bg-background px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-ring"
                   />
+
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                      Stage
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {TRACKS[discipline].map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setTrack(t)}
+                          className={`rounded-lg border py-2.5 text-sm font-medium transition-colors ${
+                            track === t
+                              ? "border-primary bg-primary/15 text-primary"
+                              : "border-border bg-background hover:bg-surface-elevated"
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
                   <div>
                     <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
@@ -316,5 +336,41 @@ function OnboardingFlow() {
         </div>
       </main>
     </div>
+  );
+}
+
+function DisciplineCard({
+  selected,
+  onClick,
+  icon,
+  title,
+  subtitle,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  icon: ReactNode;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors ${
+        selected
+          ? "border-primary bg-primary/15 text-primary"
+          : "border-border bg-background hover:bg-surface-elevated"
+      }`}
+    >
+      <span className={selected ? "text-primary" : "text-muted-foreground"}>{icon}</span>
+      <span className="text-base font-semibold">{title}</span>
+      <span
+        className={`text-xs leading-snug ${
+          selected ? "text-primary/80" : "text-muted-foreground"
+        }`}
+      >
+        {subtitle}
+      </span>
+    </button>
   );
 }

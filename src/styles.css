@@ -446,31 +446,50 @@ html.gd-low-power .gd-loading-bar::after {
 @keyframes gdLoaderPulse {
   0%,
   100% {
-    opacity: 0.42;
-    transform: scale(0.88);
+    opacity: 0.32;
+    transform: scale(0.7);
+    box-shadow: 0 0 0 0 transparent;
   }
   50% {
     opacity: 1;
     transform: scale(1);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+  }
+}
+
+/* Soft sheen sweeping across the active step's label. */
+@keyframes gdLoaderSheen {
+  0% {
+    background-position: 140% 0;
+  }
+  100% {
+    background-position: -40% 0;
   }
 }
 
 .gd-answer-loader {
   display: grid;
-  gap: 0.55rem;
+  gap: 0.6rem;
   max-width: 520px;
   border-left: 2px solid color-mix(in srgb, var(--primary) 35%, transparent);
-  background: color-mix(in srgb, var(--primary) 4%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--primary) 6%, transparent),
+    transparent 70%
+  );
   padding: 0.85rem 1rem;
+  border-radius: 0 0.5rem 0.5rem 0;
 }
 
 .gd-loader-step {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.6rem;
   color: var(--muted-foreground);
   font-size: 0.78rem;
   font-weight: 400;
+  opacity: 0.55;
+  transition: opacity 0.35s ease;
 }
 
 .gd-loader-step span {
@@ -478,23 +497,65 @@ html.gd-low-power .gd-loading-bar::after {
   height: 0.45rem;
   border-radius: 9999px;
   background: color-mix(in srgb, var(--primary) 55%, transparent);
-  animation: gdLoaderPulse 1.45s ease-in-out infinite;
+  animation: gdLoaderPulse 1.5s cubic-bezier(0.36, 0, 0.25, 1) infinite;
+  will-change: transform, opacity;
 }
 
 .gd-loader-step:nth-child(2) span {
-  animation-delay: 160ms;
+  animation-delay: 180ms;
 }
 
 .gd-loader-step:nth-child(3) span {
-  animation-delay: 320ms;
+  animation-delay: 360ms;
 }
 
 .gd-loader-step:nth-child(4) span {
-  animation-delay: 480ms;
+  animation-delay: 540ms;
 }
 
 .gd-loader-step.is-active {
   color: var(--foreground);
+  opacity: 1;
+}
+
+.gd-loader-step.is-active span {
+  background: var(--primary);
+}
+
+/* The active label gets a slow left-sweeping sheen so it reads as "in progress". */
+.gd-loader-step.is-active {
+  background: linear-gradient(
+    90deg,
+    var(--foreground) 0%,
+    var(--foreground) 35%,
+    color-mix(in srgb, var(--primary) 70%, var(--foreground)) 50%,
+    var(--foreground) 65%,
+    var(--foreground) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gdLoaderSheen 2.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gd-loader-step span {
+    animation-duration: 2.4s;
+  }
+  .gd-loader-step.is-active {
+    animation: none;
+    -webkit-text-fill-color: var(--foreground);
+    color: var(--foreground);
+  }
+}
+
+html.gd-low-power .gd-loader-step span {
+  animation-duration: 2.4s;
+}
+html.gd-low-power .gd-loader-step.is-active {
+  animation: none;
+  -webkit-text-fill-color: var(--foreground);
 }
 
 /* Markdown prose styling */
@@ -1741,10 +1802,30 @@ html.gd-native-app .luxury-app-shell .animate-spin {
   display: none !important;
 }
 
-/* Three-dot loading indicator (replaces the spinning ring) - a bouncing wave. */
+/* Three-dot loading indicator (replaces the spinning ring) - a soft bouncing
+   wave. Dots ease up with a subtle grow + brighten, then settle back small and
+   dim, so the crest travels smoothly across the row. */
 @keyframes gd-dot-wave {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
-  30% { transform: translateY(-65%); opacity: 1; }
+  0%, 60%, 100% {
+    transform: translateY(0) scale(0.72);
+    opacity: 0.28;
+  }
+  30% {
+    transform: translateY(-72%) scale(1.06);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Keep a gentle brighten instead of the vertical hop. */
+  @keyframes gd-dot-wave {
+    0%, 100% { transform: none; opacity: 0.4; }
+    50% { transform: none; opacity: 1; }
+  }
+}
+
+html.gd-low-power [style*="gd-dot-wave"] {
+  animation-duration: 2s !important;
 }
 
 /* Product workspace refresh: a quiet shell with distinct study tools. */

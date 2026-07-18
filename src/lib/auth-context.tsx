@@ -10,6 +10,8 @@ export type Profile = {
   university: string | null;
   year: string | null;
   course: string | null;
+  discipline: "medicine" | "law" | null;
+  study_track: string | null;
   curriculum: string | null;
   personalization_background: string | null;
   exam_format: "MCQ" | "SAQ" | "OSCE" | "Viva" | null;

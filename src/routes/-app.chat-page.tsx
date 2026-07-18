@@ -273,6 +273,8 @@ const GUEST_PROFILE: Profile = {
   university: null,
   year: null,
   course: null,
+  discipline: null,
+  study_track: null,
   curriculum: "Use broad course-level exam priorities as the reference frame.",
   personalization_background: null,
   exam_format: "MCQ",
@@ -2037,6 +2039,7 @@ export function ChatPage() {
                       isLast={i === messages.length - 1}
                       streaming={streaming && i === messages.length - 1}
                       canEdit={!streaming}
+                      hasDocuments={selectedDocs.length > 0}
                       onEditUserMessage={(newText) => editUserMessage(i, newText)}
                       onVersionChange={(versionIndex) => setAnswerVersion(i, versionIndex)}
                     />
@@ -3632,6 +3635,7 @@ function Message({
   profile,
   mode,
   canEdit,
+  hasDocuments,
   onEditUserMessage,
   onVersionChange,
 }: {
@@ -3641,6 +3645,10 @@ function Message({
   isLast: boolean;
   streaming: boolean;
   canEdit?: boolean;
+  // True when the pending answer is grounded in an uploaded/selected document,
+  // so the step-by-step "reading material" loader is meaningful. When false the
+  // question is general and we show only the clean bouncing-dot loader.
+  hasDocuments?: boolean;
   onEditUserMessage?: (newText: string) => void;
   onVersionChange?: (versionIndex: number) => void;
 }) {
@@ -3999,6 +4007,20 @@ function Message({
 
   const renderInlineMarkdown = () => {
     if (!displayContent) {
+      // General question (nothing uploaded/selected): no step text, just a clean
+      // animated dot loader. The document-grounded steps below would be
+      // misleading here since there is no material to read.
+      if (!hasDocuments) {
+        return (
+          <div
+            className="flex items-center py-1.5 text-primary"
+            aria-live="polite"
+            aria-busy="true"
+          >
+            <LoadingDots size="md" />
+          </div>
+        );
+      }
       return (
         <div className="gd-answer-loader" aria-live="polite" aria-busy="true">
           <div className="gd-loader-step is-active">

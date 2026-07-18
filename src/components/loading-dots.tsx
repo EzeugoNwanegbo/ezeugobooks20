@@ -35,8 +35,9 @@ export function LoadingDots({
           key={index}
           className={`${dot} rounded-full bg-current`}
           style={{
-            animation: "gd-dot-wave 1.2s ease-in-out infinite",
-            animationDelay: `${index * 0.16}s`,
+            animation: "gd-dot-wave 1.3s cubic-bezier(0.36, 0, 0.25, 1) infinite both",
+            animationDelay: `${index * 0.18}s`,
+            willChange: "transform, opacity",
           }}
         />
       ))}

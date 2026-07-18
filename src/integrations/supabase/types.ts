@@ -221,6 +221,7 @@ export type Database = {
           created_at: string | null;
           curriculum: string | null;
           current_streak: number;
+          discipline: string | null;
           exam_format: Database["public"]["Enums"]["exam_format"] | null;
           gamification_updated_at: string | null;
           id: string;
@@ -230,6 +231,7 @@ export type Database = {
           points: number;
           preferred_mode: Database["public"]["Enums"]["response_mode"] | null;
           recent_topics: string[] | null;
+          study_track: string | null;
           university: string | null;
           updated_at: string | null;
           weak_areas: string[] | null;
@@ -241,6 +243,7 @@ export type Database = {
           created_at?: string | null;
           curriculum?: string | null;
           current_streak?: number;
+          discipline?: string | null;
           exam_format?: Database["public"]["Enums"]["exam_format"] | null;
           gamification_updated_at?: string | null;
           id: string;
@@ -250,6 +253,7 @@ export type Database = {
           points?: number;
           preferred_mode?: Database["public"]["Enums"]["response_mode"] | null;
           recent_topics?: string[] | null;
+          study_track?: string | null;
           university?: string | null;
           updated_at?: string | null;
           weak_areas?: string[] | null;
@@ -261,6 +265,7 @@ export type Database = {
           created_at?: string | null;
           curriculum?: string | null;
           current_streak?: number;
+          discipline?: string | null;
           exam_format?: Database["public"]["Enums"]["exam_format"] | null;
           gamification_updated_at?: string | null;
           id?: string;

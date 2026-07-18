@@ -18,6 +18,8 @@ interface Profile {
   university?: string;
   year?: string;
   course?: string | null;
+  discipline?: "medicine" | "law" | null;
+  study_track?: string | null;
   exam_format?: string;
   curriculum?: string | null;
   personalization_background?: string | null;
@@ -309,6 +311,45 @@ function questionNeedsWebCurriculumGuidance(
  * every answer. Until the memory store is wired up this is simply empty, and
  * the block degrades gracefully to the saved profile.
  */
+/**
+ * G&D is specialised for medical and law students. The discipline switches the
+ * AI from a generic explainer into a subject tutor that reasons with the right
+ * framework (clinical reasoning vs legal IRAC), uses the right vocabulary, and
+ * frames revision for the right kind of exam. Legacy users with no discipline
+ * set degrade gracefully to the generic block (empty string here).
+ */
+function disciplineFramework(p: Profile): string {
+  const track = (p.study_track ?? "").trim();
+  const trackNote = track ? ` They are on the "${track}" track - pitch depth accordingly.` : "";
+
+  if (p.discipline === "medicine") {
+    return `
+DISCIPLINE - MEDICINE (reason like a clinician teaching a medical student):${trackNote}
+- For a disease/condition, structure the explanation as: definition -> aetiology/risk factors -> pathophysiology (mechanism) -> clinical features -> investigations -> management (first-line vs definitive) -> complications. Skip parts that do not apply.
+- Lead with the high-yield, exam-relevant core. Flag classic/textbook presentations, key discriminators, and common exam pitfalls.
+- Use correct medical terminology, but gloss each term in plain English the first time it appears.
+- Where it fits, give a differential-diagnosis framing: what else could this be, and the single feature that best tells them apart.
+- Add a short "Clinical correlation:" note when a basic-science fact maps onto a real patient scenario.
+- Offer the high-yield mnemonics and memory hooks students actually use, when a genuinely useful one exists.
+- Tailor exam framing to their format: MCQ -> single-best-answer discriminators and buzzwords; OSCE -> stepwise stations and what the examiner is scoring; Viva/SAQ -> concise, well-structured spoken/short answers.
+- This is exam and education support, not clinical advice for a real patient. If asked to manage a real patient, add one line reminding them to follow local guidelines and senior/clinical supervision, then continue teaching.`;
+  }
+
+  if (p.discipline === "law") {
+    return `
+DISCIPLINE - LAW (reason like a law tutor):${trackNote}
+- Analyse with IRAC/CREAC: Issue -> Rule -> Application -> Conclusion. For a problem question, apply the law to the given facts step by step; for an essay, argue a clear thesis supported by authority.
+- State the governing rule with its source: statute (name + section) and leading case authority. Distinguish ratio decidendi from obiter dicta.
+- Be jurisdiction-aware. If the jurisdiction matters and is not given, state which legal system you are assuming.
+- For a case brief use: Facts / Issue / Holding / Ratio / Significance.
+- Compare and distinguish authorities, and flag where the law is unsettled or subject to judicial/academic debate.
+- Tailor exam framing to their format: problem question -> IRAC applied to the facts; essay -> structured argument with authorities; case note -> critical analysis of the judgment.
+- This is educational support to build legal reasoning, not legal advice for a real dispute.`;
+  }
+
+  return "";
+}
+
 function buildStudentIdentity(
   p: Profile,
   opts: { usingWebCurriculum?: boolean; memories?: string[] } = {},
@@ -326,16 +367,21 @@ function buildStudentIdentity(
     ? `\nTHE STUDENT'S OWN BACKGROUND (they brought this from another study AI - treat as an accurate description of them):\n${background}`
     : "";
 
+  const disciplineLabel = p.discipline
+    ? `${p.discipline === "medicine" ? "Medicine" : "Law"}${p.study_track ? ` (${p.study_track})` : ""}`
+    : p.course || "Unknown";
+
   return `WHO THIS STUDENT IS:
 - Name: ${p.name || "Student"}
 - School: ${p.university || "Unknown"}
 - Level: ${p.year || "Unknown"}
+- Discipline: ${disciplineLabel}
 - Course / field of study: ${p.course || "Unknown"}
 - Assessment format: ${p.exam_format || "MCQ"}
 - ${curriculumRule(p, Boolean(opts.usingWebCurriculum))}
 - Weak areas: ${(p.weak_areas || []).join(", ") || "none recorded"}
 - Recent topics: ${(p.recent_topics || []).slice(0, 8).join(", ") || "none yet"}${backgroundBlock}${memoryBlock}
-
+${disciplineFramework(p)}
 PERSONALIZE FOR THEM:
 - Pitch the depth, vocabulary, and pace to their level and course.
 - Prefer examples, analogies, and framing that fit their field of study and anything we remember they connect with.

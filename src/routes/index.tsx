@@ -6,11 +6,11 @@ import { useAuth } from "@/lib/auth-context";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "G&D - understand your files, practice smarter, pass" },
+      { title: "G&D - the study AI for medical & law students" },
       {
         name: "description",
         content:
-          "Upload your textbook, lecture notes, PDFs, or slides. Get explanations, citations, general context when you need it, and practice questions from what you are studying.",
+          "Built for medicine and law. Upload your textbooks, case law, lecture notes, PDFs, or slides. Get exact, source-cited answers with real clinical and legal reasoning, plus practice questions from your own material.",
       },
     ],
   }),
@@ -198,13 +198,14 @@ function Landing() {
         {/* ------------------------------------------------------- */}
         <section className="gd-hero">
           <div className="gd-hero-copy">
-            <span className="gd-eyebrow gd-rise gd-rise-1">Understand · verify · practice · pass</span>
+            <span className="gd-eyebrow gd-rise gd-rise-1">Built for medicine &amp; law · understand · practice · pass</span>
             <h1 className="gd-h1 gd-rise gd-rise-2">
-              Don&apos;t you want to understand every concept in your textbook?
+              Don&apos;t you want to understand every case and concept you&apos;re tested on?
             </h1>
             <p className="gd-lead gd-rise gd-rise-3">
-              Not just read the pages. Actually know what your textbook, PDF, slide, or lecture
-              file is trying to teach you.
+              Not just read the pages. G&amp;D understands what your textbooks, case law, slides, and
+              lecture notes are teaching you - and reasons like a clinician or a lawyer, not a
+              generic chatbot.
             </p>
             <div className="gd-actions gd-rise gd-rise-4">
               <a
@@ -230,7 +231,7 @@ function Landing() {
             </div>
             <div className="gd-trust gd-rise gd-rise-5">
               <span className="material-symbols-outlined" aria-hidden="true">verified</span>
-              Your files first · general knowledge when you choose it
+              Your files first · clinical &amp; legal reasoning built in
             </div>
           </div>
 
@@ -238,7 +239,7 @@ function Landing() {
           <div
             className="gd-hero-visual"
             role="img"
-            aria-label="Animated demo: a 48 megabyte, 512-page textbook PDF is dropped in, a progress bar races to the end, and the upload finishes in 12 seconds - every page ready to search."
+            aria-label="Animated demo: a 48 megabyte, 512-page clinical medicine textbook PDF is dropped in, a progress bar races to the end, and the upload finishes in 12 seconds - every page ready to search."
           >
             <div className="gd-mock">
               <div className="gd-mock-head">
@@ -252,7 +253,7 @@ function Landing() {
                   picture_as_pdf
                 </span>
                 <span className="gd-mock-file-meta">
-                  <strong>biology_textbook.pdf</strong>
+                  <strong>clinical_medicine.pdf</strong>
                   <em>48 MB · 512 pages</em>
                 </span>
               </div>
@@ -285,8 +286,8 @@ function Landing() {
               Don&apos;t you want your files to explain themselves?
             </h2>
             <p className="gd-lead">
-              Upload a textbook, PDF, lecture note, slide, or image. Ask in plain English and get
-              a clean explanation without fighting the document first.
+              Upload a medical textbook, a bundle of case law, lecture notes, slides, or images.
+              Ask in plain English and get a clean explanation without fighting the document first.
             </p>
           </div>
 
@@ -342,21 +343,22 @@ function Landing() {
                 Don&apos;t you want answers that show where they came from?
               </h2>
               <p className="gd-lead">
-                Use your files only when you need strict citations. Switch to files plus general
-                knowledge when you want a broader explanation. The source mode stays visible.
+                Whether it&apos;s a page reference or a case citation, every answer shows its
+                authority. Use your files only when you need strict sourcing, or switch to files
+                plus general knowledge for a broader explanation - the source mode stays visible.
               </p>
               <ul className="gd-points">
                 <li>
                   <span className="material-symbols-outlined" aria-hidden="true">description</span>
-                  Every answer cites the exact page in your file
+                  Every answer cites the exact page or case it came from
                 </li>
                 <li>
                   <span className="material-symbols-outlined" aria-hidden="true">verified</span>
-                  Grounded in your upload - nothing invented
+                  Grounded in your upload - no invented facts or fake citations
                 </li>
                 <li>
                   <span className="material-symbols-outlined" aria-hidden="true">search_off</span>
-                  Not in your book? It tells you, instead of guessing
+                  Not in your material? It tells you, instead of guessing
                 </li>
               </ul>
             </div>
@@ -365,23 +367,23 @@ function Landing() {
               <div className="gd-preview gd-r">
                 <div className="gd-preview-q">
                   <span className="material-symbols-outlined">person</span>
-                  <p>What actually limits the rate of glycolysis?</p>
+                  <p>Is past consideration valid consideration?</p>
                 </div>
                 <div className="gd-preview-a">
                   <span className="gd-pill-label">Exact answer</span>
                   <p>
-                    Phosphofructokinase-1 (PFK-1) catalyzes the committed, rate-limiting step.
-                    It's allosterically inhibited by ATP and citrate, so glycolysis slows when
-                    energy is already plentiful.
+                    No - as a rule, consideration must not be past (Re McArdle [1951]). A promise
+                    given in return for something already done is unenforceable, unless the act was
+                    done at the promisor's request (Lampleigh v Braithwait).
                   </p>
                   <div className="gd-sources">
                     <span className="gd-source-chip">
-                      <span className="material-symbols-outlined">description</span>
-                      Your upload · p. 87
+                      <span className="material-symbols-outlined">gavel</span>
+                      Your notes · Contract Law p. 34
                     </span>
                     <span className="gd-source-chip">
                       <span className="material-symbols-outlined">verified</span>
-                      Quoted, not guessed
+                      Authority cited, not invented
                     </span>
                   </div>
                 </div>
@@ -389,7 +391,7 @@ function Landing() {
               <div className="gd-preview gd-preview-honest gd-r" style={{ "--rd": "0.18s" } as React.CSSProperties}>
                 <div className="gd-preview-q">
                   <span className="material-symbols-outlined">person</span>
-                  <p>What does chapter 12 say about CRISPR?</p>
+                  <p>Does chapter 12 cover the tort of negligence?</p>
                 </div>
                 <div className="gd-preview-na">
                   <span className="material-symbols-outlined">search_off</span>
@@ -475,7 +477,7 @@ function Landing() {
               <ul className="gd-points">
                 <li>
                   <span className="material-symbols-outlined" aria-hidden="true">hub</span>
-                  Anatomy, physiology, pathology, and lecture notes become one connected guide
+                  Lectures, cases, and textbook chapters become one connected, topic-ordered guide
                 </li>
                 <li>
                   <span className="material-symbols-outlined" aria-hidden="true">verified</span>
@@ -568,11 +570,11 @@ function Landing() {
                 <div className="gd-quiz-opt">Pyruvate kinase reaction</div>
               </div>
               <div className="gd-quiz-card gd-r" style={{ "--rd": "0.16s" } as React.CSSProperties}>
-                <span className="gd-quiz-tag">Short answer · graded instantly</span>
-                <p className="gd-quiz-q">Explain why glycolysis speeds up when ATP runs low.</p>
+                <span className="gd-quiz-tag">Problem question · graded instantly</span>
+                <p className="gd-quiz-q">Advise whether a binding contract was formed on these facts.</p>
                 <div className="gd-quiz-grade">
                   <span className="material-symbols-outlined">task_alt</span>
-                  9/10 - revisit p. 87 for the citrate detail
+                  8/10 - apply Carlill v Carbolic Smoke Ball on unilateral offers
                 </div>
               </div>
               <div className="gd-quiz-diff gd-r" style={{ "--rd": "0.32s" } as React.CSSProperties}>
@@ -588,10 +590,10 @@ function Landing() {
         {/* Closing CTA                                               */}
         {/* ------------------------------------------------------- */}
         <section className="gd-cta-banner gd-r">
-          <h2 className="gd-h2">Don&apos;t you want to walk into exams ready?</h2>
+          <h2 className="gd-h2">Don&apos;t you want to walk into your medical or law exams ready?</h2>
           <p className="gd-lead">
-            Sign up for G&amp;D. Upload your files, understand the concepts, practice smarter,
-            and revise with confidence.
+            Sign up for G&amp;D - the study AI built for medicine and law. Upload your material,
+            understand the concepts and cases, practice smarter, and revise with confidence.
           </p>
           <TryForFreeButton className="gd-btn-lg" label="Sign up for G&D" />
           <span className="gd-cta-micro">Understand · verify · practice · pass</span>
@@ -600,7 +602,7 @@ function Landing() {
 
       <footer className="gd-footer">
         <span className="gd-logo gd-logo-sm">G&amp;D</span>
-        <span className="gd-footer-meta">Understand · verify · practice · pass</span>
+        <span className="gd-footer-meta">For medical &amp; law students</span>
         <span className="gd-footer-meta">© {new Date().getFullYear()} G&amp;D</span>
       </footer>
     </div>
