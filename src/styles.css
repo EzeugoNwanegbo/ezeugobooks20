@@ -54,6 +54,7 @@ html {
   --color-pop: var(--pop);
   --color-pop-2: var(--pop-2);
   --color-pop-foreground: var(--pop-foreground);
+  --color-leaf: var(--leaf);
 
   --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
@@ -131,6 +132,10 @@ html {
   --gradient-pop: linear-gradient(135deg, #6d5efc 0%, #a855f7 100%);
   --shadow-pop: 0 10px 28px -8px rgba(120, 90, 246, 0.55);
 
+  /* One supporting semantic tone - used ONLY to signal "answered from your own
+     files", so a sourced answer reads as trustworthy at a glance. */
+  --leaf: #68d391;
+
   /* Shadows */
   --gradient-primary: none;
   --gradient-surface: none;
@@ -206,6 +211,9 @@ html {
   --pop-2: #8b3ff0;
   --gradient-pop: linear-gradient(135deg, #5646e0 0%, #8b3ff0 100%);
   --shadow-pop: 0 10px 26px -8px rgba(86, 70, 224, 0.4);
+
+  /* Deeper green so the "from your files" chip stays legible on cream. */
+  --leaf: #2f855a;
 }
 
 @layer base {
@@ -463,7 +471,25 @@ html.gd-low-power .gd-loading-bar::after {
   font-size: 1rem;
 }
 .medai-prose h3:not(:first-child) {
-  margin-top: 1.1rem;
+  margin-top: 1.25rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+/* Short accent bar under each section heading - turns a long answer into clean,
+   scannable chapters (the one place headings get colour). */
+.medai-prose h2::after,
+.medai-prose h3::after {
+  content: "";
+  display: block;
+  width: 2.1rem;
+  height: 2px;
+  margin-top: 0.4rem;
+  border-radius: 2px;
+  background: var(--gradient-pop);
+}
+.medai-prose h3::after {
+  width: 1.7rem;
+  opacity: 0.85;
 }
 /* Gentle separation between stacked paragraphs so dense, heading-light answers
    don't turn into one solid wall of text. Kept very faint on purpose. */
@@ -524,21 +550,95 @@ html.gd-low-power .gd-loading-bar::after {
    without shouting. Styled as a bare inline button so it flows inside prose. */
 .ai-term-trigger {
   color: inherit;
-  background: none;
+  /* Subtle highlighter wash so key terms read as "there's more here" without
+     shouting - the accent used like a marker pen. */
+  background: linear-gradient(
+    transparent 62%,
+    color-mix(in srgb, var(--pop) 16%, transparent) 0
+  );
   border: 0;
-  padding: 0;
+  padding: 0 1px;
+  border-radius: 2px;
   font: inherit;
+  font-weight: 600;
   cursor: pointer;
   text-decoration: underline dotted;
   text-underline-offset: 3px;
-  text-decoration-color: color-mix(in srgb, var(--primary) 55%, transparent);
-  transition: color 120ms ease, text-decoration-color 120ms ease;
+  text-decoration-color: color-mix(in srgb, var(--pop) 55%, transparent);
+  transition: color 120ms ease, background 120ms ease, text-decoration-color 120ms ease;
 }
 .ai-term-trigger:hover,
 .ai-term-trigger:focus-visible {
-  color: var(--primary-glow, var(--primary));
-  text-decoration-color: var(--primary);
+  color: var(--pop);
+  background: linear-gradient(
+    transparent 55%,
+    color-mix(in srgb, var(--pop) 24%, transparent) 0
+  );
+  text-decoration-color: var(--pop);
   outline: none;
+}
+
+/* Study-tip callout: the single accent card per answer. Applied by the chat
+   renderer when a paragraph starts with "Study tip:" / "The takeaway:". */
+.gd-study-tip {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  margin: 1rem 0 0.35rem;
+  padding: 0.8rem 0.95rem;
+  border-radius: 13px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--pop) 12%, transparent),
+    color-mix(in srgb, var(--pop) 5%, transparent)
+  );
+  border: 1px solid color-mix(in srgb, var(--pop) 26%, transparent);
+}
+.gd-study-tip .gd-study-tip-ic {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 8px;
+  background: var(--gradient-pop);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  box-shadow: var(--shadow-pop);
+}
+.gd-study-tip .gd-study-tip-ic svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+.gd-study-tip .gd-study-tip-body {
+  min-width: 0;
+  font-family: var(--font-reading);
+}
+.gd-study-tip .gd-study-tip-label {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pop);
+  margin-bottom: 0.1rem;
+}
+.gd-study-tip .gd-study-tip-text {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--foreground);
+}
+
+/* Answer question eyebrow ("You asked") gets a short gradient dash. */
+.gd-eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 0.95rem;
+  height: 2px;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+  border-radius: 2px;
+  background: var(--gradient-pop);
 }
 .ai-term-popover {
   animation: aiInlineComposerIn 140ms ease-out;

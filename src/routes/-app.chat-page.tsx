@@ -2871,7 +2871,7 @@ function SourceBadge({ source }: { source?: MessageSource }) {
   }
   if (source === "library") {
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-pop/12 text-pop border border-pop/25">
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-leaf/12 text-leaf border border-leaf/30">
         <BookOpen className="h-2.5 w-2.5" />
         From your files
       </span>
@@ -3503,6 +3503,38 @@ function wrapTermsInChildren(
   });
 }
 
+// Answers usually close with a "Study tip:" / "The takeaway:" line (see the
+// mode instructions). We lift that line out of the plain prose into an accent
+// callout card so the single most actionable sentence pops.
+const STUDY_TIP_LABEL =
+  /^\s*(study tip|the takeaway|takeaway|key takeaway|exam tip|pro tip|remember)\s*[:\-–]\s*/i;
+
+function nodeToPlainText(node: ReactNode): string {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(nodeToPlainText).join("");
+  if (isValidElement(node)) {
+    return nodeToPlainText((node.props as { children?: ReactNode }).children);
+  }
+  return "";
+}
+
+function StudyTipCallout({ label, text }: { label: string; text: string }) {
+  return (
+    <div className="gd-study-tip">
+      <span className="gd-study-tip-ic" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12c1 1 1 2 1 3h6c0-1 0-2 1-3a7 7 0 0 0-4-12z" />
+        </svg>
+      </span>
+      <span className="gd-study-tip-body">
+        <span className="gd-study-tip-label">{label}</span>
+        <span className="gd-study-tip-text">{text}</span>
+      </span>
+    </div>
+  );
+}
+
 function selectionHasEditableTarget(range: Range): boolean {
   const node = range.commonAncestorContainer;
   const element = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
@@ -3934,48 +3966,60 @@ function Message({
     // shared across every markdown segment of THIS answer so each term is only
     // underlined on its first occurrence (keeps the answer readable, not noisy).
     const termUsed = new Set<string>();
-    const termComponents: Components | undefined = termRegex
-      ? {
-          p({ node, children, ...props }) {
-            void node;
-            return (
-              <p {...props}>{wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}</p>
-            );
-          },
-          li({ node, children, ...props }) {
-            void node;
-            return (
-              <li {...props}>
-                {wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}
-              </li>
-            );
-          },
-          td({ node, children, ...props }) {
-            void node;
-            return (
-              <td {...props}>
-                {wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}
-              </td>
-            );
-          },
-          th({ node, children, ...props }) {
-            void node;
-            return (
-              <th {...props}>
-                {wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}
-              </th>
-            );
-          },
-          blockquote({ node, children, ...props }) {
-            void node;
-            return (
-              <blockquote {...props}>
-                {wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}
-              </blockquote>
-            );
-          },
+    const termComponents: Components = {
+      // Always overridden: a "Study tip:" paragraph becomes an accent callout;
+      // any other paragraph just gets key-term wrapping (a no-op when there are
+      // no terms), so this is safe whether or not termRegex is set.
+      p({ node, children, ...props }) {
+        void node;
+        const plain = nodeToPlainText(children);
+        const tipMatch = plain.match(STUDY_TIP_LABEL);
+        if (tipMatch) {
+          const label = tipMatch[1].replace(/\s+/g, " ").trim();
+          const body = plain.slice(tipMatch[0].length).trim();
+          if (body) return <StudyTipCallout label={label} text={body} />;
         }
-      : undefined;
+        return (
+          <p {...props}>{wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}</p>
+        );
+      },
+      ...(termRegex
+        ? {
+            li({ node, children, ...props }) {
+              void node;
+              return (
+                <li {...props}>
+                  {wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}
+                </li>
+              );
+            },
+            td({ node, children, ...props }) {
+              void node;
+              return (
+                <td {...props}>
+                  {wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}
+                </td>
+              );
+            },
+            th({ node, children, ...props }) {
+              void node;
+              return (
+                <th {...props}>
+                  {wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}
+                </th>
+              );
+            },
+            blockquote({ node, children, ...props }) {
+              void node;
+              return (
+                <blockquote {...props}>
+                  {wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}
+                </blockquote>
+              );
+            },
+          }
+        : {}),
+    };
     const renderMd = (content: string, key?: string) => (
       <ReactMarkdown key={key} remarkPlugins={REMARK_PLUGINS} components={termComponents}>
         {content}
@@ -4202,11 +4246,11 @@ function Message({
             <Pencil className="h-3.5 w-3.5" />
           </button>
         )}
-        <div className="max-w-[760px] flex-1 border-l-2 border-pop/50 bg-pop/[0.05] px-4 py-3 text-sm leading-relaxed break-words">
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-pop">
+        <div className="max-w-[760px] flex-1 rounded-r-xl border-l-2 border-pop/50 bg-pop/[0.05] px-4 py-3 text-sm leading-relaxed break-words">
+          <div className="gd-eyebrow mb-1 inline-flex items-center text-[11px] font-semibold uppercase tracking-[0.12em] text-pop">
             You asked
           </div>
-          <div className="text-[15px] text-foreground">{msg.content}</div>
+          <div className="text-[15px] leading-relaxed text-foreground">{msg.content}</div>
         </div>
       </div>
     );
@@ -4215,12 +4259,19 @@ function Message({
     // Full-width answer column, ChatGPT-style: no per-response avatar/logo gutter.
     <div className="group">
       <div className="min-w-0">
-        {((msg.source && msg.source !== "general") || msg.webSources?.length) && (
-          <div className="mb-3 flex items-center gap-2">
-            {msg.source && msg.source !== "general" && <SourceBadge source={msg.source} />}
-            {msg.webSources?.length ? <WebSourceBadge count={msg.webSources.length} /> : null}
-          </div>
-        )}
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold tracking-[-0.01em] text-foreground/80">
+            <span
+              className="inline-grid h-5 w-5 place-items-center rounded-md shadow-pop"
+              style={{ background: "var(--gradient-pop)" }}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-white" />
+            </span>
+            G&amp;D
+          </span>
+          {msg.source && msg.source !== "general" && <SourceBadge source={msg.source} />}
+          {msg.webSources?.length ? <WebSourceBadge count={msg.webSources.length} /> : null}
+        </div>
         <div
           ref={contentRef}
           onMouseUp={openInlineComposer}
