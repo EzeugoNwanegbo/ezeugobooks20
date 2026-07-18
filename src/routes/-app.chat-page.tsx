@@ -22,6 +22,7 @@ import {
   type WebSource,
 } from "@/lib/chat-client";
 import { takePendingChatDoc } from "@/lib/chat-handoff";
+import { PERSONALIZATION_PROMPT } from "@/lib/personalization";
 import { isNativeApp } from "@/lib/native";
 import { lookupTerm, isTermLookupComplete, type TermLookupState } from "@/lib/term-lookup";
 import { embedQuery } from "@/lib/embeddings";
@@ -209,11 +210,6 @@ const VISUAL_SUGGESTIONS = [
   "Make an animated diagram from my files",
   "Create a visual explainer with scenes",
 ];
-
-// The copy-paste prompt the student runs inside whatever AI they already study
-// with. Its reply is a ready-made "who I am" that we import into G&D so answers
-// are personalized from day one instead of learning the student from scratch.
-const PERSONALIZATION_PROMPT = `Based on everything you know about me from our past conversations, write a concise profile of me for another study assistant. Use short bullet points and cover: my field and level of study, the exams or goals I'm working toward, my strong areas, my weak areas, how I learn best (analogies, examples, step-by-step, visuals?), and anything about my tone or preferences. Address it to the other AI, starting with "This student…".`;
 
 // "Visuals" (the old animated-video mode) is retired - answers now draw inline
 // diagrams automatically when a concept is visual, in every mode. The backend
@@ -1951,23 +1947,15 @@ export function ChatPage() {
             </div>
             <div className="chat-header-controls -mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] xl:mx-0 xl:overflow-visible xl:px-0 xl:pb-0 [&::-webkit-scrollbar]:hidden">
               <>
-                <button
-                  onClick={() =>
-                    applySourceMode(
-                      sourceMode === "My files only" ? "Files + general" : "My files only",
-                    )
-                  }
-                  title="Choose how grounded the answer should be"
-                  className={`hidden shrink-0 rounded-xl px-2.5 py-1.5 text-xs font-medium transition-colors sm:inline-flex ${
-                    sourceMode === "General knowledge"
-                      ? "bg-sky-500/10 text-sky-600 dark:text-sky-300"
-                      : sourceMode === "Files + general"
-                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                        : "bg-primary/10 text-primary"
-                  }`}
-                >
-                  {sourceMode}
-                </button>
+                <div className="hidden shrink-0 sm:block">
+                  <SegmentedControl
+                    options={SOURCE_MODES}
+                    value={sourceMode}
+                    onChange={applySourceMode}
+                    getLabel={(item) => SOURCE_SHORT[item]}
+                    getTitle={(item) => item}
+                  />
+                </div>
                 <button
                   onClick={() => {
                     if (docs.length === 0) {
@@ -2811,6 +2799,7 @@ function SegmentedControl<T extends string>({
   value,
   onChange,
   getIcon,
+  getLabel,
   getTitle,
   className,
 }: {
@@ -2818,6 +2807,7 @@ function SegmentedControl<T extends string>({
   value: T;
   onChange: (value: T) => void;
   getIcon?: (option: T) => ReactNode;
+  getLabel?: (option: T) => string;
   getTitle?: (option: T) => string;
   className?: string;
 }) {
@@ -2851,7 +2841,7 @@ function SegmentedControl<T extends string>({
             }`}
           >
             {getIcon?.(option)}
-            {option}
+            {getLabel ? getLabel(option) : option}
           </button>
         );
       })}

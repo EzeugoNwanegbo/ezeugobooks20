@@ -503,15 +503,18 @@ function AppLayout() {
         <Link to="/app/chat" className="luxury-brand-text small">
           G&D
         </Link>
-        <button
-          type="button"
-          onClick={openNewChat}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-          aria-label="New chat"
-          title="New chat"
-        >
-          <Plus className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <ThemeToggle />
+          <button
+            type="button"
+            onClick={openNewChat}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+            aria-label="New chat"
+            title="New chat"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">

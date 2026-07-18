@@ -123,18 +123,19 @@ html {
   --luxury-code-bg: #100f0d;
   --luxury-pulse: rgba(228, 228, 204, 0.18);
 
-  /* Vibrant accent — used sparingly on interactive bits (send button, focus
-     rings, active toggles, small labels, answer section markers) so a little
-     colour pops against the otherwise-monochrome cream palette. */
-  --pop: #6d5efc;
-  --pop-2: #a855f7;
-  --pop-foreground: #ffffff;
-  --gradient-pop: linear-gradient(135deg, #6d5efc 0%, #a855f7 100%);
-  --shadow-pop: 0 10px 28px -8px rgba(120, 90, 246, 0.55);
+  /* Accent — a deep petrol teal, the single confident jewel tone. Used with
+     restraint (send, focus rings, active toggles, section markers). Kept close
+     to solid; the "gradient" is one hue deepening, not a rainbow, so it reads
+     considered rather than generic. Dark theme values here; light overrides. */
+  --pop: #34c5bd;
+  --pop-2: #1f9aa2;
+  --pop-foreground: #06201f;
+  --gradient-pop: linear-gradient(145deg, #3fccc2 0%, #1f96a6 100%);
+  --shadow-pop: 0 10px 28px -8px rgba(52, 197, 189, 0.42);
 
-  /* One supporting semantic tone - used ONLY to signal "answered from your own
-     files", so a sourced answer reads as trustworthy at a glance. */
-  --leaf: #68d391;
+  /* One warm supporting tone (brass/gold) - used ONLY to signal "answered from
+     your own files", like a highlight on your own material. */
+  --leaf: #e6c15a;
 
   /* Shadows */
   --gradient-primary: none;
@@ -205,15 +206,16 @@ html {
   --shadow-elegant: 0 18px 70px -42px rgba(43, 35, 24, 0.36);
   --shadow-glow: 0 0 30px rgba(23, 21, 18, 0.08);
 
-  /* Deepen the accent a touch on the cream background so small coloured text
-     and borders keep enough contrast to read cleanly. */
-  --pop: #5646e0;
-  --pop-2: #8b3ff0;
-  --gradient-pop: linear-gradient(135deg, #5646e0 0%, #8b3ff0 100%);
-  --shadow-pop: 0 10px 26px -8px rgba(86, 70, 224, 0.4);
+  /* Light theme: a deep petrol teal so small coloured text and borders stay
+     crisp on the warm cream. White foreground reads cleanly on it. */
+  --pop: #0c6b70;
+  --pop-2: #0a565f;
+  --pop-foreground: #ffffff;
+  --gradient-pop: linear-gradient(145deg, #0f7d82 0%, #0a565f 100%);
+  --shadow-pop: 0 10px 26px -8px rgba(12, 107, 112, 0.4);
 
-  /* Deeper green so the "from your files" chip stays legible on cream. */
-  --leaf: #2f855a;
+  /* Deeper brass so the "from your files" chip stays legible on cream. */
+  --leaf: #9a6b12;
 }
 
 @layer base {
@@ -294,8 +296,8 @@ html {
 }
 .btn-pop:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 16px 36px -8px rgba(120, 90, 246, 0.72);
-  filter: saturate(1.08);
+  box-shadow: 0 16px 36px -8px color-mix(in srgb, var(--pop) 60%, transparent);
+  filter: saturate(1.06);
 }
 .btn-pop:active:not(:disabled) {
   transform: translateY(0);

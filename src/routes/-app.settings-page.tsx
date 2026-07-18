@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { LogOut, Trash2 } from "lucide-react";
+import { LogOut, Trash2, Copy, Check, Sparkles } from "lucide-react";
 import { LoadingDots } from "@/components/loading-dots";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
+import { PERSONALIZATION_PROMPT } from "@/lib/personalization";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   AlertDialog,
@@ -39,6 +40,11 @@ export function SettingsPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
 
+  const [background, setBackground] = useState("");
+  const [savedBackground, setSavedBackground] = useState("");
+  const [savingBackground, setSavingBackground] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+
   useEffect(() => {
     if (!profile) return;
     setName(profile.name ?? "");
@@ -46,7 +52,40 @@ export function SettingsPage() {
     setYear(profile.year ?? "Year 1");
     setExamFormat(profile.exam_format ?? "MCQ");
     setMode(profile.preferred_mode ?? "Simplified");
+    setBackground(profile.personalization_background ?? "");
+    setSavedBackground(profile.personalization_background ?? "");
   }, [profile]);
+
+  const copyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(PERSONALIZATION_PROMPT);
+      setCopiedPrompt(true);
+      setTimeout(() => setCopiedPrompt(false), 2000);
+    } catch {
+      toast.error("Couldn't copy automatically — select the text and copy it.");
+    }
+  };
+
+  const saveBackground = async (next: string) => {
+    if (!user || savingBackground) return;
+    setSavingBackground(true);
+    try {
+      const value = next.trim();
+      const { error } = await supabase
+        .from("user_profiles")
+        .update({ personalization_background: value || null })
+        .eq("id", user.id);
+      if (error) throw error;
+      await refreshProfile();
+      setBackground(value);
+      setSavedBackground(value);
+      toast.success(value ? "Personalization saved" : "Personalization removed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save personalization");
+    } finally {
+      setSavingBackground(false);
+    }
+  };
 
   const save = async () => {
     if (!user || saving) return;
@@ -218,6 +257,78 @@ export function SettingsPage() {
               {saving && <LoadingDots />}
               {saving ? "Saving…" : "Save changes"}
             </button>
+          </div>
+        </section>
+
+        {/* Personalization */}
+        <section className="luxury-panel mt-4 rounded-lg p-5 sm:p-6">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary-glow">
+              <Sparkles className="h-3.5 w-3.5 text-pop" />
+              Personalization
+            </h2>
+            {savedBackground ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-leaf/30 bg-leaf/12 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-leaf">
+                <Check className="h-3 w-3" />
+                Active
+              </span>
+            ) : (
+              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Not set up
+              </span>
+            )}
+          </div>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            Bring what another AI already knows about you into G&D. Copy the prompt, paste it into
+            the AI you study with, then paste its reply below — G&D uses it to tailor every answer.
+          </p>
+
+          <div className="mt-4 rounded-lg border border-border bg-background/60 p-3">
+            <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-muted-foreground">
+              {PERSONALIZATION_PROMPT}
+            </p>
+            <button
+              type="button"
+              onClick={() => void copyPrompt()}
+              className="btn-pop mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
+            >
+              {copiedPrompt ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              {copiedPrompt ? "Copied" : "Copy prompt"}
+            </button>
+          </div>
+
+          <label className="mt-4 block text-xs font-medium text-muted-foreground">
+            What your AI knows about you
+          </label>
+          <textarea
+            value={background}
+            onChange={(e) => setBackground(e.target.value)}
+            rows={5}
+            placeholder="Paste what your AI said about you here…"
+            className="mt-1 w-full resize-y rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
+          />
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void saveBackground(background)}
+              disabled={savingBackground || background.trim() === savedBackground}
+              className="btn-pop inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold"
+            >
+              {savingBackground && <LoadingDots />}
+              {savingBackground ? "Saving…" : "Save personalization"}
+            </button>
+            {savedBackground && (
+              <button
+                type="button"
+                onClick={() => void saveBackground("")}
+                disabled={savingBackground}
+                className="inline-flex items-center gap-2 rounded-lg border border-destructive/40 px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-60"
+              >
+                <Trash2 className="h-4 w-4" />
+                Remove
+              </button>
+            )}
           </div>
         </section>
 
