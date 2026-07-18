@@ -2006,7 +2006,7 @@ export function ChatPage() {
         </div>
 
         {/* Messages */}
-        <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto">
+        <div ref={scrollerRef} className="gd-chat-glow min-h-0 flex-1 overflow-y-auto">
           <div
             className="mx-auto max-w-3xl px-3 pt-4 sm:px-4 md:px-8 md:pt-8"
             style={{ paddingBottom: (composerHeight || 150) + 24 }}
@@ -2029,17 +2029,18 @@ export function ChatPage() {
             ) : (
               <div className="space-y-6">
                 {messages.map((m, i) => (
-                  <Message
-                    key={i}
-                    msg={m}
-                    profile={profile}
-                    mode={mode}
-                    isLast={i === messages.length - 1}
-                    streaming={streaming && i === messages.length - 1}
-                    canEdit={!streaming}
-                    onEditUserMessage={(newText) => editUserMessage(i, newText)}
-                    onVersionChange={(versionIndex) => setAnswerVersion(i, versionIndex)}
-                  />
+                  <div key={i} className="gd-msg-in">
+                    <Message
+                      msg={m}
+                      profile={profile}
+                      mode={mode}
+                      isLast={i === messages.length - 1}
+                      streaming={streaming && i === messages.length - 1}
+                      canEdit={!streaming}
+                      onEditUserMessage={(newText) => editUserMessage(i, newText)}
+                      onVersionChange={(versionIndex) => setAnswerVersion(i, versionIndex)}
+                    />
+                  </div>
                 ))}
               </div>
             )}
@@ -2100,6 +2101,7 @@ export function ChatPage() {
                   className="selector-reveal"
                   options={SOURCE_MODES}
                   value={sourceMode}
+                  getLabel={(item) => SOURCE_SHORT[item]}
                   onChange={(item) => {
                     applySourceMode(item);
                     setExpandedSelector(null);
@@ -2616,23 +2618,37 @@ function EmptyState({
   mode: ChatMode;
 }) {
   const suggestions = mode === "Visuals" ? VISUAL_SUGGESTIONS : SUGGESTIONS;
+  const icons = [Search, BookOpen, Layers, Sparkles];
 
   return (
-    <div className="py-10 text-center sm:py-16">
-      <AiMark size="lg" className="mb-5" />
-      <h2 className="text-3xl font-semibold tracking-[-0.03em] text-foreground sm:text-5xl">
-        Ready, {name}
+    <div className="flex flex-col items-center py-12 text-center sm:py-20">
+      <div className="gd-mark-halo mb-6">
+        <AiMark size="lg" />
+      </div>
+      <h2 className="text-balance text-3xl font-semibold tracking-[-0.03em] text-foreground sm:text-[2.75rem] sm:leading-[1.05]">
+        Ready when you are, <span className="gd-name-accent">{name}</span>
       </h2>
-      <div className="mx-auto mt-8 grid max-w-2xl gap-3 sm:grid-cols-2">
-        {suggestions.map((s) => (
-          <button
-            key={s}
-            onClick={() => onPick(s)}
-            className="group rounded-2xl bg-transparent p-4 text-left text-sm leading-relaxed text-muted-foreground transition-all hover:-translate-y-0.5 hover:bg-foreground/[0.03] hover:text-foreground hover:shadow-sm"
-          >
-            <span className="block font-medium">{s}</span>
-          </button>
-        ))}
+      <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground sm:text-base">
+        Ask anything about your material — I'll cite your files, explain it your way, and sketch a
+        quick diagram when it helps.
+      </p>
+      <div className="mx-auto mt-9 grid w-full max-w-2xl gap-3 sm:grid-cols-2">
+        {suggestions.map((s, i) => {
+          const Icon = icons[i % icons.length];
+          return (
+            <button
+              key={s}
+              onClick={() => onPick(s)}
+              className="group flex items-center gap-3 rounded-2xl border border-border/70 bg-surface/50 p-4 text-left text-sm leading-snug text-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-pop/40 hover:bg-pop/[0.05] hover:shadow-[0_12px_32px_-20px_rgba(0,0,0,0.45)]"
+            >
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-pop/10 text-pop transition-colors group-hover:bg-pop group-hover:text-pop-foreground">
+                <Icon className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1 font-medium">{s}</span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/40 transition-all group-hover:translate-x-0.5 group-hover:text-pop" />
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -2818,7 +2834,7 @@ function SegmentedControl<T extends string>({
             type="button"
             title={getTitle?.(option)}
             onClick={() => onChange(option)}
-            className={`relative z-10 flex min-h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg px-2 text-center text-xs font-medium leading-tight transition-colors sm:px-2.5 ${
+            className={`relative z-10 flex min-h-8 min-w-0 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-lg px-2 text-center text-xs font-medium transition-colors sm:px-2.5 ${
               active
                 ? "text-pop-foreground"
                 : "text-muted-foreground hover:text-foreground"
