@@ -14,6 +14,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { LoadingDots } from "@/components/loading-dots";
+import { PageHeader } from "@/components/ui/page-header";
+import { Segmented } from "@/components/ui/segmented";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -87,14 +89,14 @@ function formatDuration(seconds: number | null | undefined): string {
 function SourceOrWarn({ question }: { question: QuestionRow }) {
   if (Array.isArray(question.source_refs) && question.source_refs.length > 0) {
     return (
-      <p className="mt-2 flex items-start gap-1.5 rounded-md bg-primary/5 px-2 py-1.5 text-xs text-muted-foreground break-words">
-        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+      <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-pop/5 px-2.5 py-1.5 text-xs text-muted-foreground break-words">
+        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-pop" />
         <span className="min-w-0">Source: {sourceText(question.source_refs)}</span>
       </p>
     );
   }
   return (
-    <p className="mt-2 flex items-start gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-xs font-medium text-amber-600 break-words dark:text-amber-400">
+    <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-xs font-medium text-amber-600 break-words dark:text-amber-400">
       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <span className="min-w-0">Not found in your material - answer with caution.</span>
     </p>
@@ -109,9 +111,9 @@ function AnswerFeedback({ question, grade }: { question: QuestionRow; grade?: Gr
       ? optionLabel(question, question.correct_answer)
       : question.correct_answer;
   return (
-    <div className="mt-3 space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm">
+    <div className="mt-3 space-y-2 rounded-xl border border-leaf/30 bg-leaf/[0.08] p-3 text-sm">
       <p className="flex items-start gap-1.5">
-        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-leaf" />
         <span className="min-w-0 break-words">
           <span className="font-semibold">Correct answer: </span>
           {correctText}
@@ -124,7 +126,7 @@ function AnswerFeedback({ question, grade }: { question: QuestionRow; grade?: Gr
         </p>
       ) : null}
       <p className="flex items-start gap-1.5 break-words text-xs text-muted-foreground">
-        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-pop" />
         <span className="min-w-0">
           <span className="font-semibold">Source: </span>
           {sourceText(question.source_refs)}
@@ -189,7 +191,7 @@ export function PracticePage() {
           <p className="text-sm text-muted-foreground">No roadmap selected.</p>
           <Link
             to="/app/studybody"
-            className="mt-3 inline-flex items-center gap-1.5 text-sm text-primary"
+            className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-pop transition-colors hover:text-pop/80"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to My Coach
@@ -509,9 +511,9 @@ function ConfigView({ planId }: { planId: string }) {
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 overflow-x-hidden">
-        <header className="flex flex-col gap-2">
+    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 overflow-x-hidden">
+        <div className="flex flex-col gap-4">
           <Link
             to="/app/studybody"
             className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
@@ -519,30 +521,23 @@ function ConfigView({ planId }: { planId: string }) {
             <ArrowLeft className="h-4 w-4" />
             Back to My Coach
           </Link>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <div className="flex items-center gap-2 text-sm font-medium text-primary">
-                <Brain className="h-4 w-4" />
-                Practice
-              </div>
-              <h1 className="font-display text-2xl font-light tracking-normal sm:text-3xl">
-                {plan?.title || "Roadmap practice"}
-              </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {plan ? `${topics.length} topics - ${plan.source_type}` : "Loading roadmap…"}
-              </p>
-            </div>
-            {plan && topics.length > 0 && (
-              <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
-                <Trophy className="h-4 w-4 text-primary" />
-                {masteredCount}/{topics.length} mastered
-              </div>
-            )}
-          </div>
-        </header>
+          <PageHeader
+            eyebrow="My Coach"
+            title={plan?.title || "Roadmap practice"}
+            subtitle={plan ? `${topics.length} topics - ${plan.source_type}` : "Loading roadmap…"}
+            actions={
+              plan && topics.length > 0 ? (
+                <div className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium">
+                  <Trophy className="h-4 w-4 text-leaf" />
+                  {masteredCount}/{topics.length} mastered
+                </div>
+              ) : undefined
+            }
+          />
+        </div>
 
         {schemaMissing && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm">
+          <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm">
             <div className="font-semibold text-destructive">
               My Coach database tables are missing
             </div>
@@ -558,19 +553,19 @@ function ConfigView({ planId }: { planId: string }) {
 
         {planLoading && !plan ? (
           <div className="flex justify-center py-16">
-            <LoadingDots size="md" className="text-primary" />
+            <LoadingDots size="md" className="text-pop" />
           </div>
         ) : (
           <section className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
             {/* Topics */}
-            <div className="luxury-panel rounded-lg p-4">
+            <div className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
               <div className="mb-4 flex items-center gap-2">
-                <FileText className="h-4 w-4 text-primary" />
-                <h2 className="font-semibold">Pick a topic</h2>
+                <FileText className="h-4 w-4 text-pop" />
+                <h2 className="font-semibold tracking-[-0.01em]">Pick a topic</h2>
               </div>
               <div className="space-y-3">
                 {topics.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
+                  <div className="rounded-xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
                     This roadmap has no topics yet.
                   </div>
                 ) : (
@@ -578,10 +573,10 @@ function ConfigView({ planId }: { planId: string }) {
                     <button
                       key={topic.id}
                       onClick={() => setSelectedTopicId(topic.id)}
-                      className={`w-full min-w-0 rounded-lg border p-3 text-left transition-colors ${
+                      className={`w-full min-w-0 rounded-xl border p-3.5 text-left transition-colors ${
                         selectedTopicId === topic.id
-                          ? "border-primary/50 bg-primary/10"
-                          : "border-border bg-surface/25 hover:border-primary/30"
+                          ? "border-pop/50 bg-pop/10"
+                          : "border-border hover:border-pop/30 hover:bg-foreground/[0.02]"
                       }`}
                     >
                       <div className="flex min-w-0 items-start justify-between gap-2">
@@ -592,7 +587,7 @@ function ConfigView({ planId }: { planId: string }) {
                           <span className="min-w-0 flex-1 break-words">{topic.title}</span>
                         </div>
                         {topic.status === "mastered" && (
-                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-leaf" />
                         )}
                       </div>
                       <p className="mt-2 text-sm text-muted-foreground break-words">
@@ -603,7 +598,7 @@ function ConfigView({ planId }: { planId: string }) {
                           value={Math.round(Number(topic.mastery_score || 0))}
                           className="flex-1"
                         />
-                        <span className="shrink-0 text-xs font-semibold">
+                        <span className="shrink-0 text-xs font-semibold tabular-nums">
                           {Math.round(Number(topic.mastery_score || 0))}%
                         </span>
                         <span className="shrink-0 text-[11px] text-muted-foreground">
@@ -617,15 +612,15 @@ function ConfigView({ planId }: { planId: string }) {
             </div>
 
             {/* Options */}
-            <aside className="luxury-panel min-w-0 rounded-lg p-4">
+            <aside className="min-w-0 rounded-2xl border border-border bg-surface p-4 sm:p-5">
               <div className="mb-4 flex items-center gap-2">
-                <Brain className="h-4 w-4 text-primary" />
-                <h2 className="font-semibold">Set up practice</h2>
+                <Brain className="h-4 w-4 text-pop" />
+                <h2 className="font-semibold tracking-[-0.01em]">Set up practice</h2>
               </div>
 
               {activeTopic ? (
                 <>
-                  <div className="rounded-lg border border-border bg-surface/30 p-3">
+                  <div className="rounded-xl border border-border bg-background/40 p-3">
                     <div className="text-sm font-semibold">{activeTopic.title}</div>
                     <p className="mt-1 text-sm text-muted-foreground">{activeTopic.summary}</p>
                   </div>
@@ -635,12 +630,12 @@ function ConfigView({ planId }: { planId: string }) {
                       onClick={() =>
                         navigate({ to: "/app/practice", search: { plan: planId, session: resumable.id } })
                       }
-                      className="mt-4 flex w-full items-center justify-between gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2.5 text-left transition-colors hover:bg-primary/15"
+                      className="mt-4 flex w-full items-center justify-between gap-2 rounded-xl border border-pop/40 bg-pop/10 px-3 py-2.5 text-left transition-colors hover:bg-pop/15"
                     >
                       <span className="flex items-center gap-2">
-                        <Play className="h-4 w-4 text-primary" />
+                        <Play className="h-4 w-4 text-pop" />
                         <span className="flex flex-col">
-                          <span className="text-sm font-semibold text-primary">
+                          <span className="text-sm font-semibold text-pop">
                             Continue where you left off
                           </span>
                           <span className="text-[11px] text-muted-foreground">
@@ -658,64 +653,42 @@ function ConfigView({ planId }: { planId: string }) {
                     </div>
                   )}
 
-                  <div className="mt-4 grid grid-cols-2 gap-1.5 sm:gap-2">
-                    {(["mcq", "essay", "mixed", "flashcard"] as StudyQuestionType[]).map((type) => (
-                      <button
-                        key={type}
-                        onClick={() => changeType(type)}
-                        className={`flex items-center justify-center gap-1 rounded-lg border px-2 py-2 text-xs font-medium sm:text-sm ${
-                          questionType === type
-                            ? "border-primary/40 bg-primary/10 text-primary"
-                            : "border-border hover:border-primary/30"
-                        }`}
-                      >
-                        {type === "flashcard" && <Layers className="h-3.5 w-3.5" />}
-                        {TYPE_LABEL[type]}
-                      </button>
-                    ))}
+                  <div className="mt-4">
+                    <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                      Question type
+                    </div>
+                    <Segmented
+                      options={["mcq", "essay", "mixed", "flashcard"] as StudyQuestionType[]}
+                      value={questionType}
+                      onChange={changeType}
+                      getLabel={(type) => TYPE_LABEL[type]}
+                      getIcon={(type) => (type === "flashcard" ? <Layers className="h-3.5 w-3.5" /> : null)}
+                      className="h-10"
+                    />
                   </div>
 
                   {supportsModes && (
                     <div className="mt-3">
                       <div className="mb-1.5 text-xs font-medium text-muted-foreground">Mode</div>
-                      <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
-                        {(
-                          [
-                            {
-                              value: "learning" as const,
-                              label: "Learning",
-                              hint: "Instant feedback",
-                              icon: Brain,
-                            },
-                            {
-                              value: "exam" as const,
-                              label: "Exam",
-                              hint: "Graded at end",
-                              icon: GraduationCap,
-                            },
-                          ]
-                        ).map((option) => {
-                          const Icon = option.icon;
-                          const active = practiceMode === option.value;
-                          return (
-                            <button
-                              key={option.value}
-                              onClick={() => setPracticeMode(option.value)}
-                              className={`flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left ${
-                                active
-                                  ? "border-primary/40 bg-primary/10 text-primary"
-                                  : "border-border hover:border-primary/30"
-                              }`}
-                            >
-                              <span className="flex items-center gap-1.5 text-sm font-semibold">
-                                <Icon className="h-3.5 w-3.5" />
-                                {option.label}
-                              </span>
-                              <span className="text-[11px] text-muted-foreground">{option.hint}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
+                      <Segmented
+                        options={["learning", "exam"] as const}
+                        value={practiceMode}
+                        onChange={setPracticeMode}
+                        getLabel={(value) => (value === "learning" ? "Learning" : "Exam")}
+                        getIcon={(value) =>
+                          value === "learning" ? (
+                            <Brain className="h-3.5 w-3.5" />
+                          ) : (
+                            <GraduationCap className="h-3.5 w-3.5" />
+                          )
+                        }
+                        className="h-10"
+                      />
+                      <p className="mt-1.5 text-[11px] text-muted-foreground">
+                        {practiceMode === "learning"
+                          ? "Instant feedback after each answer."
+                          : "Answers are graded when you submit."}
+                      </p>
                     </div>
                   )}
 
@@ -724,45 +697,31 @@ function ConfigView({ planId }: { planId: string }) {
                       <div className="mb-1.5 text-xs font-medium text-muted-foreground">
                         Difficulty
                       </div>
-                      <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
-                        {(
-                          [
-                            { value: "easy" as const, label: "Easy", hint: "Recall the facts" },
-                            { value: "medium" as const, label: "Medium", hint: "Apply & understand" },
-                            { value: "hard" as const, label: "Hard", hint: "Exam-topper level" },
-                          ]
-                        ).map((option) => {
-                          const active = difficulty === option.value;
-                          return (
-                            <button
-                              key={option.value}
-                              onClick={() => setDifficulty(option.value)}
-                              className={`flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left ${
-                                active
-                                  ? "border-primary/40 bg-primary/10 text-primary"
-                                  : "border-border hover:border-primary/30"
-                              }`}
-                            >
-                              <span className="text-sm font-semibold">{option.label}</span>
-                              <span className="text-[11px] text-muted-foreground">
-                                {option.hint}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {difficulty === "hard" && (
-                        <p className="mt-1.5 text-[11px] text-muted-foreground">
-                          Hard pushes you with tough, multi-step questions - but every one stays
-                          answerable from your uploaded files.
-                        </p>
-                      )}
+                      <Segmented
+                        options={["easy", "medium", "hard"] as const}
+                        value={difficulty}
+                        onChange={setDifficulty}
+                        getLabel={(value) =>
+                          value === "easy" ? "Easy" : value === "medium" ? "Medium" : "Hard"
+                        }
+                        className="h-10"
+                      />
+                      <p className="mt-1.5 text-[11px] text-muted-foreground">
+                        {difficulty === "easy"
+                          ? "Recall the facts."
+                          : difficulty === "medium"
+                            ? "Apply & understand."
+                            : "Exam-topper level - tough, multi-step questions, but every one stays answerable from your uploaded files."}
+                      </p>
                     </div>
                   )}
 
                   <div className="mt-3">
                     {questionType === "mixed" ? (
                       <>
+                        <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                          How many
+                        </div>
                         <div className="grid grid-cols-1 gap-1.5 sm:gap-2">
                           {MIXED_PRESETS.map((preset) => {
                             const selected =
@@ -775,10 +734,10 @@ function ConfigView({ planId }: { planId: string }) {
                                   setMixedMcq(preset.mcq);
                                   setMixedEssay(preset.essay);
                                 }}
-                                className={`rounded-lg border px-2 py-2 text-xs font-medium ${
+                                className={`rounded-xl border px-3 py-2 text-left text-xs font-medium transition-colors ${
                                   selected
-                                    ? "border-primary/40 bg-primary/10 text-primary"
-                                    : "border-border hover:border-primary/30"
+                                    ? "border-pop/50 bg-pop/10 text-pop"
+                                    : "border-border hover:border-pop/30 hover:bg-foreground/[0.02]"
                                 }`}
                               >
                                 {preset.mcq} MCQ + {preset.essay} Essay
@@ -788,10 +747,10 @@ function ConfigView({ planId }: { planId: string }) {
                         </div>
                         <button
                           onClick={() => setCustomMode(true)}
-                          className={`mt-2 w-full rounded-lg border px-2 py-2 text-sm font-medium ${
+                          className={`mt-2 w-full rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
                             customMode
-                              ? "border-primary/40 bg-primary/10 text-primary"
-                              : "border-border hover:border-primary/30"
+                              ? "border-pop/50 bg-pop/10 text-pop"
+                              : "border-border hover:border-pop/30 hover:bg-foreground/[0.02]"
                           }`}
                         >
                           Custom
@@ -813,7 +772,7 @@ function ConfigView({ planId }: { planId: string }) {
                                     ),
                                   )
                                 }
-                                className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                                className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
                               />
                             </label>
                             <label className="text-xs font-medium text-muted-foreground">
@@ -831,7 +790,7 @@ function ConfigView({ planId }: { planId: string }) {
                                     ),
                                   )
                                 }
-                                className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                                className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
                               />
                             </label>
                           </div>
@@ -839,6 +798,9 @@ function ConfigView({ planId }: { planId: string }) {
                       </>
                     ) : (
                       <>
+                        <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                          How many
+                        </div>
                         <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
                           {COUNT_OPTIONS[questionType].map((option) => (
                             <button
@@ -847,10 +809,10 @@ function ConfigView({ planId }: { planId: string }) {
                                 setCustomMode(false);
                                 setCount(option);
                               }}
-                              className={`rounded-lg border px-2 py-2 text-sm font-medium ${
+                              className={`rounded-xl border px-2 py-2 text-sm font-medium transition-colors ${
                                 !customMode && count === option
-                                  ? "border-primary/40 bg-primary/10 text-primary"
-                                  : "border-border hover:border-primary/30"
+                                  ? "border-pop/50 bg-pop/10 text-pop"
+                                  : "border-border hover:border-pop/30 hover:bg-foreground/[0.02]"
                               }`}
                             >
                               {option}
@@ -858,10 +820,10 @@ function ConfigView({ planId }: { planId: string }) {
                           ))}
                           <button
                             onClick={() => setCustomMode(true)}
-                            className={`rounded-lg border px-2 py-2 text-sm font-medium ${
+                            className={`rounded-xl border px-2 py-2 text-sm font-medium transition-colors ${
                               customMode
-                                ? "border-primary/40 bg-primary/10 text-primary"
-                                : "border-border hover:border-primary/30"
+                                ? "border-pop/50 bg-pop/10 text-pop"
+                                : "border-border hover:border-pop/30 hover:bg-foreground/[0.02]"
                             }`}
                           >
                             Custom
@@ -877,7 +839,7 @@ function ConfigView({ planId }: { planId: string }) {
                               setCount(clampCount(Number.parseInt(event.target.value, 10)))
                             }
                             placeholder="How many? (1-60)"
-                            className="mt-2 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                            className="mt-2 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
                           />
                         )}
                       </>
@@ -887,7 +849,7 @@ function ConfigView({ planId }: { planId: string }) {
                   <button
                     onClick={start}
                     disabled={practiceLoading}
-                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+                    className="btn-pop mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold"
                   >
                     {practiceLoading ? (
                       <LoadingDots />
@@ -913,7 +875,7 @@ function ConfigView({ planId }: { planId: string }) {
                   )}
                 </>
               ) : (
-                <div className="rounded-lg border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
+                <div className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
                   Pick a topic to practice.
                 </div>
               )}
@@ -1416,11 +1378,24 @@ function SessionView({
     .filter((question) => question.question_type === "essay")
     .every((question) => (answers[question.id] ?? "").trim());
   const learningReady = allMcqGraded && allEssaysWritten;
+  // Presentational-only: how far through the set the student has progressed,
+  // for the header progress bar. Not used by any submit/scoring logic.
+  const answeredCount = questions.filter((question) =>
+    (answers[question.id] ?? "").trim(),
+  ).length;
+  const sessionProgressPct = isFlashcards
+    ? flashcards.length
+      ? Math.round((Object.keys(fcRatings).length / flashcards.length) * 100)
+      : 0
+    : totalQuestions
+      ? Math.round((answeredCount / totalQuestions) * 100)
+      : 0;
+  const showSessionProgress = !loading && !completed && (isFlashcards ? !fcDone : true);
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 overflow-x-hidden">
-        <header className="flex flex-col gap-2">
+    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 overflow-x-hidden">
+        <div className="flex flex-col gap-4">
           <button
             onClick={backToTopics}
             className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
@@ -1428,21 +1403,35 @@ function SessionView({
             <ArrowLeft className="h-4 w-4" />
             Back to topics
           </button>
-          <div className="flex items-center gap-2 text-sm font-medium text-primary">
-            {isFlashcards ? <Layers className="h-4 w-4" /> : <Brain className="h-4 w-4" />}
-            {isFlashcards ? "Flash cards" : "Practice"}
-          </div>
-          <h1 className="font-display text-2xl font-light tracking-normal sm:text-3xl">
-            {topicTitle || "Practice session"}
-          </h1>
-        </header>
+          <PageHeader
+            eyebrow="My Coach"
+            title={topicTitle || "Practice session"}
+            subtitle={
+              isFlashcards
+                ? "Flash cards"
+                : usesModes
+                  ? mode === "exam"
+                    ? "Exam mode - graded when you submit"
+                    : "Learning mode - instant feedback after each answer"
+                  : "Practice"
+            }
+          />
+          {showSessionProgress && (
+            <div className="flex items-center gap-3">
+              <ProgressBar value={sessionProgressPct} className="flex-1" />
+              <span className="shrink-0 text-xs font-semibold tabular-nums text-muted-foreground">
+                {sessionProgressPct}%
+              </span>
+            </div>
+          )}
+        </div>
 
         {loading ? (
           <div className="flex justify-center py-16">
-            <LoadingDots size="md" className="text-primary" />
+            <LoadingDots size="md" className="text-pop" />
           </div>
         ) : (
-          <div className="luxury-panel rounded-lg p-4 sm:p-5">
+          <div className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
             {/* Flashcards */}
             {isFlashcards && !fcDone && currentCard && (
               <div>
@@ -1452,7 +1441,7 @@ function SessionView({
                   </span>
                   <span>{Object.keys(fcRatings).length} rated</span>
                 </div>
-                <div className="flex min-h-[280px] flex-col rounded-lg border border-border bg-background/50 p-5">
+                <div className="flex min-h-[280px] flex-col rounded-2xl border border-border bg-background/40 p-5">
                   <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {fcFlipped ? "Answer" : "Question"}
                   </div>
@@ -1462,8 +1451,8 @@ function SessionView({
                   {fcFlipped &&
                     Array.isArray(currentCard.source_refs) &&
                     currentCard.source_refs.length > 0 && (
-                      <p className="mt-3 flex items-start gap-1.5 rounded-md bg-primary/5 px-2 py-1.5 text-xs text-muted-foreground break-words">
-                        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                      <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-pop/5 px-2.5 py-1.5 text-xs text-muted-foreground break-words">
+                        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-pop" />
                         <span className="min-w-0">
                           Source: {sourceText(currentCard.source_refs)}
                         </span>
@@ -1473,7 +1462,7 @@ function SessionView({
                 {!fcFlipped ? (
                   <button
                     onClick={() => setFcFlipped(true)}
-                    className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary"
+                    className="btn-pop mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold"
                   >
                     Show answer
                   </button>
@@ -1481,13 +1470,13 @@ function SessionView({
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     <button
                       onClick={() => rateCard("missed")}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-sm font-semibold text-destructive"
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/15"
                     >
                       Missed
                     </button>
                     <button
                       onClick={() => rateCard("got_it")}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-leaf/40 bg-leaf/15 px-4 py-2.5 text-sm font-semibold text-leaf transition-colors hover:bg-leaf/20"
                     >
                       Got it
                     </button>
@@ -1497,13 +1486,13 @@ function SessionView({
             )}
 
             {isFlashcards && fcDone && fcResult !== null && (
-              <div className="rounded-lg border border-primary/20 bg-primary/5 p-5 text-center">
+              <div className="rounded-2xl border border-pop/25 bg-pop/[0.06] p-5 text-center">
                 <div className="text-sm font-semibold">Flash cards complete</div>
                 <div className="mt-1 font-display text-4xl font-light">{fcResult}%</div>
                 <p className="mt-1 text-sm text-muted-foreground">marked “got it”</p>
                 <button
                   onClick={backToTopics}
-                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
+                  className="btn-pop mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold"
                 >
                   Back to topics
                 </button>
@@ -1513,46 +1502,30 @@ function SessionView({
             {/* MCQ / Mixed sessions: Learning (instant feedback) or Exam (graded at end) */}
             {usesModes && (
               <div className="space-y-4">
-                <div className="flex flex-col gap-1 rounded-lg border border-border bg-surface/30 px-3 py-2 text-xs sm:flex-row sm:items-center sm:justify-between">
-                  <span className="flex items-center gap-1.5 font-semibold">
-                    {mode === "exam" ? (
-                      <GraduationCap className="h-3.5 w-3.5 text-primary" />
-                    ) : (
-                      <Brain className="h-3.5 w-3.5 text-primary" />
-                    )}
-                    {mode === "exam" ? "Exam mode" : "Learning mode"}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {mode === "exam"
-                      ? "Answers are graded when you submit"
-                      : "Instant feedback after each answer"}
-                  </span>
-                </div>
-
                 {mode === "exam" && examSubmitted ? (
                   /* ---- Exam results ---- */
                   <div className="space-y-4">
-                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-5 text-center">
+                    <div className="rounded-2xl border border-pop/25 bg-pop/[0.06] p-5 text-center">
                       <div className="text-sm font-semibold">Quiz complete</div>
                       <div className="mt-1 font-display text-4xl font-light">
                         {scorePercentage}%
                       </div>
                       <div className="mt-4 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-                        <div className="rounded-lg border border-border bg-background/50 p-2">
+                        <div className="rounded-xl border border-border bg-background/50 p-2">
                           <div className="font-display text-xl font-light">
                             {correctCount}/{totalQuestions}
                           </div>
                           <div className="text-[11px] text-muted-foreground">Score</div>
                         </div>
-                        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2 text-emerald-700 dark:text-emerald-300">
+                        <div className="rounded-xl border border-leaf/30 bg-leaf/10 p-2 text-leaf">
                           <div className="font-display text-xl font-light">{correctCount}</div>
                           <div className="text-[11px] opacity-80">Correct</div>
                         </div>
-                        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-2 text-destructive">
+                        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-2 text-destructive">
                           <div className="font-display text-xl font-light">{incorrectCount}</div>
                           <div className="text-[11px] opacity-80">Incorrect</div>
                         </div>
-                        <div className="rounded-lg border border-border bg-background/50 p-2">
+                        <div className="rounded-xl border border-border bg-background/50 p-2">
                           <div className="flex items-center justify-center gap-1 font-display text-xl font-light">
                             <Clock className="h-3.5 w-3.5 text-muted-foreground" />
                             {formatDuration(elapsedSec)}
@@ -1563,7 +1536,7 @@ function SessionView({
                     </div>
 
                     {review?.coaching ? (
-                      <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                      <div className="rounded-2xl border border-pop/20 bg-pop/5 p-4">
                         <div className="mb-1 text-sm font-semibold">Coach notes</div>
                         <p className="whitespace-pre-wrap text-sm text-muted-foreground">
                           {review.coaching}
@@ -1581,7 +1554,7 @@ function SessionView({
                           {incorrectQuestions.map((question, index) => (
                             <div
                               key={question.id}
-                              className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 sm:p-4"
+                              className="rounded-2xl border border-destructive/30 bg-destructive/5 p-3 sm:p-4"
                             >
                               <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                 {question.question_type} · {index + 1}
@@ -1604,14 +1577,14 @@ function SessionView({
                         </div>
                       </div>
                     ) : (
-                      <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 text-center text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                      <div className="rounded-2xl border border-leaf/30 bg-leaf/10 p-4 text-center text-sm font-medium text-leaf">
                         Perfect score - every question correct. 🎉
                       </div>
                     )}
 
                     <button
                       onClick={backToTopics}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
+                      className="btn-pop inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold"
                     >
                       Back to topics
                     </button>
@@ -1629,7 +1602,7 @@ function SessionView({
                       return (
                         <div
                           key={question.id}
-                          className="rounded-lg border border-border bg-background/50 p-3 sm:p-4"
+                          className="rounded-2xl border border-border bg-background/40 p-3 sm:p-4"
                         >
                           <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                             {question.question_type} · {question.difficulty} · {index + 1}
@@ -1641,16 +1614,15 @@ function SessionView({
                               {(question.options ?? []).map((option) => {
                                 const selected = answers[question.id] === option.id;
                                 const isCorrectOption = option.id === question.correct_answer;
-                                let cls = "border-border hover:border-primary/30";
+                                let cls = "border-border hover:border-pop/30 hover:bg-foreground/[0.02]";
                                 if (showFeedback) {
                                   if (isCorrectOption)
-                                    cls =
-                                      "border-emerald-500/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+                                    cls = "border-leaf/50 bg-leaf/10 text-leaf";
                                   else if (selected)
                                     cls = "border-destructive/60 bg-destructive/10 text-destructive";
                                   else cls = "border-border opacity-60";
                                 } else if (selected) {
-                                  cls = "border-primary/50 bg-primary/10";
+                                  cls = "border-pop/50 bg-pop/10";
                                 }
                                 return (
                                   <button
@@ -1664,12 +1636,12 @@ function SessionView({
                                             [question.id]: option.id,
                                           }))
                                     }
-                                    className={`flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors disabled:cursor-default ${cls}`}
+                                    className={`flex w-full items-start gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition-colors disabled:cursor-default ${cls}`}
                                   >
                                     <span className="shrink-0 font-semibold">{option.id}</span>
                                     <span className="min-w-0 flex-1 break-words">{option.text}</span>
                                     {showFeedback && isCorrectOption && (
-                                      <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-emerald-600" />
+                                      <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-leaf" />
                                     )}
                                     {showFeedback && selected && !isCorrectOption && (
                                       <XCircle className="ml-auto h-4 w-4 shrink-0 text-destructive" />
@@ -1690,7 +1662,7 @@ function SessionView({
                                   }))
                                 }
                                 placeholder="Write your answer"
-                                className="mt-3 min-h-28 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-70"
+                                className="mt-3 min-h-28 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40 disabled:opacity-70"
                               />
                               {mode === "learning" && !grade && (
                                 <button
@@ -1700,7 +1672,7 @@ function SessionView({
                                       [question.id]: !current[question.id],
                                     }))
                                   }
-                                  className="mt-2 text-xs font-semibold text-primary"
+                                  className="mt-2 text-xs font-semibold text-pop transition-colors hover:text-pop/80"
                                 >
                                   {revealedEssays[question.id]
                                     ? "Hide model answer"
@@ -1720,7 +1692,7 @@ function SessionView({
                       <button
                         onClick={submitExam}
                         disabled={reviewLoading}
-                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+                        className="btn-pop inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold"
                       >
                         {reviewLoading ? (
                           <LoadingDots />
@@ -1733,7 +1705,7 @@ function SessionView({
                       <button
                         onClick={finishLearning}
                         disabled={!learningReady || reviewLoading}
-                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+                        className="btn-pop inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold"
                       >
                         {reviewLoading ? (
                           <LoadingDots />
@@ -1743,14 +1715,14 @@ function SessionView({
                         {learningReady ? "Finish & save" : "Answer all to finish"}
                       </button>
                     ) : (
-                      <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-center">
+                      <div className="rounded-2xl border border-pop/25 bg-pop/[0.06] p-4 text-center">
                         <div className="text-sm font-semibold">Session saved</div>
                         <p className="mt-1 text-sm text-muted-foreground">
                           {correctCount}/{totalQuestions} correct · {formatDuration(elapsedSec)}
                         </p>
                         <button
                           onClick={backToTopics}
-                          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
+                          className="btn-pop mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold"
                         >
                           Back to topics
                         </button>
@@ -1767,19 +1739,19 @@ function SessionView({
                 {questions.map((question, index) => (
                   <div
                     key={question.id}
-                    className="rounded-lg border border-border bg-background/50 p-3 sm:p-4"
+                    className="rounded-2xl border border-border bg-background/40 p-3 sm:p-4"
                   >
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       {question.question_type} - {question.difficulty} - {index + 1}
                     </div>
                     <p className="text-sm font-medium break-words">{question.prompt}</p>
                     {Array.isArray(question.source_refs) && question.source_refs.length > 0 ? (
-                      <p className="mt-2 flex items-start gap-1.5 rounded-md bg-primary/5 px-2 py-1.5 text-xs text-muted-foreground break-words">
-                        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                      <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-pop/5 px-2.5 py-1.5 text-xs text-muted-foreground break-words">
+                        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-pop" />
                         <span className="min-w-0">Source: {sourceText(question.source_refs)}</span>
                       </p>
                     ) : (
-                      <p className="mt-2 flex items-start gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-xs font-medium text-amber-600 break-words dark:text-amber-400">
+                      <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-xs font-medium text-amber-600 break-words dark:text-amber-400">
                         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                         <span className="min-w-0">
                           Not found in your material - answer with caution.
@@ -1795,10 +1767,10 @@ function SessionView({
                             onClick={() =>
                               setAnswers((current) => ({ ...current, [question.id]: option.id }))
                             }
-                            className={`flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-sm disabled:opacity-70 ${
+                            className={`flex w-full items-start gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition-colors disabled:cursor-default disabled:opacity-70 ${
                               answers[question.id] === option.id
-                                ? "border-primary/50 bg-primary/10"
-                                : "border-border hover:border-primary/30"
+                                ? "border-pop/50 bg-pop/10"
+                                : "border-border hover:border-pop/30 hover:bg-foreground/[0.02]"
                             }`}
                           >
                             <span className="shrink-0 font-semibold">{option.id}</span>
@@ -1817,7 +1789,7 @@ function SessionView({
                           }))
                         }
                         placeholder="Write your answer"
-                        className="mt-3 min-h-28 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-70"
+                        className="mt-3 min-h-28 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40 disabled:opacity-70"
                       />
                     )}
                   </div>
@@ -1827,7 +1799,7 @@ function SessionView({
                   <button
                     onClick={submitPractice}
                     disabled={reviewLoading}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+                    className="btn-pop inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold"
                   >
                     {reviewLoading ? (
                       <LoadingDots />
@@ -1839,7 +1811,7 @@ function SessionView({
                 )}
 
                 {review && (
-                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                  <div className="rounded-2xl border border-pop/25 bg-pop/[0.06] p-4">
                     <div className="mb-2 flex items-center justify-between">
                       <span className="text-sm font-semibold">Review</span>
                       <span className="text-sm font-semibold">
@@ -1851,7 +1823,7 @@ function SessionView({
                     </p>
                     <button
                       onClick={backToTopics}
-                      className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-surface-elevated"
+                      className="btn-pop mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold"
                     >
                       Back to topics
                     </button>
@@ -1870,14 +1842,14 @@ function ProgressBar({ value, className = "" }: { value: number; className?: str
   const pct = Math.max(0, Math.min(100, Math.round(value)));
   return (
     <div
-      className={`h-2 overflow-hidden rounded-full bg-surface/60 ${className}`}
+      className={`h-2 overflow-hidden rounded-full bg-foreground/[0.07] ${className}`}
       role="progressbar"
       aria-valuenow={pct}
       aria-valuemin={0}
       aria-valuemax={100}
     >
       <div
-        className="h-full rounded-full bg-primary transition-[width] duration-500"
+        className="h-full rounded-full bg-pop transition-[width] duration-500"
         style={{ width: `${pct}%` }}
       />
     </div>

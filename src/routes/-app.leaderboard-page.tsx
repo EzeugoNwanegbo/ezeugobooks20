@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   emptyGamificationStats,
   levelFromPoints,
@@ -37,7 +38,6 @@ export function LeaderboardPage() {
     return () => window.removeEventListener("gd:gamification", onChange);
   }, [user]);
 
-  // Push our latest local points to the shared board, then pull the rankings.
   useEffect(() => {
     if (!user) return;
     let active = true;
@@ -64,46 +64,57 @@ export function LeaderboardPage() {
 
   const level = levelFromPoints(stats.points);
   const ranked = stats.points > 0 && myRank != null;
+  const podium = useMemo(() => board.slice(0, 3), [board]);
 
-  const globalRankValue = useMemo<ReactNode>(() => {
+  const rankValue = useMemo<ReactNode>(() => {
     if (boardState === "loading") return "…";
     if (boardState === "unavailable") return "—";
-    if (!ranked) return "Unranked";
+    if (!ranked || !myRank) return "Unranked";
     return `#${myRank.rank}`;
   }, [boardState, ranked, myRank]);
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
-        <header className="gd-leaderboard-header rounded-lg border border-amber-400/20 p-5">
-          <div className="flex items-center gap-2 text-sm font-medium text-amber-300">
-            <Trophy className="h-4 w-4" />
-            Leaderboard
-          </div>
-          <h1 className="font-display text-2xl font-light tracking-normal sm:text-3xl md:text-4xl">
-            Points, streaks, and study momentum.
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Earn points for showing up, answering My Coach questions, and completing roadmaps — then
-            see where you stand against every other student.
-          </p>
-        </header>
+    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+        <PageHeader
+          eyebrow="Leaderboard"
+          title="Where you stand"
+          subtitle="Points for showing up, answering My Coach questions, and finishing roadmaps — ranked against every other student."
+        />
 
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard icon={<Sparkles className="h-4 w-4" />} label="Total points" value={stats.points} />
-          <StatCard icon={<Flame className="h-4 w-4" />} label="Current streak" value={`${stats.currentStreak}d`} />
-          <StatCard icon={<Medal className="h-4 w-4" />} label="Level" value={level} />
-          <StatCard
+          <StatTile
+            accent
+            icon={<Sparkles className="h-4 w-4" />}
+            label="Total points"
+            value={stats.points.toLocaleString()}
+          />
+          <StatTile
+            icon={<Flame className="h-4 w-4" />}
+            label="Current streak"
+            value={`${stats.currentStreak}d`}
+          />
+          <StatTile icon={<Medal className="h-4 w-4" />} label="Level" value={level} />
+          <StatTile
+            accent
             icon={<Trophy className="h-4 w-4" />}
             label={ranked && myRank ? `Global rank of ${myRank.total}` : "Global rank"}
-            value={globalRankValue}
+            value={rankValue}
           />
         </section>
 
+        {boardState === "ready" && podium.length === 3 && (
+          <section className="grid grid-cols-3 items-end gap-2 sm:gap-3">
+            <PodiumStand row={podium[1]} place={2} isMe={podium[1].user_id === user?.id} />
+            <PodiumStand row={podium[0]} place={1} isMe={podium[0].user_id === user?.id} />
+            <PodiumStand row={podium[2]} place={3} isMe={podium[2].user_id === user?.id} />
+          </section>
+        )}
+
         <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="luxury-panel overflow-hidden rounded-lg">
+          <div className="overflow-hidden rounded-2xl border border-border bg-surface">
             <div className="border-b border-border px-4 py-3">
-              <h2 className="text-sm font-semibold">Global standings</h2>
+              <h2 className="text-sm font-semibold tracking-[-0.01em]">Global standings</h2>
               <p className="text-xs text-muted-foreground">
                 {boardState === "unavailable"
                   ? "Leaderboard is warming up — check back shortly."
@@ -112,37 +123,38 @@ export function LeaderboardPage() {
             </div>
 
             {boardState === "loading" ? (
-              <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+              <div className="px-4 py-12 text-center text-sm text-muted-foreground">
                 Loading the leaderboard…
               </div>
             ) : board.length === 0 ? (
-              <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+              <div className="px-4 py-12 text-center text-sm text-muted-foreground">
                 No ranked students yet. Earn your first points to claim the top spot.
               </div>
             ) : (
-              <div className="divide-y divide-border/70">
+              <div>
                 {board.map((row) => {
                   const isMe = row.user_id === user?.id;
                   return (
                     <div
                       key={row.user_id}
-                      className={`grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 ${
-                        isMe ? "bg-pop/10" : ""
+                      className={`grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-3 border-t border-border/60 px-4 py-3 transition-colors first:border-t-0 ${
+                        isMe ? "bg-pop/10" : "hover:bg-foreground/[0.02]"
                       }`}
                     >
-                      <div className="flex items-center">
-                        <RankBadge rank={row.rank} />
-                      </div>
+                      <RankBadge rank={row.rank} />
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">
+                        <div className="truncate text-sm font-semibold tracking-[-0.01em]">
                           {isMe ? `${row.name} (you)` : row.name}
                         </div>
                         <div className="text-xs text-muted-foreground">
                           {row.current_streak} day streak
                         </div>
                       </div>
-                      <div className="text-right text-sm font-semibold tabular-nums">
-                        {row.points.toLocaleString()} pts
+                      <div className="text-right text-sm font-bold tabular-nums">
+                        {row.points.toLocaleString()}
+                        <span className="ml-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                          pts
+                        </span>
                       </div>
                     </div>
                   );
@@ -151,24 +163,28 @@ export function LeaderboardPage() {
             )}
           </div>
 
-          <aside className="luxury-panel rounded-lg p-4">
-            <h2 className="text-sm font-semibold">Recent points</h2>
+          <aside className="rounded-2xl border border-border bg-surface p-4">
+            <h2 className="text-sm font-semibold tracking-[-0.01em]">Recent points</h2>
             <p className="mt-1 text-xs text-muted-foreground">
               {pointsToNextLevel(stats.points)} points to level {level + 1}.
             </p>
             <div className="mt-4 space-y-2">
               {stats.events.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+                <div className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
                   Start a chat or complete My Coach questions to earn your first points.
                 </div>
               ) : (
                 stats.events.slice(0, 8).map((event) => (
                   <div
                     key={event.id}
-                    className="flex items-center justify-between rounded-lg border border-border bg-background/40 px-3 py-2 text-sm"
+                    className="flex items-center justify-between rounded-xl border border-border bg-background/40 px-3 py-2 text-sm"
                   >
                     <span className="min-w-0 truncate">{event.label}</span>
-                    <span className={event.points >= 0 ? "text-leaf" : "text-destructive"}>
+                    <span
+                      className={`font-semibold tabular-nums ${
+                        event.points >= 0 ? "text-leaf" : "text-destructive"
+                      }`}
+                    >
                       {event.points >= 0 ? "+" : ""}
                       {event.points}
                     </span>
@@ -183,32 +199,80 @@ export function LeaderboardPage() {
   );
 }
 
+const MEDAL_GRADIENT: Record<number, string> = {
+  1: "linear-gradient(145deg, #f4d675, #d9a521)",
+  2: "linear-gradient(145deg, #e6e4df, #b9b6ae)",
+  3: "linear-gradient(145deg, #e0a163, #b06a2f)",
+};
+
 function RankBadge({ rank }: { rank: number }) {
-  const medal =
-    rank === 1
-      ? "bg-amber-400/20 text-amber-300 border-amber-400/40"
-      : rank === 2
-        ? "bg-zinc-300/15 text-zinc-300 border-zinc-300/30"
-        : rank === 3
-          ? "bg-orange-500/15 text-orange-300 border-orange-400/30"
-          : "border-border text-muted-foreground";
+  if (rank <= 3) {
+    return (
+      <span
+        className="inline-grid h-8 w-8 place-items-center rounded-full text-sm font-bold text-[#2a2100] tabular-nums shadow-sm"
+        style={{ background: MEDAL_GRADIENT[rank] }}
+      >
+        {rank}
+      </span>
+    );
+  }
   return (
-    <span
-      className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full border px-1.5 text-xs font-semibold tabular-nums ${medal}`}
-    >
+    <span className="inline-grid h-8 min-w-8 place-items-center rounded-full border border-border px-1.5 text-xs font-semibold tabular-nums text-muted-foreground">
       {rank}
     </span>
   );
 }
 
-function StatCard({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
+function PodiumStand({ row, place, isMe }: { row: LeaderboardRow; place: number; isMe: boolean }) {
+  const tall = place === 1;
   return (
-    <div className="luxury-panel rounded-lg p-4">
-      <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400/10 text-amber-300">
+    <div
+      className={`rounded-t-2xl border border-b-0 px-2 py-4 text-center ${
+        tall ? "pt-6" : ""
+      } ${
+        place === 1
+          ? "border-leaf/35 bg-gradient-to-b from-leaf/12 to-transparent"
+          : "border-border bg-surface"
+      }`}
+    >
+      <span
+        className="mx-auto mb-2 grid h-9 w-9 place-items-center rounded-full text-sm font-bold text-[#2a2100] shadow-sm"
+        style={{ background: MEDAL_GRADIENT[place] }}
+      >
+        {place}
+      </span>
+      <div className="truncate text-[13px] font-semibold tracking-[-0.01em]">
+        {isMe ? "You" : row.name}
+      </div>
+      <div className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+        {row.points.toLocaleString()} pts
+      </div>
+    </div>
+  );
+}
+
+function StatTile({
+  icon,
+  label,
+  value,
+  accent = false,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: ReactNode;
+  accent?: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-border bg-surface p-4">
+      <div
+        className={`mb-3 flex h-8 w-8 items-center justify-center rounded-lg ${
+          accent ? "bg-pop/12 text-pop" : "bg-leaf/12 text-leaf"
+        }`}
+      >
         {icon}
       </div>
-      <div className="font-display text-2xl font-light">{value}</div>
-      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="font-display text-2xl font-light tabular-nums">{value}</div>
+      <div className="mt-0.5 text-xs text-muted-foreground">{label}</div>
     </div>
   );
 }

@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { BrainCircuit, ChevronRight, FileText, History, Map as MapIcon, Route } from "lucide-react";
+import { BrainCircuit, ChevronRight, FileText, History, Route } from "lucide-react";
 import { LoadingDots } from "@/components/loading-dots";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { takeLastMinuteForCoach } from "@/lib/last-minute-handoff";
 import { generateStudyPlan, type StudyRoadmapTopic } from "@/lib/studybody-client";
+import { PageHeader } from "@/components/ui/page-header";
+import { Segmented } from "@/components/ui/segmented";
 import {
   db,
   folderName,
@@ -14,6 +16,8 @@ import {
   type DocRow,
   type PlanRow,
 } from "@/lib/studybody-data";
+
+const SCOPE_OPTIONS = ["whole", "topic"] as const;
 
 function formatDate(value: string | null): string {
   if (!value) return "";
@@ -180,24 +184,16 @@ export function StudyBodyPage() {
   };
 
   return (
-    <div className="gd-coach-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 overflow-x-hidden">
-        <header className="gd-coach-header">
-          <div className="flex items-center gap-2 text-sm font-medium text-primary">
-            <MapIcon className="h-4 w-4" />
-            My Coach
-          </div>
-          <h1 className="font-display text-2xl font-light tracking-normal sm:text-3xl md:text-4xl">
-            Build a roadmap, then practice it.
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Turn your uploaded files into a study roadmap, then open it to practice with MCQs,
-            essays, mixed sets, or flash cards.
-          </p>
-        </header>
+    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 overflow-x-hidden">
+        <PageHeader
+          eyebrow="My Coach"
+          title="Build a roadmap, then practice it."
+          subtitle="Turn your uploaded files into a study roadmap, then open it to practice with MCQs, essays, mixed sets, or flash cards."
+        />
 
         {schemaMissing && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm">
+          <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm">
             <div className="font-semibold text-destructive">
               My Coach database tables are missing
             </div>
@@ -212,71 +208,57 @@ export function StudyBodyPage() {
           </div>
         )}
 
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           {/* New roadmap */}
-          <div className="luxury-panel rounded-lg p-4">
-            <div className="mb-3 flex items-center gap-2">
-              <Route className="h-4 w-4 text-primary" />
-              <h2 className="font-semibold">New roadmap</h2>
+          <div className="rounded-2xl border border-border bg-surface p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-pop/12 text-pop">
+                <Route className="h-4 w-4" />
+              </div>
+              <h2 className="text-sm font-semibold tracking-[-0.01em]">New roadmap</h2>
             </div>
-            <input
-              value={planTitle}
-              onChange={(event) => setPlanTitle(event.target.value)}
-              placeholder="Course or topic name"
-              className="mb-2 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-            />
-            <textarea
-              value={courseOutline}
-              onChange={(event) => setCourseOutline(event.target.value)}
-              placeholder="Paste course outline, or leave blank and build from selected files"
-              className="min-h-28 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-            />
+            <div className="space-y-3">
+              <input
+                value={planTitle}
+                onChange={(event) => setPlanTitle(event.target.value)}
+                placeholder="Course or topic name"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop focus:ring-2 focus:ring-pop/20"
+              />
+              <textarea
+                value={courseOutline}
+                onChange={(event) => setCourseOutline(event.target.value)}
+                placeholder="Paste course outline, or leave blank and build from selected files"
+                className="min-h-28 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop focus:ring-2 focus:ring-pop/20"
+              />
+            </div>
 
-            <div className="mt-3 space-y-2">
+            <div className="mt-4 space-y-2">
               <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 What are you learning?
               </div>
-              <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
-                <button
-                  type="button"
-                  onClick={() => setScope("whole")}
-                  className={`rounded-lg border px-2 py-2 text-sm font-medium ${
-                    scope === "whole"
-                      ? "border-primary/40 bg-primary/10 text-primary"
-                      : "border-border hover:border-primary/30"
-                  }`}
-                >
-                  The whole file
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setScope("topic")}
-                  className={`rounded-lg border px-2 py-2 text-sm font-medium ${
-                    scope === "topic"
-                      ? "border-primary/40 bg-primary/10 text-primary"
-                      : "border-border hover:border-primary/30"
-                  }`}
-                >
-                  A specific topic
-                </button>
-              </div>
+              <Segmented
+                options={SCOPE_OPTIONS}
+                value={scope}
+                onChange={setScope}
+                getLabel={(option) => (option === "whole" ? "The whole file" : "A specific topic")}
+              />
               {scope === "topic" && (
-                <>
+                <div className="space-y-2 pt-1">
                   <input
                     value={topicFocus}
                     onChange={(event) => setTopicFocus(event.target.value)}
                     placeholder="Which topic in the file? e.g. “The nephron”"
-                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop focus:ring-2 focus:ring-pop/20"
                   />
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs leading-relaxed text-muted-foreground">
                     We’ll pull only the pages about this topic, and every question and answer will
                     stay grounded on them - with the page it came from.
                   </p>
-                </>
+                </div>
               )}
             </div>
 
-            <div className="mt-3 space-y-2">
+            <div className="mt-4 space-y-2">
               <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 <span>Sources</span>
                 <span>{selectedDocIds.length} selected</span>
@@ -285,37 +267,42 @@ export function StudyBodyPage() {
                 {docs.length === 0 ? (
                   <Link
                     to="/app/library"
-                    className="block rounded-lg border border-border p-3 text-sm text-primary"
+                    className="block rounded-xl border border-dashed border-border p-3 text-sm text-pop"
                   >
                     Upload files in Library
                   </Link>
                 ) : (
-                  docs.map((doc) => (
-                    <button
-                      key={doc.id}
-                      onClick={() => toggleDoc(doc.id)}
-                      className={`flex min-w-0 w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                        selectedDocIds.includes(doc.id)
-                          ? "border-primary/40 bg-primary/10"
-                          : "border-border bg-surface/30 hover:border-primary/30"
-                      }`}
-                    >
-                      <FileText className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block break-words font-medium">{doc.file_name}</span>
-                        <span className="block break-words text-xs text-muted-foreground">
-                          {folderName(doc) || "Uncategorised"}
+                  docs.map((doc) => {
+                    const selected = selectedDocIds.includes(doc.id);
+                    return (
+                      <button
+                        key={doc.id}
+                        onClick={() => toggleDoc(doc.id)}
+                        className={`flex min-w-0 w-full items-start gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
+                          selected
+                            ? "border-pop/40 bg-pop/10"
+                            : "border-border hover:border-pop/30 hover:bg-foreground/[0.02]"
+                        }`}
+                      >
+                        <FileText
+                          className={`mt-0.5 h-4 w-4 shrink-0 ${selected ? "text-pop" : "text-muted-foreground"}`}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block break-words font-medium">{doc.file_name}</span>
+                          <span className="block break-words text-xs text-muted-foreground">
+                            {folderName(doc) || "Uncategorised"}
+                          </span>
                         </span>
-                      </span>
-                    </button>
-                  ))
+                      </button>
+                    );
+                  })
                 )}
               </div>
             </div>
             <button
               onClick={createPlan}
               disabled={loading}
-              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-60"
+              className="btn-pop mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed"
             >
               {loading ? <LoadingDots /> : <BrainCircuit className="h-4 w-4" />}
               Build roadmap
@@ -323,14 +310,16 @@ export function StudyBodyPage() {
           </div>
 
           {/* History */}
-          <div className="luxury-panel rounded-lg p-4">
-            <div className="mb-3 flex items-center gap-2">
-              <History className="h-4 w-4 text-primary" />
-              <h2 className="font-semibold">Your roadmaps</h2>
+          <div className="rounded-2xl border border-border bg-surface p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-leaf/12 text-leaf">
+                <History className="h-4 w-4" />
+              </div>
+              <h2 className="text-sm font-semibold tracking-[-0.01em]">Your roadmaps</h2>
             </div>
             <div className="space-y-2">
               {plans.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                   No roadmaps yet. Build one to start practicing.
                 </div>
               ) : (
@@ -339,7 +328,7 @@ export function StudyBodyPage() {
                     key={plan.id}
                     to="/app/practice"
                     search={{ plan: plan.id }}
-                    className="flex min-w-0 items-center gap-3 rounded-lg border border-border bg-surface/30 px-3 py-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+                    className="flex min-w-0 items-center gap-3 rounded-xl border border-border px-3 py-3 text-left transition-colors hover:border-pop/40 hover:bg-pop/5"
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block break-words font-medium">{plan.title}</span>

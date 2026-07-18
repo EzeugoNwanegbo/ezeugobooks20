@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   chunkDocumentText,
   documentPreview,
@@ -20,8 +21,6 @@ import {
   BookOpen,
   Folder,
   FolderPlus,
-  ChevronRight,
-  ChevronDown,
   MessageSquare,
   MoreVertical,
   Search,
@@ -106,6 +105,10 @@ export function LibraryPage() {
   const [chosenFolder, setChosenFolder] = useState<string>("");
   const [newFolderName, setNewFolderName] = useState<string>("");
   const [saving, setSaving] = useState(false);
+  // Purely-visual: which folder chip is selected in the new pill-filter bar
+  // ("all" | "__none" | a folder id). Replaces the old per-folder accordion
+  // as the way documents are scoped on screen.
+  const [activeFolder, setActiveFolder] = useState<string>("all");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const applyLibraryData = (nextFolders: FolderRow[], nextDocs: DocRow[]) => {
@@ -213,6 +216,20 @@ export function LibraryPage() {
     () => Object.values(grouped).reduce((total, list) => total + list.length, 0),
     [grouped],
   );
+
+  // Display-only lookup (original-case folder name) for the "folder · N
+  // pages" line on each document card.
+  const folderNameById = useMemo(() => new Map(folders.map((f) => [f.id, f.name])), [folders]);
+
+  // Flat list of documents to show in the card grid: everything (already
+  // search-filtered by `grouped`) when "All" is selected, or just the
+  // selected folder's/Uncategorised's documents.
+  const visibleDocs = useMemo(() => {
+    if (activeFolder === "all") return Object.values(grouped).flat();
+    return grouped[activeFolder] ?? [];
+  }, [grouped, activeFolder]);
+
+  const activeFolderObj = folders.find((f) => f.id === activeFolder) ?? null;
 
   // Hands a large scanned PDF (> 50 pages, no text layer) to the server-side
   // OCR queue: upload the real bytes + enqueue page-range jobs, then babysit
@@ -802,38 +819,58 @@ export function LibraryPage() {
   };
 
   return (
-    <div className="gd-library-page flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-5xl px-3 py-5 sm:px-4 sm:py-8 md:px-8">
+    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
         {isOnboarding && docs.length === 0 && (
-          <div className="mb-8 rounded-lg bg-primary/10 border border-primary/20 p-6 text-center animate-in fade-in slide-in-from-top-4 duration-500">
-            <Sparkles className="h-8 w-8 text-primary mx-auto mb-3" />
-            <h2 className="text-xl font-display font-light mb-2">Welcome to G&D!</h2>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
+          <div className="rounded-2xl border border-pop/20 bg-pop/10 p-6 text-center animate-in fade-in slide-in-from-top-4 duration-500">
+            <Sparkles className="mx-auto mb-3 h-8 w-8 text-pop" />
+            <h2 className="mb-2 font-display text-xl font-light">Welcome to G&D!</h2>
+            <p className="mx-auto max-w-md text-sm text-muted-foreground">
               Your library is where you store the PDFs and notes you want to study. Upload your
               first file below to see how G&D uses them to answer your questions.
             </p>
           </div>
         )}
-        <div className="gd-library-header mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <div className="gd-page-kicker"><BookOpen className="h-3.5 w-3.5" /> Your source shelf</div>
-            <h1 className="mt-3 font-display text-4xl font-light leading-none sm:text-5xl">
-              Your library
-            </h1>
-            <p className="mt-2 max-w-lg text-sm text-muted-foreground sm:mt-1">
-              Upload large files so G&D can search them and point answers back to the source.
-            </p>
-          </div>
-          <button
-            onClick={createFolder}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-surface/60 px-3 py-2 text-sm font-medium transition-colors hover:border-primary/40 hover:text-primary sm:w-auto"
-          >
-            <FolderPlus className="h-4 w-4" />
-            New folder
-          </button>
-        </div>
 
-        {/* Upload card */}
+        <PageHeader
+          eyebrow="Library"
+          title="Your study material"
+          subtitle="Upload large files so G&D can search them and point answers back to the source."
+          actions={
+            <>
+              {docs.length > 0 && (
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search documents and folders..."
+                    className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-3 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/45 sm:w-64"
+                  />
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={createFolder}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:border-pop/40 hover:text-pop"
+              >
+                <FolderPlus className="h-4 w-4" />
+                New folder
+              </button>
+              <button
+                type="button"
+                onClick={openFilePicker}
+                disabled={uploading}
+                className="btn-pop inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed"
+              >
+                <Upload className="h-4 w-4" />
+                Upload
+              </button>
+            </>
+          }
+        />
+
+        {/* Upload dropzone */}
         <div
           role="button"
           tabIndex={0}
@@ -846,20 +883,20 @@ export function LibraryPage() {
           }}
           onDragOver={(e) => {
             e.preventDefault();
-            e.currentTarget.classList.add("border-primary", "bg-primary/10");
+            e.currentTarget.classList.add("border-pop", "bg-pop/[0.14]");
           }}
           onDragLeave={(e) => {
-            e.currentTarget.classList.remove("border-primary", "bg-primary/10");
+            e.currentTarget.classList.remove("border-pop", "bg-pop/[0.14]");
           }}
           onDrop={(e) => {
             e.preventDefault();
-            e.currentTarget.classList.remove("border-primary", "bg-primary/10");
+            e.currentTarget.classList.remove("border-pop", "bg-pop/[0.14]");
             const files = Array.from(e.dataTransfer.files ?? []);
             if (files.length) onUploadFiles(files);
           }}
-          className={`gd-library-dropzone block cursor-pointer rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 p-5 text-center transition-all hover:border-primary hover:bg-primary/10 sm:p-8 ${
+          className={`block cursor-pointer rounded-2xl border-2 border-dashed border-pop/35 bg-pop/10 p-5 text-center transition-all duration-200 hover:border-pop/60 hover:bg-pop/[0.14] sm:p-8 ${
             uploading ? "pointer-events-none opacity-70" : ""
-          } ${isOnboarding && docs.length === 0 ? "ring-2 ring-primary ring-offset-4 ring-offset-background animate-pulse shadow-glow" : ""}`}
+          } ${isOnboarding && docs.length === 0 ? "ring-2 ring-pop ring-offset-4 ring-offset-background animate-pulse" : ""}`}
         >
           <input
             id="file-up"
@@ -875,9 +912,9 @@ export function LibraryPage() {
             }}
           />
           {uploading ? (
-            <div className="flex w-full max-w-sm flex-col items-center gap-2.5 text-sm">
+            <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-2.5 text-sm">
               <div
-                className="h-2 w-full overflow-hidden rounded-full bg-primary/15"
+                className="h-2 w-full overflow-hidden rounded-full bg-pop/15"
                 role="progressbar"
                 aria-valuemin={0}
                 aria-valuemax={100}
@@ -885,7 +922,7 @@ export function LibraryPage() {
                 aria-label="Upload progress"
               >
                 <div
-                  className={`h-full rounded-full bg-primary transition-[width] duration-200 ease-out ${
+                  className={`h-full rounded-full bg-pop transition-[width] duration-200 ease-out ${
                     uploadBar?.percent == null ? "w-full animate-pulse" : ""
                   }`}
                   style={uploadBar?.percent != null ? { width: `${uploadBar.percent}%` } : undefined}
@@ -904,14 +941,14 @@ export function LibraryPage() {
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg border-2 border-primary/40 bg-primary/15 sm:h-14 sm:w-14">
-                <Upload className="h-6 w-6 text-primary sm:h-7 sm:w-7" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-pop/12 text-pop sm:h-14 sm:w-14">
+                <Upload className="h-6 w-6 sm:h-7 sm:w-7" />
               </div>
               <div>
-                <div className="text-base font-bold text-primary sm:text-lg">
+                <div className="text-base font-semibold text-pop sm:text-lg">
                   {isOnboarding && docs.length === 0
                     ? "Tap here to upload your first file"
-                    : "Upload files"}
+                    : "Drag files here, or click to browse"}
                 </div>
                 <div className="mt-1 text-sm text-muted-foreground">
                   PDF, Word, PowerPoint, text, or image - pick several at once, drag & drop or tap to
@@ -924,7 +961,7 @@ export function LibraryPage() {
                   e.stopPropagation();
                   openFilePicker();
                 }}
-                className="inline-flex items-center gap-2 rounded-lg bg-gradient-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-glow"
+                className="btn-pop inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold"
               >
                 <Upload className="h-4 w-4" />
                 Upload files
@@ -937,17 +974,14 @@ export function LibraryPage() {
             small page-range jobs. This banner tracks each one so the user can
             keep uploading (or leave) while the queue drains. */}
         {Object.keys(serverOcr).length > 0 && (
-          <div className="mt-4 space-y-2">
+          <div className="space-y-2">
             {Object.entries(serverOcr).map(([docId, job]) => {
               const percent =
                 job.pagesTotal && job.pagesTotal > 0
                   ? Math.min(100, Math.round((job.pagesDone / job.pagesTotal) * 100))
                   : null;
               return (
-                <div
-                  key={docId}
-                  className="rounded-lg border border-border bg-surface/60 p-3 text-sm"
-                >
+                <div key={docId} className="rounded-2xl border border-border bg-surface p-3 text-sm">
                   <div className="flex items-center justify-between gap-2">
                     <span className="min-w-0 truncate font-medium">{job.fileName}</span>
                     {job.status !== "processing" && (
@@ -972,7 +1006,7 @@ export function LibraryPage() {
                   ) : (
                     <>
                       <div
-                        className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-primary/15"
+                        className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-pop/15"
                         role="progressbar"
                         aria-valuemin={0}
                         aria-valuemax={100}
@@ -980,7 +1014,7 @@ export function LibraryPage() {
                         aria-label="Server OCR progress"
                       >
                         <div
-                          className={`h-full rounded-full bg-primary transition-[width] duration-500 ease-out ${
+                          className={`h-full rounded-full bg-pop transition-[width] duration-500 ease-out ${
                             percent == null ? "w-full animate-pulse" : ""
                           }`}
                           style={percent != null ? { width: `${percent}%` } : undefined}
@@ -1001,93 +1035,134 @@ export function LibraryPage() {
           </div>
         )}
 
-        {/* Search */}
-        {docs.length > 0 && (
-          <div className="relative mt-6 sm:mt-8">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search documents and folders..."
-              className="h-11 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-            />
+        {/* Folder filter chips + document grid */}
+        {docs.length === 0 && folders.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border py-14 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-pop/10 text-pop">
+              <BookOpen className="h-6 w-6" />
+            </div>
+            <p className="text-sm font-semibold text-foreground">No documents yet</p>
+            <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
+              Upload your first PDF or notes above and G&D will index it for search and chat.
+            </p>
+            <button
+              type="button"
+              onClick={openFilePicker}
+              className="btn-pop mt-5 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold"
+            >
+              <Upload className="h-4 w-4" />
+              Upload your first file
+            </button>
           </div>
-        )}
-
-        {/* Folder list */}
-        <div className="mt-4 space-y-4 sm:mt-6">
-          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <BookOpen className="h-3.5 w-3.5" />
-            {docs.length} {docs.length === 1 ? "document" : "documents"} · {folders.length}{" "}
-            {folders.length === 1 ? "folder" : "folders"}
-          </div>
-
-          {docs.length === 0 && folders.length === 0 ? (
-            <div className="py-10 text-center sm:py-12">
-              <p className="text-sm text-muted-foreground">No documents yet.</p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={openFilePicker}
-                className="mt-5 inline-flex items-center gap-2 rounded-lg bg-gradient-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-glow"
+                onClick={() => setActiveFolder("all")}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  activeFolder === "all"
+                    ? "border-pop/45 bg-pop/10 text-pop"
+                    : "border-border text-muted-foreground hover:border-pop/30 hover:text-foreground"
+                }`}
               >
-                <Upload className="h-4 w-4" />
-                Upload Your First File
+                All
+                <span className="tabular-nums opacity-70">{docs.length}</span>
               </button>
-            </div>
-          ) : query.trim() && matchCount === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground sm:py-12">
-              No documents match "{query}".
-            </p>
-          ) : (
-            <div className="space-y-3">
               {folders.map((f) => {
-                const folderDocs = grouped[f.id] || [];
-                // While searching, hide folders that have no matching documents.
-                if (query.trim() && folderDocs.length === 0) return null;
+                const count = (grouped[f.id] || []).length;
+                const active = activeFolder === f.id;
                 return (
-                  <FolderBlock
+                  <button
                     key={f.id}
-                    folder={f}
-                    docs={folderDocs}
-                    open={!!openFolders[f.id] || !!query.trim()}
-                    onToggle={() => toggleFolder(f.id)}
-                    onRename={() => renameFolder(f)}
-                    onDelete={() => deleteFolder(f)}
-                    onDeleteDoc={onDelete}
-                    onMoveDoc={moveDoc}
-                    allFolders={folders}
-                  />
+                    type="button"
+                    onClick={() => setActiveFolder(f.id)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                      active
+                        ? "border-pop/45 bg-pop/10 text-pop"
+                        : "border-border text-muted-foreground hover:border-pop/30 hover:text-foreground"
+                    }`}
+                  >
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: f.color || "var(--pop)" }}
+                    />
+                    {f.name}
+                    <span className="tabular-nums opacity-70">{count}</span>
+                  </button>
                 );
               })}
               {(grouped.__none || []).length > 0 && (
-                <FolderBlock
-                  folder={{
-                    id: "__none",
-                    name: "Uncategorised",
-                    color: null,
-                  }}
-                  docs={grouped.__none || []}
-                  open={!!openFolders.__none || !!query.trim()}
-                  onToggle={() => toggleFolder("__none")}
-                  onDeleteDoc={onDelete}
-                  onMoveDoc={moveDoc}
-                  allFolders={folders}
-                  isUncategorised
-                />
+                <button
+                  type="button"
+                  onClick={() => setActiveFolder("__none")}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    activeFolder === "__none"
+                      ? "border-pop/45 bg-pop/10 text-pop"
+                      : "border-border text-muted-foreground hover:border-pop/30 hover:text-foreground"
+                  }`}
+                >
+                  <span className="h-2 w-2 shrink-0 rounded-full border border-border" />
+                  Uncategorised
+                  <span className="tabular-nums opacity-70">{(grouped.__none || []).length}</span>
+                </button>
               )}
             </div>
-          )}
-        </div>
+
+            {activeFolderObj && (
+              <div className="-mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                <button
+                  type="button"
+                  onClick={() => renameFolder(activeFolderObj)}
+                  className="underline-offset-2 transition-colors hover:text-foreground hover:underline"
+                >
+                  Rename folder
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deleteFolder(activeFolderObj)}
+                  className="transition-colors hover:text-destructive"
+                >
+                  Delete folder
+                </button>
+              </div>
+            )}
+
+            {query.trim() && matchCount === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground sm:py-12">
+                No documents match "{query}".
+              </p>
+            ) : visibleDocs.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground sm:py-12">
+                Nothing in this folder yet.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {visibleDocs.map((d) => (
+                  <DocumentCard
+                    key={d.id}
+                    doc={d}
+                    folderName={d.folder_id ? (folderNameById.get(d.folder_id) ?? "Folder") : "Uncategorised"}
+                    isProcessing={!!serverOcr[d.id]}
+                    allFolders={folders}
+                    onDelete={onDelete}
+                    onMove={moveDoc}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Folder assignment modal */}
       {pendingBatch && pendingBatch.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 p-4">
-          <div className="luxury-panel max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-lg p-5 shadow-elegant sm:p-6">
+          <div className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-surface p-5 shadow-lg sm:p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
-                  <Folder className="h-4 w-4 text-primary" />
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-pop/10 text-pop">
+                  <Folder className="h-4 w-4" />
                 </span>
                 <div>
                   <div className="font-display text-xl font-light">Save to folder</div>
@@ -1108,10 +1183,10 @@ export function LibraryPage() {
             </div>
 
             {pendingBatch.length > 1 && (
-              <ul className="mb-4 max-h-32 space-y-1 overflow-y-auto rounded-lg border border-border bg-surface/30 p-2 text-xs">
+              <ul className="mb-4 max-h-32 space-y-1 overflow-y-auto rounded-xl border border-border bg-background/40 p-2 text-xs">
                 {pendingBatch.map((item, index) => (
                   <li key={index} className="flex items-center gap-1.5 text-muted-foreground">
-                    <FileText className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    <FileText className="h-3.5 w-3.5 shrink-0 text-pop" />
                     <span className="min-w-0 flex-1 truncate">{item.fileName}</span>
                   </li>
                 ))}
@@ -1122,7 +1197,7 @@ export function LibraryPage() {
             <select
               value={chosenFolder}
               onChange={(e) => setChosenFolder(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/45"
             >
               <option value="__new">+ New folder...</option>
               <option value="__none">Uncategorised</option>
@@ -1139,7 +1214,7 @@ export function LibraryPage() {
                 onChange={(e) => setNewFolderName(e.target.value)}
                 placeholder="Folder name"
                 autoFocus
-                className="mt-2 w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="mt-2 w-full px-3 py-2 rounded-xl border border-input bg-background text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/45"
               />
             )}
 
@@ -1147,7 +1222,7 @@ export function LibraryPage() {
               <button
                 onClick={cancelAssign}
                 disabled={saving}
-                className="px-4 py-2 text-sm rounded-lg border border-border hover:bg-surface-elevated transition-colors disabled:opacity-40 disabled:cursor-not-allowed sm:mr-auto"
+                className="px-4 py-2 text-sm rounded-xl border border-border hover:bg-surface-elevated transition-colors disabled:opacity-40 disabled:cursor-not-allowed sm:mr-auto"
               >
                 Cancel
               </button>
@@ -1156,14 +1231,14 @@ export function LibraryPage() {
                   <button
                     onClick={() => void confirmAssign(false)}
                     disabled={saving}
-                    className="px-4 py-2 text-sm rounded-lg border border-border font-medium hover:bg-surface-elevated transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="px-4 py-2 text-sm rounded-xl border border-border font-medium hover:bg-surface-elevated transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Save to Library
                   </button>
                   <button
                     onClick={() => void confirmAssign(true)}
                     disabled={saving}
-                    className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="btn-pop inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-xl font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     {saving ? (
                       <LoadingDots />
@@ -1177,7 +1252,7 @@ export function LibraryPage() {
                 <button
                   onClick={() => void confirmAssign(false)}
                   disabled={saving}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="btn-pop inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-xl font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {saving ? (
                     <LoadingDots />
@@ -1195,143 +1270,101 @@ export function LibraryPage() {
   );
 }
 
-function FolderBlock({
-  folder,
-  docs,
-  open,
-  onToggle,
-  onRename,
-  onDelete,
-  onDeleteDoc,
-  onMoveDoc,
+function DocumentCard({
+  doc,
+  folderName,
+  isProcessing,
   allFolders,
-  isUncategorised,
+  onDelete,
+  onMove,
 }: {
-  folder: FolderRow;
-  docs: DocRow[];
-  open: boolean;
-  onToggle: () => void;
-  onRename?: () => void;
-  onDelete?: () => void;
-  onDeleteDoc: (doc: DocRow) => void;
-  onMoveDoc: (docId: string, folderId: string | null) => void;
+  doc: DocRow;
+  folderName: string;
+  isProcessing: boolean;
   allFolders: FolderRow[];
-  isUncategorised?: boolean;
+  onDelete: (doc: DocRow) => void;
+  onMove: (docId: string, folderId: string | null) => void;
 }) {
-  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const meta = [folderName, doc.page_count ? `${doc.page_count} pages` : null]
+    .filter(Boolean)
+    .join(" · ");
   return (
-    <div className="luxury-panel overflow-visible rounded-lg">
-      <div className="flex items-center gap-2 px-3 py-2.5 sm:px-4">
-        <button onClick={onToggle} className="flex items-center gap-2 flex-1 min-w-0 text-left">
-          {open ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+    <div className="group relative flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-lg">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-pop/10 text-pop">
+          <FileText className="h-5 w-5" />
+        </div>
+        <div className="relative shrink-0">
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            className="rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-surface-elevated hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+            aria-label="Document actions"
+          >
+            <MoreVertical className="h-4 w-4" />
+          </button>
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+              <div className="absolute right-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
+                <div className="border-b border-border px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Move to
+                </div>
+                <button
+                  onClick={() => {
+                    onMove(doc.id, null);
+                    setMenuOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-elevated"
+                >
+                  <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+                  Uncategorised
+                </button>
+                {allFolders
+                  .filter((f) => f.id !== doc.folder_id)
+                  .map((f) => (
+                    <button
+                      key={f.id}
+                      onClick={() => {
+                        onMove(doc.id, f.id);
+                        setMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-elevated"
+                    >
+                      <Folder className="h-3.5 w-3.5 text-pop" />
+                      {f.name}
+                    </button>
+                  ))}
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onDelete(doc);
+                  }}
+                  className="flex w-full items-center gap-2 border-t border-border px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </button>
+              </div>
+            </>
           )}
-          <Folder
-            className={`h-4 w-4 ${isUncategorised ? "text-muted-foreground" : "text-primary"}`}
-          />
-          <span className="font-semibold text-sm truncate">{folder.name}</span>
-          <span className="text-xs text-muted-foreground">({docs.length})</span>
-        </button>
-        {!isUncategorised && (
-          <div className="flex shrink-0 items-center gap-1">
-            <button
-              onClick={onRename}
-              className="hidden rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-surface-elevated hover:text-foreground sm:inline-flex"
-            >
-              Rename
-            </button>
-            <button
-              onClick={onDelete}
-              className="p-1.5 text-muted-foreground hover:text-destructive rounded-md hover:bg-destructive/10"
-              title="Delete folder"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
+        </div>
       </div>
-      {open && (
-        <ul className="border-t border-border divide-y divide-border">
-          {docs.length === 0 ? (
-            <li className="px-4 py-4 text-xs text-muted-foreground italic">Empty</li>
-          ) : (
-            docs.map((d) => (
-              <li
-                key={d.id}
-                className="relative flex items-center gap-2.5 px-3 py-3 transition-colors hover:bg-surface-elevated/50 sm:gap-3 sm:px-4"
-              >
-                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/10">
-                  <FileText className="h-4 w-4 text-primary" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm truncate">{d.file_name}</div>
-                  <div className="mt-0.5 flex flex-wrap gap-x-1 text-xs text-muted-foreground">
-                    {d.page_count ? `${d.page_count} pages - ` : ""}
-                    {d.file_size ? `${(d.file_size / 1024 / 1024).toFixed(2)} MB` : ""}
-                    {" - "}
-                    {new Date(d.created_at).toLocaleDateString()}
-                  </div>
-                </div>
-                <div className="relative">
-                  <button
-                    onClick={() => setMenuFor(menuFor === d.id ? null : d.id)}
-                    className="p-1.5 rounded-md text-muted-foreground hover:bg-surface-elevated"
-                  >
-                    <MoreVertical className="h-4 w-4" />
-                  </button>
-                  {menuFor === d.id && (
-                    <>
-                      <div className="fixed inset-0 z-10" onClick={() => setMenuFor(null)} />
-                      <div className="absolute right-0 top-full mt-1 z-20 w-52 rounded-lg border border-border bg-surface shadow-elegant overflow-hidden">
-                        <div className="px-3 py-2 text-[10px] uppercase font-semibold tracking-wider text-muted-foreground border-b border-border">
-                          Move to
-                        </div>
-                        <button
-                          onClick={() => {
-                            onMoveDoc(d.id, null);
-                            setMenuFor(null);
-                          }}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-surface-elevated flex items-center gap-2"
-                        >
-                          <Folder className="h-3.5 w-3.5 text-muted-foreground" />
-                          Uncategorised
-                        </button>
-                        {allFolders
-                          .filter((f) => f.id !== d.folder_id)
-                          .map((f) => (
-                            <button
-                              key={f.id}
-                              onClick={() => {
-                                onMoveDoc(d.id, f.id);
-                                setMenuFor(null);
-                              }}
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-surface-elevated flex items-center gap-2"
-                            >
-                              <Folder className="h-3.5 w-3.5 text-primary" />
-                              {f.name}
-                            </button>
-                          ))}
-                        <button
-                          onClick={() => {
-                            setMenuFor(null);
-                            onDeleteDoc(d);
-                          }}
-                          className="w-full text-left px-3 py-2 text-sm text-destructive hover:bg-destructive/10 border-t border-border flex items-center gap-2"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Delete
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </li>
-            ))
-          )}
-        </ul>
-      )}
+
+      <div className="min-w-0">
+        <div className="truncate text-sm font-semibold tracking-[-0.01em]" title={doc.file_name}>
+          {doc.file_name}
+        </div>
+        <div className="mt-1 truncate text-xs text-muted-foreground">{meta}</div>
+      </div>
+
+      <span
+        className={`inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+          isProcessing ? "bg-pop/12 text-pop" : "bg-leaf/12 text-leaf"
+        }`}
+      >
+        {isProcessing ? "Processing" : "Indexed"}
+      </span>
     </div>
   );
 }

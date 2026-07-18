@@ -16,6 +16,7 @@ import { LoadingDots } from "@/components/loading-dots";
 import { useAuth } from "@/lib/auth-context";
 import { stageLastMinuteForCoach } from "@/lib/last-minute-handoff";
 import { supabase } from "@/integrations/supabase/client";
+import { PageHeader } from "@/components/ui/page-header";
 
 type Doc = {
   id: string;
@@ -263,64 +264,46 @@ export function LastMinutePage() {
   };
 
   return (
-    <div className="gd-last-minute-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
-        <header className="gd-last-minute-header rounded-lg border border-border/70 bg-surface/70 px-4 py-5 sm:px-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <div className="flex items-center gap-2 text-sm font-semibold text-primary">
-                <TimerReset className="h-4 w-4" />
-                Last Minute
-              </div>
-              <h1 className="mt-2 font-display text-2xl font-light tracking-normal sm:text-3xl md:text-4xl">
-                Build one clean study guide from your lecture files.
-              </h1>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                Choose files from the same course and G&amp;D will connect related concepts,
-                remove repeated explanations, balance overlaps, and organize everything by topic.
-              </p>
-            </div>
+    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+        <PageHeader
+          eyebrow="Last minute"
+          title="Build one clean study guide from your lecture files."
+          subtitle="Choose files from the same course and G&D will connect related concepts, remove repeated explanations, balance overlaps, and organize everything by topic."
+          actions={
             <button
               type="button"
               onClick={() => navigate({ to: "/app/library" })}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-foreground/[0.04]"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-foreground/[0.04]"
             >
               <BookOpen className="h-4 w-4" />
               Open Library
             </button>
-          </div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-3">
-            <div className="rounded-lg border border-border/70 bg-background/50 px-3 py-2">
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Accepted</div>
-              <div className="mt-0.5 text-sm font-medium">PDF, PowerPoint, Word, text</div>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background/50 px-3 py-2">
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Limit</div>
-              <div className="mt-0.5 text-sm font-medium">Up to {MAX_DOCS} files</div>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background/50 px-3 py-2">
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Best results</div>
-              <div className="mt-0.5 text-sm font-medium">Same course or subject</div>
-            </div>
-          </div>
-        </header>
+          }
+        />
+
+        <section className="grid gap-3 sm:grid-cols-3">
+          <InfoTile label="Accepted" value="PDF, PowerPoint, Word, text" />
+          <InfoTile label="Limit" value={`Up to ${MAX_DOCS} files`} />
+          <InfoTile label="Best results" value="Same course or subject" />
+        </section>
 
         <section className="grid gap-4 lg:grid-cols-[minmax(22rem,0.9fr)_minmax(0,1.4fr)]">
           <aside className="flex flex-col gap-4">
-            <div className="luxury-panel rounded-lg p-4">
+            <div className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="font-semibold">Study set</h2>
+                  <h2 className="text-sm font-semibold tracking-[-0.01em]">Study set</h2>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                     Use related materials only. Mixing unrelated courses makes the synthesis weaker.
                   </p>
                 </div>
-                <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                <span className="shrink-0 rounded-full bg-pop/10 px-2.5 py-1 text-xs font-semibold text-pop">
                   {selected.length}/{MAX_DOCS}
                 </span>
               </div>
 
-              <div className="mt-4 rounded-lg border border-dashed border-border bg-background/40 p-3">
+              <div className="mt-4 rounded-xl border border-dashed border-border bg-background/40 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Selected files
                 </div>
@@ -328,14 +311,14 @@ export function LastMinutePage() {
                   <div className="mt-2 space-y-1.5">
                     {selectedDocs.map((doc) => (
                       <div key={doc.id} className="flex min-w-0 items-center gap-2 text-sm">
-                        <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        <Check className="h-3.5 w-3.5 shrink-0 text-pop" />
                         <span className="truncate">{doc.file_name}</span>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Pick files from the Library list to start building your synthesis.
+                    Pick files from the list to start building your synthesis.
                   </p>
                 )}
               </div>
@@ -344,15 +327,15 @@ export function LastMinutePage() {
                 type="button"
                 onClick={generate}
                 disabled={generating || selected.length === 0}
-                className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-45"
+                className="btn-pop mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-opacity disabled:opacity-45"
               >
                 {generating ? <LoadingDots /> : <TimerReset className="h-4 w-4" />}
                 {generating ? "Generating Master Note" : "Generate Master Note"}
               </button>
             </div>
 
-            <div className="luxury-panel rounded-lg p-4">
-              <h2 className="font-semibold">Progress</h2>
+            <div className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
+              <h2 className="text-sm font-semibold tracking-[-0.01em]">Progress</h2>
               <div className="mt-4 space-y-3">
                 {PROGRESS_STEPS.map((step, index) => {
                   const active = index <= progressIndex && (generating || note);
@@ -360,11 +343,11 @@ export function LastMinutePage() {
                   return (
                     <div key={step} className="flex items-start gap-3">
                       <span
-                        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold ${
+                        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold transition-colors duration-150 ${
                           complete
-                            ? "border-primary bg-primary text-primary-foreground"
+                            ? "border-pop bg-pop text-pop-foreground"
                             : active
-                              ? "border-primary text-primary"
+                              ? "border-pop text-pop"
                               : "border-border text-muted-foreground"
                         }`}
                       >
@@ -380,10 +363,10 @@ export function LastMinutePage() {
             </div>
           </aside>
 
-          <div className="luxury-panel rounded-lg p-4">
+          <div className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
             <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 className="font-semibold">Choose study files</h2>
+                <h2 className="text-sm font-semibold tracking-[-0.01em]">Choose study files</h2>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {readyDocs.length} ready file{readyDocs.length === 1 ? "" : "s"} available. PDFs and
                   PowerPoints should be {MAX_PAGES} pages or slides or fewer.
@@ -399,13 +382,13 @@ export function LastMinutePage() {
                 <LoadingDots />
               </div>
             ) : docs.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-border p-8 text-center">
+              <div className="rounded-xl border border-dashed border-border p-8 text-center">
                 <BookOpen className="mx-auto h-8 w-8 text-muted-foreground" />
                 <p className="mt-2 text-sm text-muted-foreground">Upload study files to your Library first.</p>
                 <button
                   type="button"
                   onClick={() => navigate({ to: "/app/library" })}
-                  className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+                  className="btn-pop mt-4 rounded-xl px-4 py-2 text-sm font-medium"
                 >
                   Open Library
                 </button>
@@ -422,17 +405,17 @@ export function LastMinutePage() {
                       key={doc.id}
                       type="button"
                       onClick={() => toggleDoc(doc)}
-                      className={`flex min-h-[5.75rem] items-start gap-3 rounded-lg border p-3 text-left transition-colors ${
+                      className={`flex min-h-[5.75rem] items-start gap-3 rounded-xl border p-3 text-left transition-colors duration-150 ${
                         selectedDoc
-                          ? "border-primary/50 bg-primary/10"
+                          ? "border-pop/50 bg-pop/10"
                           : reason
-                            ? "border-border bg-surface-lowest opacity-60"
-                            : "border-border bg-surface-lowest hover:border-primary/30 hover:bg-surface-elevated"
+                            ? "border-border bg-background/40 opacity-60"
+                            : "border-border bg-background/40 hover:border-pop/30 hover:bg-foreground/[0.02]"
                       }`}
                     >
                       <span
                         className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${
-                          selectedDoc ? "border-primary bg-primary text-primary-foreground" : "border-border"
+                          selectedDoc ? "border-pop bg-pop text-pop-foreground" : "border-border"
                         }`}
                       >
                         {selectedDoc ? <Check className="h-3.5 w-3.5" /> : null}
@@ -460,7 +443,7 @@ export function LastMinutePage() {
                                   {reason}
                                 </span>
                               ) : (
-                                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-emerald-600">
+                                <span className="rounded-full bg-leaf/12 px-2 py-0.5 text-leaf">
                                   Ready
                                 </span>
                               )}
@@ -477,10 +460,10 @@ export function LastMinutePage() {
         </section>
 
         {note ? (
-          <section className="luxury-panel rounded-lg p-4 sm:p-5">
+          <section className="rounded-2xl border border-border bg-surface p-4 sm:p-6">
             <div className="flex flex-col gap-3 border-b border-border pb-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <h2 className="text-lg font-semibold">{title}</h2>
+                <h2 className="text-lg font-semibold tracking-[-0.01em]">{title}</h2>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Built from {selectedDocs.length} selected file{selectedDocs.length === 1 ? "" : "s"}.
                 </p>
@@ -489,7 +472,7 @@ export function LastMinutePage() {
                 <button
                   type="button"
                   onClick={() => downloadBlob(new Blob([note], { type: "text/markdown" }), `${safeName}.md`)}
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-foreground/[0.04]"
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium transition-colors hover:bg-foreground/[0.04]"
                 >
                   <Download className="h-3.5 w-3.5" />
                   Markdown
@@ -497,7 +480,7 @@ export function LastMinutePage() {
                 <button
                   type="button"
                   onClick={() => downloadBlob(markdownToDocx(note), `${safeName}.docx`)}
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-foreground/[0.04]"
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium transition-colors hover:bg-foreground/[0.04]"
                 >
                   <Download className="h-3.5 w-3.5" />
                   DOCX
@@ -505,7 +488,7 @@ export function LastMinutePage() {
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-foreground/[0.04]"
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium transition-colors hover:bg-foreground/[0.04]"
                 >
                   <Download className="h-3.5 w-3.5" />
                   PDF
@@ -514,11 +497,11 @@ export function LastMinutePage() {
             </div>
 
             <div className="grid gap-4 pt-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-              <div className="ai-response-document medai-prose max-w-none rounded-lg border border-border bg-background/40 p-4 text-sm">
+              <div className="ai-response-document medai-prose max-w-none rounded-xl border border-border bg-background/40 p-4 text-sm">
                 <ReactMarkdown>{note}</ReactMarkdown>
               </div>
-              <div className="rounded-lg border border-primary/20 bg-primary/10 p-4">
-                <GraduationCap className="h-5 w-5 text-primary" />
+              <div className="rounded-xl border border-pop/20 bg-pop/10 p-4">
+                <GraduationCap className="h-5 w-5 text-pop" />
                 <h3 className="mt-3 font-semibold">Continue Learning with My Coach</h3>
                 <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
                   Take this master note into My Coach to build a roadmap, generate practice, and
@@ -537,7 +520,7 @@ export function LastMinutePage() {
                     }
                     navigate({ to: "/app/studybody" });
                   }}
-                  className="mt-4 w-full rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+                  className="btn-pop mt-4 w-full rounded-xl px-4 py-2 text-sm font-semibold"
                 >
                   Open in My Coach
                 </button>
@@ -546,6 +529,15 @@ export function LastMinutePage() {
           </section>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function InfoTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-border bg-surface px-4 py-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-1 text-sm font-medium text-foreground">{value}</div>
     </div>
   );
 }

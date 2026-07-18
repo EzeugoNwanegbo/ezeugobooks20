@@ -7,6 +7,8 @@ import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { PERSONALIZATION_PROMPT } from "@/lib/personalization";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { PageHeader } from "@/components/ui/page-header";
+import { Segmented } from "@/components/ui/segmented";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -149,19 +151,17 @@ export function SettingsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <div className="mx-auto max-w-2xl px-3 py-5 sm:px-4 sm:py-8 md:px-8">
-        <div className="mb-6 sm:mb-8">
-          <h1 className="font-display text-4xl font-light leading-none sm:text-5xl">Settings</h1>
-          <p className="mt-2 text-sm text-muted-foreground sm:mt-1">
-            Personalize how G&D answers and manage your account.
-          </p>
-        </div>
+      <div className="mx-auto flex max-w-2xl flex-col gap-4 px-3 py-5 sm:px-4 sm:py-8 sm:gap-5 md:px-8">
+        <PageHeader
+          eyebrow="Settings"
+          title="Settings"
+          subtitle="Personalize how G&D answers and manage your account."
+          className="mb-2 sm:mb-3"
+        />
 
         {/* Profile */}
-        <section className="luxury-panel rounded-lg p-5 sm:p-6">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-primary-glow">
-            Your profile
-          </h2>
+        <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-pop">Your profile</h2>
 
           <div className="mt-4 space-y-4">
             <div>
@@ -170,7 +170,7 @@ export function SettingsPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Your full name"
-                className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
               />
             </div>
 
@@ -182,7 +182,7 @@ export function SettingsPage() {
                 value={university}
                 onChange={(e) => setUniversity(e.target.value)}
                 placeholder="Where you study"
-                className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
               />
             </div>
 
@@ -194,9 +194,9 @@ export function SettingsPage() {
                     key={item}
                     type="button"
                     onClick={() => setYear(item)}
-                    className={`rounded-lg border px-2 py-2 text-sm font-medium transition-colors ${
+                    className={`rounded-xl border px-2 py-2 text-sm font-medium transition-colors ${
                       year === item
-                        ? "border-primary bg-primary/15 text-primary"
+                        ? "border-pop/45 bg-pop/10 text-pop"
                         : "border-border bg-background hover:bg-surface-elevated"
                     }`}
                   >
@@ -214,9 +214,9 @@ export function SettingsPage() {
                     key={item.value}
                     type="button"
                     onClick={() => setExamFormat(item.value)}
-                    className={`rounded-lg border py-2.5 text-sm font-semibold transition-colors ${
+                    className={`rounded-xl border py-2.5 text-sm font-semibold transition-colors ${
                       examFormat === item.value
-                        ? "border-primary bg-primary/15 text-primary"
+                        ? "border-pop/45 bg-pop/10 text-pop"
                         : "border-border bg-background hover:bg-surface-elevated"
                     }`}
                   >
@@ -230,29 +230,19 @@ export function SettingsPage() {
               <label className="text-xs font-medium text-muted-foreground">
                 Default explanation style
               </label>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                {MODES.map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setMode(item)}
-                    className={`rounded-lg border py-2.5 text-sm font-semibold transition-colors ${
-                      mode === item
-                        ? "border-primary bg-primary/15 text-primary"
-                        : "border-border bg-background hover:bg-surface-elevated"
-                    }`}
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
+              <Segmented
+                className="mt-2"
+                options={MODES}
+                value={mode}
+                onChange={setMode}
+              />
             </div>
 
             <button
               type="button"
               onClick={() => void save()}
               disabled={saving}
-              className="inline-flex items-center gap-2 rounded-lg bg-gradient-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-glow disabled:opacity-60"
+              className="btn-pop inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold disabled:opacity-60"
             >
               {saving && <LoadingDots />}
               {saving ? "Saving…" : "Save changes"}
@@ -261,9 +251,9 @@ export function SettingsPage() {
         </section>
 
         {/* Personalization */}
-        <section className="luxury-panel mt-4 rounded-lg p-5 sm:p-6">
+        <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary-glow">
+            <h2 className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-pop">
               <Sparkles className="h-3.5 w-3.5 text-pop" />
               Personalization
             </h2>
@@ -333,21 +323,17 @@ export function SettingsPage() {
         </section>
 
         {/* Appearance */}
-        <section className="luxury-panel mt-4 flex items-center justify-between rounded-lg p-5 sm:p-6">
+        <section className="flex items-center justify-between rounded-2xl border border-border bg-surface p-5 sm:p-6">
           <div>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-primary-glow">
-              Appearance
-            </h2>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-pop">Appearance</h2>
             <p className="mt-1 text-sm text-muted-foreground">Switch between light and dark.</p>
           </div>
           <ThemeToggle />
         </section>
 
         {/* Account */}
-        <section className="luxury-panel mt-4 rounded-lg p-5 sm:p-6">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-primary-glow">
-            Account
-          </h2>
+        <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-pop">Account</h2>
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
             <button
               type="button"
@@ -355,7 +341,7 @@ export function SettingsPage() {
                 await signOut();
                 navigate({ to: "/" });
               }}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
             >
               <LogOut className="h-4 w-4" />
               Sign out
@@ -363,7 +349,7 @@ export function SettingsPage() {
             <button
               type="button"
               onClick={() => setShowDeleteDialog(true)}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-destructive/40 px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-destructive/40 px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
             >
               <Trash2 className="h-4 w-4" />
               Delete account
