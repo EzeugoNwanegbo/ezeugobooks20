@@ -220,48 +220,60 @@ export type Database = {
           course: string | null;
           created_at: string | null;
           curriculum: string | null;
+          current_streak: number;
           exam_format: Database["public"]["Enums"]["exam_format"] | null;
+          gamification_updated_at: string | null;
           id: string;
           name: string | null;
           onboarded: boolean | null;
           personalization_background: string | null;
+          points: number;
           preferred_mode: Database["public"]["Enums"]["response_mode"] | null;
           recent_topics: string[] | null;
           university: string | null;
           updated_at: string | null;
           weak_areas: string[] | null;
+          weekly_points: number;
           year: string | null;
         };
         Insert: {
           course?: string | null;
           created_at?: string | null;
           curriculum?: string | null;
+          current_streak?: number;
           exam_format?: Database["public"]["Enums"]["exam_format"] | null;
+          gamification_updated_at?: string | null;
           id: string;
           name?: string | null;
           onboarded?: boolean | null;
           personalization_background?: string | null;
+          points?: number;
           preferred_mode?: Database["public"]["Enums"]["response_mode"] | null;
           recent_topics?: string[] | null;
           university?: string | null;
           updated_at?: string | null;
           weak_areas?: string[] | null;
+          weekly_points?: number;
           year?: string | null;
         };
         Update: {
           course?: string | null;
           created_at?: string | null;
           curriculum?: string | null;
+          current_streak?: number;
           exam_format?: Database["public"]["Enums"]["exam_format"] | null;
+          gamification_updated_at?: string | null;
           id?: string;
           name?: string | null;
           onboarded?: boolean | null;
           personalization_background?: string | null;
+          points?: number;
           preferred_mode?: Database["public"]["Enums"]["response_mode"] | null;
           recent_topics?: string[] | null;
           university?: string | null;
           updated_at?: string | null;
           weak_areas?: string[] | null;
+          weekly_points?: number;
           year?: string | null;
         };
         Relationships: [];
@@ -271,6 +283,25 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      leaderboard_top: {
+        Args: {
+          limit_count?: number;
+        };
+        Returns: {
+          user_id: string;
+          name: string;
+          points: number;
+          current_streak: number;
+          rank: number;
+        }[];
+      };
+      leaderboard_rank: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          rank: number;
+          total: number;
+        }[];
+      };
       search_document_chunks: {
         Args: {
           match_count?: number;

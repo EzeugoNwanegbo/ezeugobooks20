@@ -1,3 +1,5 @@
+import { supabase } from "@/integrations/supabase/client";
+
 export type GamificationEvent =
   | "chat_entered"
   | "coach_question_correct"
@@ -88,6 +90,26 @@ function saveGamificationStats(userId: string, stats: GamificationStats) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(key(userId), JSON.stringify(stats));
   window.dispatchEvent(new CustomEvent("gd:gamification", { detail: stats }));
+  // Best-effort push to the shared leaderboard so this user can be ranked
+  // against everyone else. Never blocks or throws into the caller.
+  void syncLeaderboard(userId, stats);
+}
+
+async function syncLeaderboard(userId: string, stats: GamificationStats) {
+  if (userId === "guest") return;
+  try {
+    await supabase
+      .from("user_profiles")
+      .update({
+        points: Math.max(0, Math.round(stats.points)),
+        weekly_points: Math.max(0, Math.round(stats.weeklyPoints)),
+        current_streak: Math.max(0, Math.round(stats.currentStreak)),
+        gamification_updated_at: new Date().toISOString(),
+      })
+      .eq("id", userId);
+  } catch {
+    // Leaderboard sync is best-effort; local points still work offline.
+  }
 }
 
 export function recordGamificationEvent(
@@ -154,6 +176,11 @@ export function recordRoadmapCompletedOnce(userId: string, roadmapId: string) {
   if (window.localStorage.getItem(key)) return loadGamificationStats(userId);
   window.localStorage.setItem(key, "1");
   return recordGamificationEvent(userId, "roadmap_completed");
+}
+
+/** Push the locally-stored stats to the shared leaderboard (e.g. on page open). */
+export async function pushGamificationToServer(userId: string) {
+  await syncLeaderboard(userId, loadGamificationStats(userId));
 }
 
 export function levelFromPoints(points: number) {

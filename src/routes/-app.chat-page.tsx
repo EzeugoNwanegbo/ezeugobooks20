@@ -2174,22 +2174,6 @@ export function ChatPage() {
                 </div>
               )}
             </div>
-            <div className="mb-2 hidden overflow-x-auto rounded-xl border border-border/70 bg-background/95 p-1 shadow-sm [scrollbar-width:none] md:flex [&::-webkit-scrollbar]:hidden">
-              {SOURCE_MODES.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => applySourceMode(item)}
-                  className={`min-h-8 shrink-0 rounded-lg px-3 text-[11px] font-medium transition-colors sm:text-xs ${
-                    sourceMode === item
-                      ? "bg-foreground text-background shadow-sm"
-                      : "text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
-                  }`}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
             {mode === "Visuals" && (
               <div className="mb-2 hidden border-b border-border/60 px-1 pb-2 md:block">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
