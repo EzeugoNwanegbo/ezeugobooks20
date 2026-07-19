@@ -11,6 +11,34 @@ Built with **TanStack Start (React 19) + Vite 7 + Tailwind v4 + Supabase**.
 
 ---
 
+## How Codex was used
+
+We used **OpenAI Codex** as the primary coding agent while building G&D. It did
+the heaviest lifting on the **React 19 / TanStack Start frontend** and on the
+surrounding app plumbing:
+
+- **The full frontend surface** — the file-based TanStack routes under
+  `src/routes/`: the multi-mode chat UI (`app.chat`), the PDF upload + folder
+  library (`app.library`), the 4-step onboarding flow (`onboarding`), email +
+  Google auth (`auth`), plus settings, chat history, leaderboard, practice,
+  StudyBody, the admin/shared-library page, and last-minute cram mode.
+- **Shared UI + app shell** — the Radix/shadcn component layer under
+  `src/components/ui/`, the responsive app shell, theme toggle, loading and
+  skeleton states, and the error boundary.
+- **Client-side app logic** — the SSE streaming chat client
+  (`src/lib/chat-client.ts`), browser-side PDF text extraction
+  (`src/lib/pdf.ts`), the Tesseract.js OCR wiring, hybrid chunk retrieval and
+  page-citation handling on the client, plus the gamification and
+  personalization helpers.
+- **Backend scaffolding** — first drafts of the Supabase Edge Functions under
+  `supabase/functions/` (chat routing, folder suggestion, StudyBody) and the
+  page-aware document chunking logic.
+
+In short: Codex built most of what a student actually sees and touches, and
+scaffolded the edge-function backend it talks to.
+
+---
+
 ## Stack at a glance
 
 | Piece                   | What it is                                                |
