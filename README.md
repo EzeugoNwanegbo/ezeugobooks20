@@ -11,9 +11,7 @@ Built with **TanStack Start (React 19) + Vite 7 + Tailwind v4 + Supabase**.
 
 ---
 
-## How Codex & GPT-5.6 were used
-
-### Codex (build tool)
+## How Codex was used
 
 We used **OpenAI Codex** as the primary coding agent while building G&D. It did
 the heaviest lifting on the **React 19 / TanStack Start frontend** and on the
@@ -38,20 +36,6 @@ surrounding app plumbing:
 
 In short: Codex built most of what a student actually sees and touches, and
 scaffolded the edge-function backend it talks to.
-
-### GPT-5.6 (in the product)
-
-**GPT-5.6 generates the final answer the student reads.** G&D's chat backend
-(`supabase/functions/chat/index.ts`) is a two-stage pipeline: DeepSeek does the
-token-heavy retrieval and factual drafting over the student's uploaded
-documents, then **GPT-5.6** takes that source-grounded draft and produces the
-final answer in the student's chosen mode (Simplified, Detailed, Storytelling)
-- applying the citation rules, tone, and personalization.
-
-The answer model is wired through the `OPENAI_ANSWER_MODEL` setting
-(`callGPTStream`), so the premium model runs **only** on the short final rewrite
-while DeepSeek absorbs the large document context upstream. Output is capped and
-reasoning effort is tuned low to keep GPT-5.6 fast and cost-efficient.
 
 ---
 
