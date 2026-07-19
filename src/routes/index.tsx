@@ -17,18 +17,32 @@ export const Route = createFileRoute("/")({
   component: LandingRoot,
 });
 
-// Landing for "/" - first-time visitors pick their course (Medicine or Law),
-// which routes them to a landing variant written in their own language. The
-// choice is remembered in localStorage so returning visitors skip the chooser.
-// Symbiote Organicism aesthetic (deep black + warm beige, Sora / Hanken Grotesk
-// / JetBrains Mono). Motion is pure CSS + one IntersectionObserver.
+// Landing for "/" - first-time visitors pick their course (Medicine or Law).
+// The two are deliberately DIFFERENT products: Medicine is a cool, luminous
+// "monitor glow" (Schibsted / IBM Plex Mono, teal, ECG motifs); Law is a warm
+// "chambers at lamplight" editorial (Fraunces / Courier Prime, antique gold,
+// hairline rules & citations). They share one layout + content schema and
+// diverge through per-variant CSS tokens plus split hero + motif components.
 
 type Track = "medicine" | "law";
 const TRACK_KEY = "gd-track";
 
 /* ----------------------------------------------------------------- */
-/* Content - one config per discipline drives an identical layout so   */
-/* medicine and law stay perfectly in sync.                            */
+/* Fonts - each track loads its own display/mono faces so a visitor    */
+/* feels the fork before and after choosing.                           */
+/* ----------------------------------------------------------------- */
+const FONT_HREF: Record<Track, string> = {
+  medicine:
+    "https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap",
+  law: "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&family=Newsreader:ital,opsz,wght@1,6..72,400..500&family=Hanken+Grotesk:wght@400;500;600&family=Courier+Prime:wght@400;700&display=swap",
+};
+const CHOOSER_FONTS =
+  "https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;600;700&family=Fraunces:opsz,wght@9..144,500..700&family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Courier+Prime:wght@400&display=swap";
+const SYMBOLS_HREF =
+  "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,300,0,0&display=swap";
+
+/* ----------------------------------------------------------------- */
+/* Content - one config per discipline drives an identical narrative.  */
 /* ----------------------------------------------------------------- */
 type Answer = { q: string; a: string; sources: string[] };
 type Honest = { q: string; na: string };
@@ -45,7 +59,9 @@ type Content = {
   quote: { text: string; author: string };
   heroKicker: string;
   heroH1: string;
+  heroH1Accent?: string;
   heroSub: string;
+  heroVitals?: string[];
   uploadFile: string;
   feels: { title: string; lines: string[] };
   trust: { title: string; lines: string[]; answer: Answer; honest: Honest };
@@ -66,6 +82,7 @@ const MEDICINE: Content = {
   heroH1: "Understand medicine. Don't just survive it.",
   heroSub:
     "Every answer comes from your own textbooks - not random websites. Spend less time searching, and more time becoming the doctor your patients deserve.",
+  heroVitals: ["SOURCE p.87", "CONFIDENCE 100%", "0 GUESSES"],
   uploadFile: "clinical_medicine.pdf",
   feels: {
     title: "We know what medical school feels like",
@@ -133,7 +150,7 @@ const MEDICINE: Content = {
       "Spend less time searching.",
       "Spend more time becoming the doctor you're meant to be.",
     ],
-    cta: "Start Learning Free",
+    cta: "Try for free",
   },
 };
 
@@ -147,6 +164,7 @@ const LAW: Content = {
   },
   heroKicker: "For law students",
   heroH1: "Understand the law. Don't just memorize it.",
+  heroH1Accent: "law",
   heroSub:
     "Every answer comes from your own cases and statutes - not random websites. Spend less time searching, and more time becoming the lawyer your clients deserve.",
   uploadFile: "contract_law_cases.pdf",
@@ -170,7 +188,7 @@ const LAW: Content = {
     answer: {
       q: "Is past consideration valid consideration?",
       a: "No - as a rule, consideration must not be past (Re McArdle [1951]). A promise given in return for something already done is unenforceable, unless the act was done at the promisor's request (Lampleigh v Braithwait).",
-      sources: ["Your notes · Contract Law p. 34", "Authority cited, not invented"],
+      sources: ["Re McArdle [1951] · Contract Law p. 34", "Authority cited, not invented"],
     },
     honest: {
       q: "Does chapter 12 cover judicial review?",
@@ -212,20 +230,19 @@ const LAW: Content = {
       "Spend less time searching.",
       "Spend more time becoming the lawyer you're meant to be.",
     ],
-    cta: "Start Learning Free",
+    cta: "Try for free",
   },
 };
 
 const CONTENT: Record<Track, Content> = { medicine: MEDICINE, law: LAW };
 
 /* ----------------------------------------------------------------- */
-/* Try for free - starts a no-signup guest session, falls back to     */
-/* /auth signup when anonymous sign-ins are unavailable.              */
+/* Try for free - starts a no-signup guest session.                    */
 /* ----------------------------------------------------------------- */
 function TryForFreeButton({
   className = "",
   label = "Try for free",
-  icon = "bolt",
+  icon,
 }: {
   className?: string;
   label?: string;
@@ -260,9 +277,8 @@ function TryForFreeButton({
       disabled={busy}
       aria-busy={busy}
     >
-      {busy ? (
-        <span className="gd-spinner" aria-hidden="true" />
-      ) : (
+      {busy && <span className="gd-spinner" aria-hidden="true" />}
+      {!busy && icon && (
         <span className="material-symbols-outlined" aria-hidden="true">
           {icon}
         </span>
@@ -279,8 +295,6 @@ function LandingRoot() {
   const [track, setTrack] = useState<Track | null>(null);
   const [ready, setReady] = useState(false);
 
-  // Restore a remembered choice on first paint so returning visitors land
-  // straight on their variant instead of the chooser.
   useEffect(() => {
     try {
       const saved = localStorage.getItem(TRACK_KEY);
@@ -307,19 +321,13 @@ function LandingRoot() {
 }
 
 /* ----------------------------------------------------------------- */
-/* Chooser - the two clean options a first-time visitor sees.         */
+/* Chooser - a split screen; each half already wears its own world.    */
 /* ----------------------------------------------------------------- */
 function Chooser({ onChoose }: { onChoose: (t: Track) => void }) {
   return (
     <div className="gd-root gd-chooser">
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
-      />
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap"
-      />
+      <link rel="stylesheet" href={CHOOSER_FONTS} />
+      <link rel="stylesheet" href={SYMBOLS_HREF} />
       <style>{GD_CSS}</style>
       <div className="gd-blob gd-blob-1" aria-hidden="true" />
       <div className="gd-blob gd-blob-2" aria-hidden="true" />
@@ -328,8 +336,8 @@ function Chooser({ onChoose }: { onChoose: (t: Track) => void }) {
         <span className="gd-logo gd-chooser-logo">G&amp;D</span>
         <h1 className="gd-chooser-h1">What are you studying?</h1>
         <p className="gd-chooser-sub">
-          G&amp;D speaks your language. Pick your course and we&apos;ll tailor everything -
-          the examples, the reasoning, the practice - to you.
+          G&amp;D is two study companions in one. Pick your course and everything - the
+          look, the examples, the reasoning - is tuned to your world.
         </p>
 
         <div className="gd-chooser-grid">
@@ -339,7 +347,7 @@ function Chooser({ onChoose }: { onChoose: (t: Track) => void }) {
               <button
                 key={t}
                 type="button"
-                className="gd-choice"
+                className={`gd-choice gd-variant-${t}`}
                 onClick={() => onChoose(t)}
               >
                 <span className="gd-choice-icon material-symbols-outlined" aria-hidden="true">
@@ -367,11 +375,26 @@ function Chooser({ onChoose }: { onChoose: (t: Track) => void }) {
 }
 
 /* ----------------------------------------------------------------- */
-/* Narrative block - the poetic short-line copy.                      */
+/* Motifs                                                              */
 /* ----------------------------------------------------------------- */
-function Narrative({ lines }: { lines: string[] }) {
+// Medicine: an ECG trace that flatlines then spikes; draws itself on reveal.
+function PulseRule() {
   return (
-    <div className="gd-narrative">
+    <svg className="gd-pulse" viewBox="0 0 600 40" preserveAspectRatio="none" aria-hidden="true">
+      <path
+        d="M0 20 H235 l9 -13 l7 26 l8 -33 l9 20 H600"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// Narrative block - the poetic short-line copy.
+function Narrative({ lines, className = "" }: { lines: string[]; className?: string }) {
+  return (
+    <div className={`gd-narrative ${className}`}>
       {lines.map((line, i) => (
         <p key={i} className="gd-line">
           {line}
@@ -381,8 +404,147 @@ function Narrative({ lines }: { lines: string[] }) {
   );
 }
 
+// Section heading - diverges hard between the two worlds.
+function SectionHead({
+  track,
+  index,
+  kicker,
+  title,
+}: {
+  track: Track;
+  index: string;
+  kicker: string;
+  title: string;
+}) {
+  if (track === "law") {
+    return (
+      <div className="gd-section-head gd-r gd-law-head">
+        <div className="gd-law-rule-top">
+          <span className="gd-law-kicker">
+            § {index} &nbsp;·&nbsp; {kicker}
+          </span>
+        </div>
+        <h2 className="gd-h2">{title}</h2>
+        <div className="gd-law-rule-bottom" />
+      </div>
+    );
+  }
+  return (
+    <div className="gd-section-head gd-r gd-med-head">
+      <span className="gd-eyebrow">{kicker}</span>
+      <h2 className="gd-h2">{title}</h2>
+      <PulseRule />
+    </div>
+  );
+}
+
+// A source-cited answer card, reused across heroes and the trust section.
+function AnswerCard({ answer, track }: { answer: Answer; track: Track }) {
+  return (
+    <div className="gd-preview">
+      <div className="gd-preview-q">
+        <span className="material-symbols-outlined">person</span>
+        <p>{answer.q}</p>
+      </div>
+      <div className="gd-preview-a">
+        <span className="gd-pill-label">Exact answer</span>
+        <p>{answer.a}</p>
+        <div className="gd-sources">
+          {answer.sources.map((s, i) => (
+            <span key={i} className="gd-source-chip">
+              <span className="material-symbols-outlined">
+                {i === 0 ? (track === "law" ? "gavel" : "description") : "verified"}
+              </span>
+              {s}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ----------------------------------------------------------------- */
-/* Landing variant - identical layout, discipline-specific content.   */
+/* Heroes - the biggest point of divergence.                          */
+/* ----------------------------------------------------------------- */
+function HeroMedicine({ c }: { c: Content }) {
+  return (
+    <section className="gd-hero gd-hero-med">
+      <div className="gd-hero-copy">
+        <span className="gd-eyebrow gd-instrument gd-rise gd-rise-1">
+          ▎ {c.heroKicker}
+        </span>
+        <h1 className="gd-h1 gd-rise gd-rise-2">{c.heroH1}</h1>
+        <p className="gd-lead gd-rise gd-rise-3">{c.heroSub}</p>
+        <div className="gd-actions gd-rise gd-rise-4">
+          <TryForFreeButton className="gd-btn-lg" label={c.become.cta} />
+        </div>
+        <p className="gd-hero-annot gd-rise gd-rise-5">
+          &ldquo;{c.quote.text}&rdquo; <span>- {c.quote.author}</span>
+        </p>
+      </div>
+
+      <div className="gd-hero-visual gd-rise gd-rise-3" aria-hidden="true">
+        <div className="gd-instrument-card">
+          <AnswerCard answer={c.trust.answer} track={c.track} />
+          {c.heroVitals && (
+            <div className="gd-vitals">
+              <span className="gd-vitals-dot" />
+              {c.heroVitals.map((v, i) => (
+                <span key={i} className="gd-vitals-item">
+                  {v}
+                </span>
+              ))}
+            </div>
+          )}
+          <PulseRule />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HeroLaw({ c }: { c: Content }) {
+  // Highlight one word of the headline in gold.
+  const renderH1 = () => {
+    if (!c.heroH1Accent) return c.heroH1;
+    const parts = c.heroH1.split(new RegExp(`(${c.heroH1Accent})`, "i"));
+    return parts.map((p, i) =>
+      p.toLowerCase() === c.heroH1Accent!.toLowerCase() ? (
+        <em key={i}>{p}</em>
+      ) : (
+        <span key={i}>{p}</span>
+      ),
+    );
+  };
+
+  return (
+    <section className="gd-hero gd-hero-law">
+      <div className="gd-masthead">
+        <div className="gd-law-rule-top gd-rise gd-rise-1" />
+        <figure className="gd-epigraph gd-rise gd-rise-2">
+          <blockquote>&ldquo;{c.quote.text}&rdquo;</blockquote>
+          <figcaption>- {c.quote.author}</figcaption>
+        </figure>
+        <div className="gd-law-rule-bottom gd-rise gd-rise-2" />
+
+        <span className="gd-law-kicker gd-hero-kicker gd-rise gd-rise-3">{c.heroKicker}</span>
+        <h1 className="gd-h1 gd-rise gd-rise-3">{renderH1()}</h1>
+        <p className="gd-lead gd-rise gd-rise-4">{c.heroSub}</p>
+        <div className="gd-actions gd-rise gd-rise-5">
+          <TryForFreeButton className="gd-btn-lg" label={c.become.cta} />
+        </div>
+      </div>
+
+      <div className="gd-brief gd-r" aria-hidden="true">
+        <AnswerCard answer={c.trust.answer} track={c.track} />
+      </div>
+    </section>
+  );
+}
+
+/* ----------------------------------------------------------------- */
+/* Landing variant - shared layout, discipline-specific everything.   */
 /* ----------------------------------------------------------------- */
 function LandingVariant({
   content,
@@ -393,7 +555,6 @@ function LandingVariant({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // One observer for every scroll-reveal element.
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
@@ -422,14 +583,8 @@ function LandingVariant({
 
   return (
     <div className={`gd-root gd-variant-${c.track}`} ref={rootRef} key={c.track}>
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
-      />
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap"
-      />
+      <link rel="stylesheet" href={FONT_HREF[c.track]} />
+      <link rel="stylesheet" href={SYMBOLS_HREF} />
       <style>{GD_CSS}</style>
 
       <div className="gd-blob gd-blob-1" aria-hidden="true" />
@@ -456,58 +611,17 @@ function LandingVariant({
             Law
           </button>
         </div>
-        <TryForFreeButton className="gd-nav-cta" label="Start free" icon="bolt" />
+        <TryForFreeButton className="gd-nav-cta" label="Try for free" />
       </header>
 
       <main>
-        {/* Hero */}
-        <section className="gd-hero">
-          <div className="gd-hero-copy">
-            <span className="gd-eyebrow gd-rise gd-rise-1">{c.heroKicker}</span>
-            <figure className="gd-quote gd-rise gd-rise-2">
-              <blockquote>&ldquo;{c.quote.text}&rdquo;</blockquote>
-              <figcaption>- {c.quote.author}</figcaption>
-            </figure>
-            <h1 className="gd-h1 gd-rise gd-rise-3">{c.heroH1}</h1>
-            <p className="gd-lead gd-rise gd-rise-4">{c.heroSub}</p>
-            <div className="gd-actions gd-rise gd-rise-5">
-              <TryForFreeButton className="gd-btn-lg" label={c.become.cta} icon="bolt" />
-            </div>
-          </div>
-
-          {/* Hero visual: a real, source-cited answer */}
-          <div className="gd-hero-visual gd-rise gd-rise-4" aria-hidden="true">
-            <div className="gd-preview">
-              <div className="gd-preview-q">
-                <span className="material-symbols-outlined">person</span>
-                <p>{c.trust.answer.q}</p>
-              </div>
-              <div className="gd-preview-a">
-                <span className="gd-pill-label">Exact answer</span>
-                <p>{c.trust.answer.a}</p>
-                <div className="gd-sources">
-                  {c.trust.answer.sources.map((s, i) => (
-                    <span key={i} className="gd-source-chip">
-                      <span className="material-symbols-outlined">
-                        {i === 0 ? (c.track === "law" ? "gavel" : "description") : "verified"}
-                      </span>
-                      {s}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+        {c.track === "medicine" ? <HeroMedicine c={c} /> : <HeroLaw c={c} />}
 
         {/* Feels */}
-        <section className="gd-section gd-section-narrow">
-          <div className="gd-section-head gd-r">
-            <span className="gd-eyebrow">The problem</span>
-            <h2 className="gd-h2">{c.feels.title}</h2>
-          </div>
+        <section className="gd-section gd-section-narrow gd-feels">
+          <SectionHead track={c.track} index="01" kicker="The problem" title={c.feels.title} />
           <div className="gd-r">
-            <Narrative lines={c.feels.lines} />
+            <Narrative lines={c.feels.lines} className="gd-narrative-feels" />
           </div>
         </section>
 
@@ -515,8 +629,7 @@ function LandingVariant({
         <section className="gd-section">
           <div className="gd-split">
             <div className="gd-split-copy gd-r">
-              <span className="gd-eyebrow">Trust</span>
-              <h2 className="gd-h2">{c.trust.title}</h2>
+              <SectionHead track={c.track} index="02" kicker="Trust" title={c.trust.title} />
               <Narrative lines={c.trust.lines} />
             </div>
             <div className="gd-split-visual" aria-hidden="true">
@@ -542,10 +655,7 @@ function LandingVariant({
 
         {/* Time */}
         <section className="gd-section gd-section-narrow gd-time">
-          <div className="gd-section-head gd-r">
-            <span className="gd-eyebrow">Your time</span>
-            <h2 className="gd-h2">{c.time.title}</h2>
-          </div>
+          <SectionHead track={c.track} index="03" kicker="Your time" title={c.time.title} />
           <div className="gd-r">
             <Narrative lines={c.time.lines} />
           </div>
@@ -555,8 +665,12 @@ function LandingVariant({
         <section className="gd-section">
           <div className="gd-split gd-split-flip">
             <div className="gd-split-copy gd-r">
-              <span className="gd-eyebrow">Master it</span>
-              <h2 className="gd-h2">{c.understanding.title}</h2>
+              <SectionHead
+                track={c.track}
+                index="04"
+                kicker="Master it"
+                title={c.understanding.title}
+              />
               <Narrative lines={c.understanding.lines} />
             </div>
             <div className="gd-split-visual" aria-hidden="true">
@@ -591,7 +705,7 @@ function LandingVariant({
           <div className="gd-cta-narrative">
             <Narrative lines={c.become.lines} />
           </div>
-          <TryForFreeButton className="gd-btn-lg" label={c.become.cta} icon="bolt" />
+          <TryForFreeButton className="gd-btn-lg" label={c.become.cta} />
           <button type="button" className="gd-switch-link" onClick={() => onSwitch(other)}>
             {other === "law" ? "Studying law instead?" : "Studying medicine instead?"}
           </button>
@@ -609,67 +723,123 @@ function LandingVariant({
 
 const GD_CSS = `
 .gd-root {
-  --bg: #060606;
-  --surface: #111110;
-  --surface-2: #0c0c0b;
-  --surface-3: #1b1b19;
-  --on: #e9e7e3;
-  --on-dim: #b6b4ab;
-  --outline: #3a3a34;
-  --outline-2: #2a2a26;
-  --beige: #e4e4cc;
-  --beige-dim: #c8c8b0;
-  --on-beige: #1b1d0e;
-  --teal: #6ee7d8;
-  --teal-soft: rgba(110,231,216,0.16);
-  --coral: #ff9f7a;
-  --coral-soft: rgba(255,159,122,0.16);
+  /* Structural fallbacks - overridden by .gd-variant-* below */
+  --bg: #06070A;
+  --surface: #0B1014;
+  --surface-2: #080C10;
+  --surface-3: #121A20;
+  --on: #E8EDF0;
+  --on-dim: #9FB0BA;
+  --outline: #23303A;
+  --outline-2: #18232B;
+  --accent: #3FDAC8;
+  --accent-soft: rgba(63,218,200,0.16);
+  --accent-2: #FF7A70;
   --violet: #bba7ff;
   --violet-soft: rgba(187,167,255,0.17);
   --yellow: #f8d66d;
-  --yellow-soft: rgba(248,214,109,0.17);
-  --sky: #8ec5ff;
-  --sky-soft: rgba(142,197,255,0.16);
-  --accent: var(--teal);
-  --accent-soft: var(--teal-soft);
+  --font-display: "Sora", system-ui, sans-serif;
+  --font-body: "Hanken Grotesk", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-quote: "Hanken Grotesk", sans-serif;
+  --radius-card: 1.75rem;
+  --radius-chip: 9999px;
+  --gd-dur: 0.55s;
+  --gd-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --gd-rise: 28px;
+
   position: relative;
   min-height: 100dvh;
   overflow-x: hidden;
   overflow-x: clip;
-  background:
-    radial-gradient(circle at 12% 12%, var(--accent-soft), transparent 28rem),
-    radial-gradient(circle at 88% 18%, var(--violet-soft), transparent 30rem),
-    radial-gradient(circle at 50% 95%, rgba(248,214,109,0.09), transparent 34rem),
-    var(--bg);
+  background: var(--bg);
   color: var(--on);
-  font-family: "Hanken Grotesk", system-ui, sans-serif;
+  font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   isolation: isolate;
 }
-.gd-variant-law { --accent: var(--sky); --accent-soft: var(--sky-soft); }
-.gd-variant-medicine { --accent: var(--teal); --accent-soft: var(--teal-soft); }
+
+/* ── MEDICINE: monitor glow (cool, luminous) ── */
+.gd-variant-medicine {
+  --bg: #05070A;
+  --surface: #0B1014;
+  --surface-2: #080C10;
+  --surface-3: #121A20;
+  --on: #E8EDF0;
+  --on-dim: #9FB0BA;
+  --outline: #23303A;
+  --outline-2: #18232B;
+  --accent: #3FDAC8;
+  --accent-soft: rgba(63,218,200,0.15);
+  --accent-2: #FF7A70;
+  --font-display: "Schibsted Grotesk", "Sora", system-ui, sans-serif;
+  --font-body: "Hanken Grotesk", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-quote: "Hanken Grotesk", sans-serif;
+  --radius-card: 1.75rem;
+  --radius-chip: 9999px;
+  --gd-dur: 0.34s;
+  --gd-ease: cubic-bezier(0.3, 0.9, 0.3, 1);
+  --gd-rise: 14px;
+  background:
+    radial-gradient(circle at 14% 10%, var(--accent-soft), transparent 30rem),
+    radial-gradient(circle at 88% 16%, rgba(127,184,255,0.12), transparent 32rem),
+    var(--bg);
+}
+
+/* ── LAW: chambers at lamplight (warm, editorial) ── */
+.gd-variant-law {
+  --bg: #0C0906;
+  --surface: #151009;
+  --surface-2: #100C07;
+  --surface-3: #1D1710;
+  --on: #EDE6D6;
+  --on-dim: #B3A78F;
+  --outline: #352C20;
+  --outline-2: #271F16;
+  --accent: #CBA35C;
+  --accent-soft: rgba(203,163,92,0.14);
+  --accent-2: #9E3B34;
+  --legal-cream: #F1E4BC;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Hanken Grotesk", system-ui, sans-serif;
+  --font-mono: "Courier Prime", "Courier New", monospace;
+  --font-quote: "Newsreader", Georgia, serif;
+  --radius-card: 0.375rem;
+  --radius-chip: 0.25rem;
+  --gd-dur: 0.7s;
+  --gd-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --gd-rise: -8px;
+  background:
+    radial-gradient(circle at 50% -5%, rgba(203,163,92,0.08), transparent 40rem),
+    var(--bg);
+}
+
 .gd-root .material-symbols-outlined {
   font-family: "Material Symbols Outlined";
   font-weight: normal; font-style: normal; line-height: 1;
   letter-spacing: normal; text-transform: none; display: inline-block;
   white-space: nowrap; direction: ltr;
-  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  font-variation-settings: "FILL" 0, "wght" 300, "GRAD" 0, "opsz" 24;
 }
-.gd-blob {
-  position: fixed; z-index: -1; border-radius: 9999px;
-  filter: blur(120px); opacity: 0.4; pointer-events: none;
-}
+
+/* Ambient - medicine keeps soft blobs; law replaces them with grain */
+.gd-blob { position: fixed; z-index: -1; border-radius: 9999px; filter: blur(120px); opacity: 0.4; pointer-events: none; }
 .gd-blob-1 {
-  top: -10%; right: -5%;
-  width: 45vw; height: 45vw; max-width: 640px; max-height: 640px;
-  background: radial-gradient(circle, rgba(187,167,255,0.24), transparent 70%);
+  top: -10%; right: -5%; width: 45vw; height: 45vw; max-width: 620px; max-height: 620px;
+  background: radial-gradient(circle, var(--accent-soft), transparent 70%);
   animation: gd-float-1 22s ease-in-out infinite;
 }
 .gd-blob-2 {
-  bottom: -15%; left: -10%;
-  width: 50vw; height: 50vw; max-width: 700px; max-height: 700px;
-  background: radial-gradient(circle, var(--accent-soft), transparent 70%);
+  bottom: -15%; left: -10%; width: 50vw; height: 50vw; max-width: 700px; max-height: 700px;
+  background: radial-gradient(circle, rgba(127,184,255,0.12), transparent 70%);
   animation: gd-float-2 26s ease-in-out infinite;
+}
+.gd-variant-law .gd-blob { display: none; }
+.gd-variant-law::after {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0.5;
+  background-image: radial-gradient(rgba(203,163,92,0.05) 1px, transparent 1px);
+  background-size: 4px 4px;
 }
 @keyframes gd-float-1 { 50% { transform: translate(-4%, 6%) scale(1.08); } }
 @keyframes gd-float-2 { 50% { transform: translate(6%, -4%) scale(1.1); } }
@@ -679,24 +849,24 @@ const GD_CSS = `
   position: sticky; top: 0; z-index: 50;
   display: flex; align-items: center; gap: 1rem;
   padding: 1.1rem clamp(1.25rem, 5vw, 4rem);
-  background: rgba(6,6,6,0.7); backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--outline-2);
 }
-.gd-logo {
-  font-family: "Sora", sans-serif; font-weight: 700; font-size: 1.5rem;
-  letter-spacing: -0.02em; color: var(--on); text-decoration: none;
-}
+.gd-logo { font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; letter-spacing: -0.02em; color: var(--on); text-decoration: none; }
+.gd-variant-law .gd-logo { letter-spacing: 0; }
 .gd-track-switch {
   margin-left: auto; display: inline-flex; gap: 0.25rem;
   background: var(--surface-3); border: 1px solid var(--outline-2);
   border-radius: 9999px; padding: 0.25rem;
 }
+.gd-variant-law .gd-track-switch { border-radius: 0.3rem; }
 .gd-track-pill {
-  border: none; background: transparent; cursor: pointer;
-  border-radius: 9999px; padding: 0.4rem 0.95rem;
-  font-family: "Hanken Grotesk", sans-serif; font-size: 0.85rem; font-weight: 600;
+  border: none; background: transparent; cursor: pointer; border-radius: 9999px;
+  padding: 0.4rem 0.95rem; font-family: var(--font-body); font-size: 0.85rem; font-weight: 600;
   color: var(--on-dim); transition: color 0.2s ease, background 0.2s ease;
 }
+.gd-variant-law .gd-track-pill { border-radius: 0.2rem; }
 .gd-track-pill:hover { color: var(--on); }
 .gd-track-pill.is-on { background: var(--accent); color: #10120c; }
 .gd-nav-cta { margin-left: 0.25rem; }
@@ -705,297 +875,236 @@ const GD_CSS = `
 .gd-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
   border-radius: 9999px; padding: 0.85rem 1.5rem; border: 1px solid transparent;
-  font-family: "Hanken Grotesk", sans-serif; font-weight: 600; font-size: 0.98rem;
+  font-family: var(--font-body); font-weight: 600; font-size: 0.98rem;
   text-decoration: none; cursor: pointer; white-space: nowrap; min-height: 44px;
-  transition: transform 0.2s ease, background 0.25s ease, border-color 0.25s ease,
-    color 0.25s ease, box-shadow 0.3s ease;
+  transition: transform 0.2s ease, background 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.3s ease;
 }
 .gd-btn .material-symbols-outlined { font-size: 20px; }
-.gd-btn:focus-visible { outline: 2px solid var(--beige); outline-offset: 3px; }
-.gd-btn-primary { background: var(--beige); color: #10120c; box-shadow: 0 16px 42px rgba(228,228,204,0.12); }
+.gd-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.gd-btn-primary { background: #e4e4cc; color: #10120c; box-shadow: 0 16px 42px rgba(228,228,204,0.12); }
 .gd-btn-primary:hover { transform: translateY(-2px); background: #f1f0db; box-shadow: 0 18px 48px rgba(228,228,204,0.16); }
 .gd-btn-primary:active { transform: translateY(0); }
 .gd-btn-primary:disabled { opacity: 0.75; cursor: progress; transform: none; box-shadow: none; }
+.gd-variant-law .gd-btn-primary { background: var(--accent); color: #17110a; border-radius: 0.3rem; box-shadow: 0 14px 40px rgba(203,163,92,0.2); }
+.gd-variant-law .gd-btn-primary:hover { background: #d8b877; }
 .gd-btn-lg { padding: 1rem 1.9rem; font-size: 1.05rem; }
-.gd-spinner {
-  width: 18px; height: 18px; border-radius: 9999px;
-  border: 2px solid rgba(27,29,14,0.25); border-top-color: var(--on-beige);
-  animation: gd-spin 0.7s linear infinite;
-}
+.gd-spinner { width: 18px; height: 18px; border-radius: 9999px; border: 2px solid rgba(27,29,14,0.25); border-top-color: #1b1d0e; animation: gd-spin 0.7s linear infinite; }
 @keyframes gd-spin { to { transform: rotate(360deg); } }
 
-/* Shared type */
+/* Type */
 .gd-eyebrow {
-  font-family: "JetBrains Mono", monospace; font-size: 0.72rem;
-  letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent);
-  display: inline-flex; align-items: center; border-radius: 9999px;
+  font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--accent);
+  display: inline-flex; align-items: center; border-radius: var(--radius-chip);
   background: var(--accent-soft); padding: 0.38rem 0.7rem;
 }
+.gd-instrument { letter-spacing: 0.16em; }
 .gd-h1 {
-  font-family: "Sora", sans-serif; font-weight: 600;
-  font-size: clamp(2.3rem, 4.8vw, 3.9rem); line-height: 1.06;
-  letter-spacing: -0.035em; margin: 1.25rem 0 0;
-  background: linear-gradient(135deg, var(--on) 5%, #ffffff 35%, var(--accent) 78%, var(--yellow));
+  font-family: var(--font-display); font-weight: 600;
+  font-size: clamp(2.3rem, 4.8vw, 3.9rem); line-height: 1.06; letter-spacing: -0.035em; margin: 1.25rem 0 0;
+}
+.gd-variant-medicine .gd-h1 {
+  background: linear-gradient(135deg, #ffffff 8%, var(--accent) 82%);
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-.gd-h2 {
-  font-family: "Sora", sans-serif; font-weight: 600;
-  font-size: clamp(1.7rem, 3.4vw, 2.6rem); line-height: 1.12;
-  letter-spacing: -0.025em; margin: 0.75rem 0 0;
-}
-.gd-lead {
-  font-size: clamp(1rem, 1.3vw, 1.18rem); line-height: 1.65;
-  color: var(--on-dim); margin: 1.25rem 0 0; max-width: 48ch;
-}
+.gd-variant-law .gd-h1 { color: var(--on); font-weight: 500; letter-spacing: -0.02em; }
+.gd-variant-law .gd-h1 em { font-style: italic; color: var(--accent); }
+.gd-h2 { font-family: var(--font-display); font-weight: 600; font-size: clamp(1.7rem, 3.4vw, 2.6rem); line-height: 1.12; letter-spacing: -0.025em; margin: 0.6rem 0 0; }
+.gd-variant-law .gd-h2 { font-weight: 500; letter-spacing: -0.015em; }
+.gd-lead { font-size: clamp(1rem, 1.3vw, 1.18rem); line-height: 1.65; color: var(--on-dim); margin: 1.25rem 0 0; max-width: 48ch; }
 
-/* Hero quote */
-.gd-quote { margin: 1.75rem 0 0; padding-left: 1.1rem; border-left: 2px solid var(--accent); }
-.gd-quote blockquote {
-  margin: 0; font-family: "Sora", sans-serif; font-weight: 400; font-style: italic;
-  font-size: clamp(1.05rem, 1.6vw, 1.35rem); line-height: 1.5; color: var(--on);
-}
-.gd-quote figcaption {
-  margin-top: 0.55rem; font-family: "JetBrains Mono", monospace;
-  font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--beige-dim);
-}
-
-/* Hero */
-.gd-hero {
-  display: grid; grid-template-columns: 1.05fr 0.95fr; align-items: center;
-  gap: clamp(2rem, 5vw, 5rem);
-  padding: clamp(3rem, 7vw, 6rem) clamp(1.25rem, 5vw, 4rem);
-  max-width: 1240px; margin: 0 auto;
-}
+/* Hero (shared bones) */
+.gd-hero { max-width: 1240px; margin: 0 auto; padding: clamp(3rem, 7vw, 6rem) clamp(1.25rem, 5vw, 4rem); }
+.gd-hero-med { display: grid; grid-template-columns: 1.05fr 0.95fr; align-items: center; gap: clamp(2rem, 5vw, 5rem); }
 .gd-actions { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 2.25rem; }
 .gd-hero-visual { display: flex; justify-content: center; }
 
+/* Medicine hero specifics */
+.gd-hero-annot { margin-top: 1.75rem; max-width: 44ch; font-size: 0.9rem; line-height: 1.5; color: var(--on-dim); font-style: italic; }
+.gd-hero-annot span { font-style: normal; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.gd-instrument-card { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 0.75rem; }
+.gd-vitals { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; padding: 0 0.4rem; font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em; color: var(--on-dim); }
+.gd-vitals-item { position: relative; }
+.gd-vitals-item + .gd-vitals-item::before { content: "·"; position: absolute; left: -0.6rem; color: var(--outline); }
+.gd-vitals-dot { width: 8px; height: 8px; border-radius: 9999px; background: var(--accent-2); box-shadow: 0 0 10px var(--accent-2); animation: gd-bpm 0.83s ease-in-out infinite; }
+
+/* Law hero specifics - centred masthead */
+.gd-hero-law { max-width: 940px; text-align: center; }
+.gd-masthead { display: flex; flex-direction: column; align-items: center; }
+.gd-epigraph { margin: 0.5rem 0; max-width: 30ch; }
+.gd-epigraph blockquote { margin: 0; font-family: var(--font-quote); font-style: italic; font-size: clamp(1.3rem, 2.6vw, 2rem); line-height: 1.4; color: var(--on); }
+.gd-epigraph figcaption { margin-top: 0.75rem; font-family: var(--font-display); font-variant: small-caps; letter-spacing: 0.12em; font-size: 0.85rem; color: var(--accent); }
+.gd-hero-law .gd-hero-kicker { margin-top: 1.75rem; }
+.gd-hero-law .gd-h1 { margin-top: 0.5rem; }
+.gd-hero-law .gd-lead { margin-left: auto; margin-right: auto; text-align: center; }
+.gd-hero-law .gd-actions { justify-content: center; }
+.gd-brief { margin: 2.75rem auto 0; max-width: 620px; }
+.gd-brief .gd-preview { max-width: none; }
+
+/* Law rules (hairlines) */
+.gd-law-rule-top { border-top: 1px solid var(--outline); border-bottom: 1px solid var(--outline); padding: 0.55rem 0; }
+.gd-law-rule-bottom { border-top: 1px solid var(--outline); border-bottom: 1px solid var(--outline); height: 3px; }
+.gd-masthead .gd-law-rule-top { width: 100%; border-top: none; padding-top: 0; }
+.gd-masthead .gd-law-rule-bottom { width: 100%; }
+.gd-law-kicker { font-family: var(--font-display); font-variant: small-caps; letter-spacing: 0.14em; font-size: 0.95rem; color: var(--accent); }
+
 /* Sections */
-.gd-section {
-  max-width: 1240px; margin: 0 auto;
-  padding: clamp(2.75rem, 6vw, 5rem) clamp(1.25rem, 5vw, 4rem);
-}
-.gd-section-narrow { max-width: 820px; text-align: center; }
-.gd-section-narrow .gd-eyebrow { margin: 0 auto; }
-.gd-section-narrow .gd-narrative { align-items: center; }
+.gd-section { max-width: 1240px; margin: 0 auto; padding: clamp(2.75rem, 6vw, 5rem) clamp(1.25rem, 5vw, 4rem); }
+.gd-section-narrow { max-width: 780px; }
+.gd-variant-medicine .gd-section-narrow { text-align: center; }
+.gd-variant-medicine .gd-section-narrow .gd-eyebrow { margin: 0 auto; }
+.gd-variant-medicine .gd-section-narrow .gd-narrative { align-items: center; }
 .gd-section-head { margin-bottom: 1.75rem; }
+.gd-med-head .gd-pulse { margin-top: 1.1rem; opacity: 0.65; }
+.gd-law-head .gd-h2 { margin: 0.9rem 0; }
+
+/* ECG pulse */
+.gd-pulse { display: block; width: 100%; height: 22px; }
+.gd-pulse path { stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-dasharray: 720; stroke-dashoffset: 720; }
+.gd-r.gd-in .gd-pulse path { animation: gd-ecg 1.4s ease forwards; }
+.gd-instrument-card .gd-pulse { opacity: 0.5; }
+.gd-instrument-card .gd-pulse path { animation: gd-ecg 1.6s ease 0.4s forwards; }
+@keyframes gd-ecg { to { stroke-dashoffset: 0; } }
+@keyframes gd-bpm { 0%, 45%, 100% { transform: scale(1); opacity: 0.9; } 20% { transform: scale(1.5); opacity: 1; } }
 
 /* Narrative lines */
-.gd-narrative { display: flex; flex-direction: column; gap: 0.55rem; margin-top: 0.5rem; }
-.gd-line {
-  margin: 0; font-family: "Sora", sans-serif; font-weight: 400;
-  font-size: clamp(1.1rem, 1.7vw, 1.4rem); line-height: 1.45; color: var(--on);
-  letter-spacing: -0.01em;
-}
+.gd-narrative { display: flex; flex-direction: column; gap: 0.55rem; margin-top: 0.75rem; }
+.gd-line { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: clamp(1.1rem, 1.7vw, 1.4rem); line-height: 1.45; color: var(--on); letter-spacing: -0.01em; }
 .gd-line:last-child { color: var(--accent); font-weight: 500; }
-.gd-section-narrow .gd-line { max-width: 40ch; }
-.gd-time { position: relative; }
+.gd-variant-law .gd-line { font-family: var(--font-quote); font-style: italic; letter-spacing: 0; }
+.gd-variant-law .gd-line:last-child { font-style: italic; }
+.gd-variant-medicine .gd-section-narrow .gd-line { max-width: 42ch; }
+.gd-variant-law .gd-section-narrow { max-width: 680px; }
+.gd-variant-law .gd-narrative-feels .gd-line:first-child::first-letter {
+  float: left; font-family: var(--font-display); font-style: normal; font-weight: 600;
+  font-size: 3.4em; line-height: 0.72; padding: 0.05em 0.12em 0 0; color: var(--accent);
+}
 
 /* Split sections */
 .gd-split { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: clamp(2rem, 5vw, 4.5rem); }
 .gd-split-visual { display: flex; flex-direction: column; gap: 1rem; }
 .gd-split-flip .gd-split-copy { order: 2; }
 .gd-split-flip .gd-split-visual { order: 1; }
-.gd-split-copy .gd-narrative { margin-top: 1.5rem; }
+.gd-split-copy .gd-narrative { margin-top: 1.25rem; }
 .gd-split-copy .gd-line { font-size: clamp(1rem, 1.4vw, 1.18rem); }
-.gd-split-copy .gd-line:last-child { color: var(--accent); }
 
 /* Chat preview cards */
 .gd-preview {
   width: 100%; max-width: 480px;
   background: linear-gradient(145deg, var(--accent-soft), transparent 46%), var(--surface);
   border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--outline-2));
-  border-radius: 2rem; padding: 1.5rem;
+  border-radius: var(--radius-card); padding: 1.5rem;
   display: flex; flex-direction: column; gap: 1rem;
   box-shadow: 0 40px 120px rgba(0,0,0,0.6);
   transition: transform 0.3s ease, border-color 0.3s ease;
 }
-.gd-preview:hover { transform: translateY(-4px); border-color: var(--outline); }
-.gd-preview-q {
-  display: flex; align-items: flex-start; gap: 0.75rem;
-  background: var(--surface-3); border-radius: 1.25rem 1.25rem 1.25rem 0.4rem;
-  padding: 1rem 1.25rem; color: var(--on);
-}
+.gd-variant-medicine .gd-preview { box-shadow: 0 40px 120px rgba(0,0,0,0.6), 0 0 44px -14px var(--accent); }
+.gd-variant-medicine .gd-preview:hover { transform: translateY(-4px); border-color: var(--outline); }
+.gd-variant-law .gd-preview:hover { border-color: var(--accent); }
+.gd-preview-q { display: flex; align-items: flex-start; gap: 0.75rem; background: var(--surface-3); border-radius: var(--radius-card) var(--radius-card) var(--radius-card) 0.3rem; padding: 1rem 1.25rem; color: var(--on); }
+.gd-variant-law .gd-preview-q { border-radius: var(--radius-chip); }
 .gd-preview-q .material-symbols-outlined { font-size: 20px; color: var(--on-dim); flex: none; }
 .gd-preview-q p { margin: 0; font-size: 0.98rem; }
-.gd-preview-a {
-  background: linear-gradient(135deg, var(--accent), var(--yellow)); color: #10120c;
-  border-radius: 1.25rem 1.25rem 0.4rem 1.25rem; padding: 1.25rem 1.4rem;
-  display: flex; flex-direction: column; gap: 0.75rem;
-}
-.gd-pill-label {
-  align-self: flex-start; font-family: "JetBrains Mono", monospace; font-size: 0.62rem;
-  letter-spacing: 0.16em; text-transform: uppercase;
-  background: rgba(27,29,14,0.12); padding: 0.3rem 0.7rem; border-radius: 9999px;
-}
+.gd-preview-a { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--yellow))); color: #12100a; border-radius: var(--radius-card) var(--radius-card) 0.3rem var(--radius-card); padding: 1.25rem 1.4rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.gd-variant-law .gd-preview-a { background: linear-gradient(135deg, var(--accent), var(--legal-cream)); color: #2a2214; border-radius: var(--radius-chip); }
+.gd-pill-label { align-self: flex-start; font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase; background: rgba(27,29,14,0.14); padding: 0.3rem 0.7rem; border-radius: var(--radius-chip); }
 .gd-preview-a p { margin: 0; font-size: 0.95rem; line-height: 1.55; font-weight: 500; }
 .gd-sources { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.25rem; }
-.gd-source-chip {
-  display: inline-flex; align-items: center; gap: 0.4rem;
-  background: rgba(27,29,14,0.08); border-radius: 9999px; padding: 0.35rem 0.75rem;
-  font-family: "JetBrains Mono", monospace; font-size: 0.66rem; letter-spacing: 0.03em;
-}
+.gd-source-chip { display: inline-flex; align-items: center; gap: 0.4rem; background: rgba(27,29,14,0.1); border-radius: var(--radius-chip); padding: 0.35rem 0.75rem; font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.03em; }
 .gd-source-chip .material-symbols-outlined { font-size: 14px; }
-.gd-preview-na {
-  display: flex; align-items: flex-start; gap: 0.7rem;
-  border: 1px dashed var(--outline);
-  border-radius: 1.25rem 1.25rem 0.4rem 1.25rem; padding: 1.1rem 1.25rem; color: var(--on-dim);
-}
-.gd-preview-na .material-symbols-outlined { font-size: 20px; color: var(--beige-dim); flex: none; }
+.gd-variant-law .gd-source-chip { background: transparent; border: 1px solid rgba(42,34,20,0.4); border-radius: 0.2rem; }
+.gd-variant-law .gd-source-chip .material-symbols-outlined { display: none; }
+.gd-variant-law .gd-source-chip::before { content: "["; }
+.gd-variant-law .gd-source-chip::after { content: "]"; }
+.gd-preview-na { display: flex; align-items: flex-start; gap: 0.7rem; border: 1px dashed var(--outline); border-radius: var(--radius-card) var(--radius-card) 0.3rem var(--radius-card); padding: 1.1rem 1.25rem; color: var(--on-dim); }
+.gd-variant-law .gd-preview-na { border-radius: var(--radius-chip); }
+.gd-preview-na .material-symbols-outlined { font-size: 20px; color: var(--accent); flex: none; opacity: 0.8; }
 .gd-preview-na p { margin: 0; font-size: 0.92rem; line-height: 1.55; }
-.gd-upload-note {
-  display: flex; align-items: center; gap: 0.7rem; max-width: 480px;
-  background: var(--surface); border: 1px solid var(--outline-2); border-radius: 1.25rem;
-  padding: 0.9rem 1.1rem; color: var(--on-dim);
-  font-family: "JetBrains Mono", monospace; font-size: 0.72rem; letter-spacing: 0.03em;
-}
+.gd-upload-note { display: flex; align-items: center; gap: 0.7rem; max-width: 480px; background: var(--surface); border: 1px solid var(--outline-2); border-radius: var(--radius-card); padding: 0.9rem 1.1rem; color: var(--on-dim); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.03em; }
 .gd-upload-note .material-symbols-outlined { font-size: 20px; color: var(--accent); flex: none; }
 .gd-upload-note strong { color: var(--on); font-weight: 600; }
 
 /* Quiz card */
-.gd-quiz-card {
-  width: 100%; max-width: 480px;
-  background: var(--surface); border: 1px solid var(--outline-2);
-  border-radius: 1.75rem; padding: 1.4rem 1.5rem;
-  display: flex; flex-direction: column; gap: 0.7rem;
-  transition: transform 0.3s ease, border-color 0.3s ease;
-  box-shadow: 0 40px 120px rgba(0,0,0,0.5);
-}
-.gd-quiz-card:hover { transform: translateY(-4px); border-color: var(--outline); }
-.gd-quiz-tag {
-  font-family: "JetBrains Mono", monospace; font-size: 0.64rem;
-  letter-spacing: 0.14em; text-transform: uppercase; color: var(--violet);
-}
-.gd-quiz-q { margin: 0; font-family: "Sora", sans-serif; font-weight: 500; font-size: 1.02rem; line-height: 1.4; }
-.gd-quiz-opt {
-  border: 1px solid var(--outline-2); border-radius: 9999px;
-  padding: 0.6rem 1.1rem; font-size: 0.9rem; color: var(--on-dim);
-  display: flex; align-items: center; gap: 0.5rem;
-}
-.gd-quiz-opt-right {
-  background: linear-gradient(135deg, var(--violet), var(--accent));
-  border-color: transparent; color: #10120c; font-weight: 600;
-}
-.gd-quiz-opt-right .material-symbols-outlined {
-  font-size: 18px; font-variation-settings: "FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24;
-}
-.gd-quiz-grade {
-  display: inline-flex; align-items: center; gap: 0.5rem; align-self: flex-start;
-  background: var(--violet-soft); border-radius: 9999px; padding: 0.5rem 1rem;
-  font-family: "JetBrains Mono", monospace; font-size: 0.72rem; letter-spacing: 0.04em; color: var(--violet);
-}
+.gd-quiz-card { width: 100%; max-width: 480px; background: var(--surface); border: 1px solid var(--outline-2); border-radius: var(--radius-card); padding: 1.4rem 1.5rem; display: flex; flex-direction: column; gap: 0.7rem; transition: transform 0.3s ease, border-color 0.3s ease; box-shadow: 0 40px 120px rgba(0,0,0,0.5); }
+.gd-variant-medicine .gd-quiz-card:hover { transform: translateY(-4px); border-color: var(--outline); }
+.gd-quiz-tag { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+.gd-quiz-q { margin: 0; font-family: var(--font-display); font-weight: 500; font-size: 1.02rem; line-height: 1.4; }
+.gd-quiz-opt { border: 1px solid var(--outline-2); border-radius: var(--radius-chip); padding: 0.6rem 1.1rem; font-size: 0.9rem; color: var(--on-dim); display: flex; align-items: center; gap: 0.5rem; }
+.gd-quiz-opt-right { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 50%, #ffffff)); border-color: transparent; color: #10120c; font-weight: 600; }
+.gd-quiz-opt-right .material-symbols-outlined { font-size: 18px; font-variation-settings: "FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24; }
+.gd-quiz-grade { display: inline-flex; align-items: center; gap: 0.5rem; align-self: flex-start; background: var(--accent-soft); border-radius: var(--radius-chip); padding: 0.5rem 1rem; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.04em; color: var(--accent); }
 .gd-quiz-grade .material-symbols-outlined { font-size: 17px; }
+/* Law: legal-pad quiz card */
+.gd-variant-law .gd-quiz-card {
+  background: var(--legal-cream); color: #2a2214; border-color: #d8c79a; padding-left: 2.3rem; position: relative;
+  background-image: repeating-linear-gradient(var(--legal-cream), var(--legal-cream) 30px, #dcca9a 31px);
+  box-shadow: 0 30px 80px rgba(0,0,0,0.45);
+}
+.gd-variant-law .gd-quiz-card::before { content: ""; position: absolute; left: 1.2rem; top: 0; bottom: 0; width: 1.5px; background: var(--accent-2); }
+.gd-variant-law .gd-quiz-tag { color: #8a6d2f; }
+.gd-variant-law .gd-quiz-q { color: #241d10; }
+.gd-variant-law .gd-quiz-grade { background: rgba(158,59,52,0.12); color: #7a2f2a; }
 
 /* CTA banner */
 .gd-cta-banner {
   max-width: 1240px; margin: clamp(2rem, 5vw, 4rem) auto;
   padding: clamp(3rem, 6vw, 5rem) clamp(1.5rem, 5vw, 4rem);
-  background:
-    radial-gradient(circle at 80% 15%, rgba(187,167,255,0.2), transparent 55%),
-    radial-gradient(circle at 15% 90%, var(--accent-soft), transparent 55%),
-    radial-gradient(circle at 50% 25%, rgba(248,214,109,0.12), transparent 45%),
-    var(--surface);
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--outline-2)); border-radius: 2.5rem;
+  background: radial-gradient(circle at 50% 15%, var(--accent-soft), transparent 55%), var(--surface);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--outline-2)); border-radius: var(--radius-card);
   text-align: center; display: flex; flex-direction: column; align-items: center;
 }
 .gd-cta-narrative { margin: 1.5rem 0 2rem; }
 .gd-cta-narrative .gd-narrative { align-items: center; }
 .gd-cta-narrative .gd-line { max-width: 42ch; }
-.gd-switch-link {
-  margin-top: 1.5rem; background: none; border: none; cursor: pointer;
-  font-family: "JetBrains Mono", monospace; font-size: 0.72rem; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--on-dim); text-decoration: underline;
-  text-underline-offset: 4px; transition: color 0.2s ease;
-}
+.gd-switch-link { margin-top: 1.5rem; background: none; border: none; cursor: pointer; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--on-dim); text-decoration: underline; text-underline-offset: 4px; transition: color 0.2s ease; }
 .gd-switch-link:hover { color: var(--accent); }
 
 /* Footer */
-.gd-footer {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 1rem;
-  padding: 2rem clamp(1.25rem, 5vw, 4rem); border-top: 1px solid var(--outline-2);
-}
+.gd-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; padding: 2rem clamp(1.25rem, 5vw, 4rem); border-top: 1px solid var(--outline-2); }
 .gd-logo-sm { font-size: 1.1rem; }
-.gd-footer-meta {
-  font-family: "JetBrains Mono", monospace; font-size: 0.7rem;
-  letter-spacing: 0.06em; color: var(--on-dim); text-transform: uppercase;
-}
+.gd-footer-meta { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.06em; color: var(--on-dim); text-transform: uppercase; }
 .gd-footer-meta:last-child { margin-left: auto; }
 
 /* Chooser */
-.gd-chooser { display: flex; align-items: center; justify-content: center; padding: 2rem 1.25rem; }
-.gd-chooser-inner {
-  position: relative; z-index: 1; width: 100%; max-width: 880px;
-  text-align: center; display: flex; flex-direction: column; align-items: center;
-}
-.gd-chooser-logo { font-size: 2rem; margin-bottom: 1.5rem; }
-.gd-chooser-h1 {
-  font-family: "Sora", sans-serif; font-weight: 600;
-  font-size: clamp(2rem, 4.5vw, 3.2rem); line-height: 1.08; letter-spacing: -0.03em; margin: 0;
-  background: linear-gradient(135deg, var(--on) 10%, #ffffff 40%, var(--teal) 80%, var(--yellow));
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
-.gd-chooser-sub { margin: 1rem auto 0; max-width: 48ch; color: var(--on-dim); font-size: 1.05rem; line-height: 1.6; }
-.gd-chooser-grid {
-  margin-top: 2.75rem; width: 100%;
-  display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem;
-}
+.gd-chooser { display: flex; align-items: center; justify-content: center; padding: 2rem 1.25rem;
+  background: radial-gradient(circle at 20% 20%, rgba(63,218,200,0.1), transparent 34rem), radial-gradient(circle at 80% 80%, rgba(203,163,92,0.1), transparent 34rem), #08080a; }
+.gd-chooser-inner { position: relative; z-index: 1; width: 100%; max-width: 900px; text-align: center; display: flex; flex-direction: column; align-items: center; }
+.gd-chooser-logo { font-family: "Schibsted Grotesk", sans-serif; font-size: 2rem; margin-bottom: 1.5rem; color: #e9e7e3; }
+.gd-chooser-h1 { font-family: "Schibsted Grotesk", sans-serif; font-weight: 600; font-size: clamp(2rem, 4.5vw, 3.2rem); line-height: 1.08; letter-spacing: -0.03em; margin: 0; color: #f4f2ee; }
+.gd-chooser-sub { margin: 1rem auto 0; max-width: 48ch; color: #a7a59d; font-size: 1.05rem; line-height: 1.6; }
+.gd-chooser-grid { margin-top: 2.75rem; width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
 .gd-choice {
-  position: relative; cursor: pointer; text-align: left;
-  display: flex; flex-direction: column; gap: 0.75rem;
-  padding: 2rem 1.75rem; border-radius: 2rem;
-  background: linear-gradient(150deg, rgba(255,255,255,0.05), transparent 46%), var(--surface);
-  border: 1px solid var(--outline-2); color: var(--on);
+  position: relative; cursor: pointer; text-align: left; display: flex; flex-direction: column; gap: 0.75rem;
+  padding: 2.25rem 2rem; border-radius: var(--radius-card);
+  background: linear-gradient(155deg, var(--accent-soft), transparent 48%), var(--surface);
+  border: 1px solid var(--outline); color: var(--on);
   transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.3s ease;
 }
-.gd-choice:hover {
-  transform: translateY(-4px); border-color: var(--accent);
-  box-shadow: 0 30px 90px rgba(0,0,0,0.5);
-}
-.gd-choice:nth-child(2):hover { border-color: var(--sky); }
-.gd-choice-icon {
-  font-size: 40px; color: var(--accent);
-  width: 68px; height: 68px; display: flex; align-items: center; justify-content: center;
-  background: var(--accent-soft); border-radius: 9999px;
-}
-.gd-choice:nth-child(2) .gd-choice-icon { color: var(--sky); background: var(--sky-soft); }
-.gd-choice-title { font-family: "Sora", sans-serif; font-weight: 600; font-size: 1.6rem; letter-spacing: -0.02em; }
+.gd-choice:hover { transform: translateY(-4px); border-color: var(--accent); box-shadow: 0 30px 90px rgba(0,0,0,0.5); }
+.gd-choice-icon { font-size: 40px; color: var(--accent); width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; background: var(--accent-soft); border-radius: var(--radius-card); }
+.gd-choice-title { font-family: var(--font-display); font-weight: 600; font-size: 1.7rem; letter-spacing: -0.02em; color: var(--on); }
 .gd-choice-blurb { color: var(--on-dim); font-size: 0.95rem; line-height: 1.5; }
-.gd-choice-go {
-  margin-top: 0.5rem; display: inline-flex; align-items: center; gap: 0.4rem;
-  font-family: "JetBrains Mono", monospace; font-size: 0.72rem; letter-spacing: 0.1em;
-  text-transform: uppercase; color: var(--accent);
-}
-.gd-choice:nth-child(2) .gd-choice-go { color: var(--sky); }
+.gd-choice-go { margin-top: 0.5rem; display: inline-flex; align-items: center; gap: 0.4rem; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
 .gd-choice-go .material-symbols-outlined { font-size: 16px; transition: transform 0.2s ease; }
 .gd-choice:hover .gd-choice-go .material-symbols-outlined { transform: translateX(4px); }
-.gd-chooser-foot {
-  margin-top: 2rem; font-family: "JetBrains Mono", monospace; font-size: 0.7rem;
-  letter-spacing: 0.08em; text-transform: uppercase; color: var(--on-dim);
-}
+.gd-chooser-foot { margin-top: 2rem; font-family: "IBM Plex Mono", monospace; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: #7d7b74; }
 
-/* Hero entrance */
+/* Entrance + reveals */
 @media (prefers-reduced-motion: no-preference) {
-  .gd-rise { animation: gd-rise 0.85s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .gd-rise { animation: gd-rise var(--gd-dur) var(--gd-ease) both; }
   .gd-rise-1 { animation-delay: 0.05s; }
   .gd-rise-2 { animation-delay: 0.15s; }
   .gd-rise-3 { animation-delay: 0.28s; }
   .gd-rise-4 { animation-delay: 0.4s; }
   .gd-rise-5 { animation-delay: 0.52s; }
-}
-@keyframes gd-rise { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
-
-/* Scroll reveals */
-@media (prefers-reduced-motion: no-preference) {
-  .gd-r {
-    opacity: 0; transform: translateY(28px);
-    transition: opacity 0.7s ease, transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
-    transition-delay: var(--rd, 0s);
-  }
+  .gd-r { opacity: 0; transform: translateY(var(--gd-rise)); transition: opacity var(--gd-dur) ease, transform calc(var(--gd-dur) + 0.05s) var(--gd-ease); transition-delay: var(--rd, 0s); }
   .gd-r.gd-in { opacity: 1; transform: none; }
 }
+@keyframes gd-rise { from { opacity: 0; transform: translateY(var(--gd-rise)); } to { opacity: 1; transform: none; } }
 
 /* Responsive */
 @media (max-width: 880px) {
-  .gd-hero { grid-template-columns: 1fr; padding-top: 2.5rem; }
+  .gd-hero-med { grid-template-columns: 1fr; padding-top: 2.5rem; }
   .gd-hero-visual { order: 2; }
   .gd-split { grid-template-columns: 1fr; }
   .gd-split-flip .gd-split-copy { order: 1; }
@@ -1010,7 +1119,8 @@ const GD_CSS = `
 }
 @media (prefers-reduced-motion: reduce) {
   .gd-blob { animation: none; }
-  .gd-preview:hover, .gd-quiz-card:hover, .gd-choice:hover,
-  .gd-btn-primary:hover { transform: none; }
+  .gd-vitals-dot { animation: none; }
+  .gd-pulse path { stroke-dashoffset: 0 !important; animation: none !important; }
+  .gd-preview:hover, .gd-quiz-card:hover, .gd-choice:hover, .gd-btn-primary:hover { transform: none; }
 }
 `;
