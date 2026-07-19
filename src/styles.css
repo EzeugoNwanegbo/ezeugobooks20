@@ -1,4 +1,8 @@
 @import url("https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Hanken+Grotesk:wght@300;400;500;600&family=Nunito:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+/* Per-discipline display + mono faces: Medicine (Schibsted Grotesk / IBM Plex
+   Mono), Law (Fraunces / Courier Prime). Loaded globally; applied only when a
+   discipline theme is active. */
+@import url("https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=IBM+Plex+Mono:wght@400;500&family=Courier+Prime:wght@400;700&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap");
 @import "tailwindcss" source(none);
 @source "../src";
@@ -145,6 +149,11 @@ html {
   --shadow-glow: 0 0 34px rgba(228, 228, 204, 0.1);
 
   --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Entrance/reveal timing - overridden per discipline (medicine snaps, law
+     settles). Neutral default keeps today's feel. */
+  --motion-emphasis: 380ms;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .dark {
@@ -216,6 +225,127 @@ html {
 
   /* Deeper brass so the "from your files" chip stays legible on cream. */
   --leaf: #9a6b12;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DISCIPLINE THEMING
+   The app carries identity in its "jewelry, not its walls": the reading surface
+   (--background/--foreground, prose metrics, Nunito body) never changes, so a
+   paragraph of answer text is identical in both. Only the accent system, chrome,
+   focus, chips, headings, radius, fonts and motion diverge. Applied via
+   `data-discipline` on <html> (parallel to the .dark/.light class toggle).
+   Guests / no-discipline users get no attribute → today's neutral theme.
+
+   Specificity note: :root[data-discipline] and .light[data-discipline] are equal
+   (0,2,0); the .light[...] blocks come AFTER so they win in light mode.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── MEDICINE — "monitor glow" (dark) ── */
+:root[data-discipline="medicine"] {
+  --pop: #3fdac8;
+  --pop-2: #2bb8a8;
+  --pop-foreground: #04211d;
+  --gradient-pop: linear-gradient(145deg, #55e2d2 0%, #2bb8a8 100%);
+  --shadow-pop: 0 10px 28px -8px rgba(63, 218, 200, 0.38);
+
+  --primary: #d8e6e2;
+  --primary-glow: #9cc9c0;
+  --primary-foreground: #0b1d19;
+  --accent: #3fdac8;
+  --accent-foreground: #04211d;
+  --ring: #3fdac8;
+  --coral: #ff7a70;
+  --coral-foreground: #21100d;
+
+  --surface: #0d1214;
+  --surface-elevated: #151c1e;
+  --border: rgba(216, 230, 226, 0.1);
+  --input: rgba(216, 230, 226, 0.12);
+
+  --source-library: #3fdac8;
+  --source-general: #8fb8b2;
+  --source-web: #7e8b93;
+  --leaf: #e6c15a;
+
+  --luxury-selection: rgba(63, 218, 200, 0.22);
+
+  --radius: 1rem;
+  --font-display: "Schibsted Grotesk", "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  --motion-emphasis: 340ms;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── LAW — "chambers at lamplight" (dark) ── */
+:root[data-discipline="law"] {
+  --pop: #cba35c;
+  --pop-2: #b98f49;
+  --pop-foreground: #241505;
+  --gradient-pop: linear-gradient(145deg, #d9b26b 0%, #b98f49 100%);
+  --shadow-pop: 0 10px 26px -10px rgba(203, 163, 92, 0.32);
+
+  --primary: #e7dac2;
+  --primary-glow: #cbb690;
+  --primary-foreground: #221807;
+  --accent: #cba35c;
+  --accent-foreground: #241505;
+  --ring: #cba35c;
+  --coral: #c97a6e;
+  --coral-foreground: #21100d;
+
+  --surface: #12100c;
+  --surface-elevated: #1c1812;
+  --border: rgba(226, 208, 177, 0.11);
+  --input: rgba(226, 208, 177, 0.13);
+
+  --source-library: #cba35c;
+  --source-general: #a99878;
+  --source-web: #8b8378;
+  --leaf: #e0b76a;
+
+  --luxury-selection: rgba(203, 163, 92, 0.22);
+
+  --radius: 0.25rem;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-mono: "Courier Prime", "Courier New", ui-monospace, monospace;
+  --motion-emphasis: 700ms;
+  --motion-ease: cubic-bezier(0.32, 0, 0.12, 1);
+}
+
+/* ── MEDICINE (light) ── raw teal fails on cream; deepen to petrol ── */
+.light[data-discipline="medicine"] {
+  --pop: #0b7568;
+  --pop-2: #0f9d8c;
+  --pop-foreground: #ffffff;
+  --gradient-pop: linear-gradient(145deg, #0f9d8c 0%, #0b7568 100%);
+  --shadow-pop: 0 10px 26px -8px rgba(11, 117, 104, 0.34);
+  --accent: #0b7568;
+  --accent-foreground: #ffffff;
+  --ring: #0b7568;
+  --surface: #eef4f2;
+  --surface-elevated: #e2ece9;
+  --source-library: #0b7568;
+  --source-general: #4e7a73;
+  --source-web: #6c7f84;
+  --luxury-selection: rgba(11, 117, 104, 0.2);
+}
+
+/* ── LAW (light) ── raw gold fails on cream; deepen to bronze ── */
+.light[data-discipline="law"] {
+  --pop: #7e5d26;
+  --pop-2: #94702f;
+  --pop-foreground: #ffffff;
+  --gradient-pop: linear-gradient(145deg, #94702f 0%, #7e5d26 100%);
+  --shadow-pop: 0 10px 26px -10px rgba(126, 93, 38, 0.32);
+  --accent: #7e5d26;
+  --accent-foreground: #ffffff;
+  --ring: #7e5d26;
+  --surface: #f3ede1;
+  --surface-elevated: #e9e0cf;
+  --source-library: #7e5d26;
+  --source-general: #7a6b4e;
+  --source-web: #837a6b;
+  --luxury-selection: rgba(126, 93, 38, 0.2);
 }
 
 @layer base {
@@ -1950,3 +2080,80 @@ html.gd-low-power [style*="gd-dot-wave"] {
 @media (max-width: 767px) {
   .gd-library-header, .gd-coach-header { padding: 1.15rem; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DISCIPLINE CHROME (craft layer)
+   Scoped to [data-discipline]; neutral/guest users keep every default below.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Sidebar accent - replace the fixed blue→violet→coral rainbow with the
+   discipline jewel. Medicine: a teal strip fading out. Law: a gold hairline
+   over a neutral one (the editorial double rule). */
+:root[data-discipline="medicine"] .gd-app-sidebar::before {
+  height: 2px;
+  background: linear-gradient(90deg, var(--pop), transparent 72%);
+}
+:root[data-discipline="law"] .gd-app-sidebar::before {
+  height: 1px;
+  background: var(--pop);
+  box-shadow: 0 2px 0 0 var(--border);
+  margin-bottom: 2px;
+}
+
+/* Nav items go monochrome; the active jewel is the discipline accent. */
+:root[data-discipline] .gd-side-nav-item { --gd-nav-accent: var(--pop); }
+:root[data-discipline] .gd-side-nav-item svg { color: var(--muted-foreground); }
+:root[data-discipline] .gd-side-nav-item.gd-side-nav-active svg { color: var(--pop); }
+/* Last-minute keeps an urgency hue (themed coral), so it still reads as "hurry". */
+:root[data-discipline] .gd-side-nav-coral { --gd-nav-accent: var(--coral); }
+:root[data-discipline] .gd-side-nav-coral svg { color: var(--coral); }
+:root[data-discipline] .gd-profile-mark { background: var(--gradient-pop); }
+
+/* Page washes + headers retint to the jewel (last-minute stays urgent). */
+:root[data-discipline] .gd-library-page,
+:root[data-discipline] .gd-coach-page {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--pop) 7%, transparent), transparent 26rem);
+}
+:root[data-discipline] .gd-last-minute-page {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--coral) 8%, transparent), transparent 28rem);
+}
+:root[data-discipline] .gd-library-header,
+:root[data-discipline] .gd-coach-header,
+:root[data-discipline] .dark .gd-library-header {
+  border-color: color-mix(in srgb, var(--pop) 22%, transparent);
+  background: linear-gradient(120deg, color-mix(in srgb, var(--pop) 13%, transparent), transparent 56%);
+}
+:root[data-discipline] .gd-last-minute-header {
+  border-color: color-mix(in srgb, var(--coral) 22%, transparent);
+  background: linear-gradient(120deg, color-mix(in srgb, var(--coral) 13%, transparent), transparent 56%);
+}
+:root[data-discipline] .gd-library-header .gd-page-kicker,
+:root[data-discipline] .gd-coach-header .gd-page-kicker { color: var(--pop); }
+:root[data-discipline] .gd-library-dropzone {
+  border-color: color-mix(in srgb, var(--pop) 42%, transparent) !important;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--pop) 9%, transparent), transparent) !important;
+}
+
+/* Answer headings adopt the discipline display face (body prose stays Nunito).
+   This is the one identity touch inside answers, and it's headings only. */
+:root[data-discipline] .medai-prose h1,
+:root[data-discipline] .medai-prose h2,
+:root[data-discipline] .medai-prose h3 { font-family: var(--font-display); }
+
+/* Entrances take the discipline timing (medicine snaps, law settles). */
+:root[data-discipline] .gd-msg-in,
+:root[data-discipline] .selector-reveal {
+  animation-duration: var(--motion-emphasis);
+  animation-timing-function: var(--motion-ease);
+}
+
+/* Law editorial detail: serif small-caps kickers + brand. */
+:root[data-discipline="law"] .gd-nav-label,
+:root[data-discipline="law"] .gd-page-kicker {
+  font-family: var(--font-display);
+  font-variant-caps: small-caps;
+  text-transform: none;
+  letter-spacing: 0.06em;
+  font-size: 0.72rem;
+}
+:root[data-discipline="law"] .luxury-brand-text { letter-spacing: 0.01em; }

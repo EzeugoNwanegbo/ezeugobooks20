@@ -84,6 +84,22 @@ function AppLayout() {
     setHideMobileTopbar(false);
   }, [location.pathname]);
 
+  // Theme the whole app to the student's discipline (medicine/law) via a
+  // root attribute, parallel to the .dark/.light theme classes. Guests and
+  // pre-discipline profiles get no attribute -> the neutral default theme.
+  useEffect(() => {
+    const root = document.documentElement;
+    const discipline = profile?.discipline;
+    if (discipline === "medicine" || discipline === "law") {
+      root.dataset.discipline = discipline;
+    } else {
+      delete root.dataset.discipline;
+    }
+    return () => {
+      delete root.dataset.discipline;
+    };
+  }, [profile?.discipline]);
+
   // Touch-gesture trackers (declared up here so the Hook order is stable across
   // the early returns below).
   const contentTouchRef = useRef<{ x: number; y: number; edge: boolean } | null>(null);
