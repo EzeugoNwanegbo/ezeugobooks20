@@ -86,7 +86,7 @@ const LENGTH_LIMIT_NOTE =
 const ANSWER_MODEL = Deno.env.get("OPENAI_ANSWER_MODEL") || "gpt-4o-mini";
 // Hard cap on the streamed answer so a premium model cannot run up an unbounded
 // bill (the old call had no cap at all). Raise via env if answers get truncated.
-const ANSWER_MAX_TOKENS = Number(Deno.env.get("OPENAI_ANSWER_MAX_TOKENS")) || 1200;
+const ANSWER_MAX_TOKENS = Number(Deno.env.get("OPENAI_ANSWER_MAX_TOKENS")) || 1500;
 // Optional reasoning budget for GPT-5-class models (e.g. "minimal" / "low").
 // Only sent when set - keeps reasoning-token cost down without guessing whether
 // the configured model is a reasoning model at all.
