@@ -282,6 +282,7 @@ const GUEST_PROFILE: Profile = {
   weak_areas: null,
   recent_topics: null,
   onboarded: true,
+  is_admin: false,
 };
 
 function chatSessionStorageKey(ownerId: string) {
@@ -506,6 +507,34 @@ function docsFromChunkRows(rows: ChunkSearchRow[]): DocumentCtx[] {
       })
       .join("\n\n---\n\n"),
   }));
+}
+
+type LibraryChunkRow = {
+  chunk_index: number;
+  content: string;
+  id: string;
+  library_document_id: string;
+  page_end: number | null;
+  page_start: number | null;
+  rank: number;
+  title: string;
+};
+
+// Shared-library hits reuse the same document grouping as personal files; they
+// are tagged with a "Shared library" folder so the source stays visible.
+function docsFromLibraryRows(rows: LibraryChunkRow[]): DocumentCtx[] {
+  const asChunkRows: ChunkSearchRow[] = rows.map((r) => ({
+    chunk_index: r.chunk_index,
+    content: r.content,
+    document_id: r.library_document_id,
+    file_name: r.title,
+    folder: "Shared library",
+    id: r.id,
+    page_end: r.page_end,
+    page_start: r.page_start,
+    rank: r.rank,
+  }));
+  return docsFromChunkRows(asChunkRows);
 }
 
 function webSourcesFromJson(value: unknown): WebSource[] | undefined {
@@ -1273,24 +1302,46 @@ export function ChatPage() {
     signal?.addEventListener("abort", abortFromCaller, { once: true });
     try {
       if (signal?.aborted) throw new Error(CHAT_CANCELLED);
-      const { data, error } = await supabase
-        .rpc("search_document_chunks_hybrid", {
-          query_terms: terms,
-          query_embedding: queryEmbedding,
-          match_document_ids: documentIds,
-          // Wider first-pass net so the right material reaches the AI up front.
-          match_count: manuallySelected ? 30 : 24,
-        })
-        .abortSignal(controller.signal);
+      // Search the student's own files and, in smart mode, the shared library
+      // (built-in textbooks) scoped to their discipline, then merge both. When
+      // the student manually selected specific files we respect that and skip
+      // the library.
+      const [ownRes, libRes] = await Promise.all([
+        supabase
+          .rpc("search_document_chunks_hybrid", {
+            query_terms: terms,
+            query_embedding: queryEmbedding,
+            match_document_ids: documentIds,
+            // Wider first-pass net so the right material reaches the AI up front.
+            match_count: manuallySelected ? 30 : 24,
+          })
+          .abortSignal(controller.signal),
+        manuallySelected
+          ? Promise.resolve({ data: null, error: null })
+          : supabase
+              .rpc("search_library_chunks_hybrid", {
+                query_terms: terms,
+                query_embedding: queryEmbedding,
+                match_discipline: profile.discipline ?? null,
+                match_count: 12,
+              })
+              .abortSignal(controller.signal),
+      ]);
 
-      if (error) {
-        console.warn("chunk search failed; falling back to document preview", error);
-      } else if (data && data.length > 0) {
-        return {
-          docs: docsFromChunkRows(data as ChunkSearchRow[]),
-          noLibraryMatch: false,
-          noMatchScope: null,
-        };
+      if (ownRes.error) {
+        console.warn("chunk search failed; falling back to document preview", ownRes.error);
+      }
+      const ownDocs =
+        ownRes.data && ownRes.data.length > 0
+          ? docsFromChunkRows(ownRes.data as ChunkSearchRow[])
+          : [];
+      const libraryDocs =
+        libRes.data && libRes.data.length > 0
+          ? docsFromLibraryRows(libRes.data as LibraryChunkRow[])
+          : [];
+      const merged = [...ownDocs, ...libraryDocs];
+      if (merged.length > 0) {
+        return { docs: merged, noLibraryMatch: false, noMatchScope: null };
       }
     } catch (err) {
       if (signal?.aborted) throw new Error(CHAT_CANCELLED);

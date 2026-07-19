@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Plus,
   Settings,
+  ShieldCheck,
   TimerReset,
   Trophy,
   Trash2,
@@ -433,6 +434,8 @@ function AppLayout() {
             {navItem("/app/leaderboard", <Trophy className="h-4 w-4 shrink-0" />, "Leaderboard", "amber")}
             {navItem("/app/feedback", <Heart className="h-4 w-4 shrink-0" />, "Feedback")}
             {navItem("/app/settings", <Settings className="h-4 w-4 shrink-0" />, "Settings")}
+            {profile?.is_admin &&
+              navItem("/app/admin", <ShieldCheck className="h-4 w-4 shrink-0" />, "Admin", "amber")}
           </div>
         </nav>
         <div

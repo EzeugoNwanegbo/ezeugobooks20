@@ -168,6 +168,105 @@ export type Database = {
         };
         Relationships: [];
       };
+      library_documents: {
+        Row: {
+          created_at: string | null;
+          discipline: string | null;
+          file_name: string;
+          file_size: number | null;
+          file_type: string | null;
+          id: string;
+          page_count: number | null;
+          reviewed_at: string | null;
+          reviewed_by: string | null;
+          rights_note: string | null;
+          source_document_id: string | null;
+          status: string;
+          storage_path: string | null;
+          subject: string | null;
+          submitted_by: string | null;
+          title: string;
+          track: string | null;
+        };
+        Insert: {
+          created_at?: string | null;
+          discipline?: string | null;
+          file_name: string;
+          file_size?: number | null;
+          file_type?: string | null;
+          id?: string;
+          page_count?: number | null;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          rights_note?: string | null;
+          source_document_id?: string | null;
+          status?: string;
+          storage_path?: string | null;
+          subject?: string | null;
+          submitted_by?: string | null;
+          title: string;
+          track?: string | null;
+        };
+        Update: {
+          created_at?: string | null;
+          discipline?: string | null;
+          file_name?: string;
+          file_size?: number | null;
+          file_type?: string | null;
+          id?: string;
+          page_count?: number | null;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          rights_note?: string | null;
+          source_document_id?: string | null;
+          status?: string;
+          storage_path?: string | null;
+          subject?: string | null;
+          submitted_by?: string | null;
+          title?: string;
+          track?: string | null;
+        };
+        Relationships: [];
+      };
+      library_document_chunks: {
+        Row: {
+          chunk_index: number;
+          content: string;
+          created_at: string | null;
+          discipline: string | null;
+          embedding: string | null;
+          id: string;
+          library_document_id: string;
+          page_end: number | null;
+          page_start: number | null;
+          token_estimate: number | null;
+        };
+        Insert: {
+          chunk_index: number;
+          content: string;
+          created_at?: string | null;
+          discipline?: string | null;
+          embedding?: string | null;
+          id?: string;
+          library_document_id: string;
+          page_end?: number | null;
+          page_start?: number | null;
+          token_estimate?: number | null;
+        };
+        Update: {
+          chunk_index?: number;
+          content?: string;
+          created_at?: string | null;
+          discipline?: string | null;
+          embedding?: string | null;
+          id?: string;
+          library_document_id?: string;
+          page_end?: number | null;
+          page_start?: number | null;
+          token_estimate?: number | null;
+        };
+        Relationships: [];
+      };
       messages: {
         Row: {
           content: string;
@@ -225,6 +324,7 @@ export type Database = {
           exam_format: Database["public"]["Enums"]["exam_format"] | null;
           gamification_updated_at: string | null;
           id: string;
+          is_admin: boolean;
           name: string | null;
           onboarded: boolean | null;
           personalization_background: string | null;
@@ -247,6 +347,7 @@ export type Database = {
           exam_format?: Database["public"]["Enums"]["exam_format"] | null;
           gamification_updated_at?: string | null;
           id: string;
+          is_admin?: boolean;
           name?: string | null;
           onboarded?: boolean | null;
           personalization_background?: string | null;
@@ -269,6 +370,7 @@ export type Database = {
           exam_format?: Database["public"]["Enums"]["exam_format"] | null;
           gamification_updated_at?: string | null;
           id?: string;
+          is_admin?: boolean;
           name?: string | null;
           onboarded?: boolean | null;
           personalization_background?: string | null;
@@ -344,6 +446,42 @@ export type Database = {
           page_start: number | null;
           rank: number;
         }[];
+      };
+      search_library_chunks_hybrid: {
+        Args: {
+          match_count?: number;
+          match_discipline?: string | null;
+          query_embedding?: string | null;
+          query_terms: string[];
+        };
+        Returns: {
+          chunk_index: number;
+          content: string;
+          id: string;
+          library_document_id: string;
+          page_end: number | null;
+          page_start: number | null;
+          rank: number;
+          title: string;
+        }[];
+      };
+      promote_document_to_library: {
+        Args: {
+          p_library_id: string;
+          p_source_document_id: string;
+        };
+        Returns: number;
+      };
+      award_library_points: {
+        Args: {
+          p_user_id: string;
+          p_points: number;
+        };
+        Returns: undefined;
+      };
+      is_admin: {
+        Args: Record<string, never>;
+        Returns: boolean;
       };
     };
     Enums: {

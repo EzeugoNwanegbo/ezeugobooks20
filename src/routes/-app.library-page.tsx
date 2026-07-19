@@ -18,6 +18,7 @@ import {
   Upload,
   FileText,
   Trash2,
+  BookUp,
   BookOpen,
   Folder,
   FolderPlus,
@@ -86,10 +87,11 @@ function getUploadErrorMessage(error: unknown): string {
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 
 export function LibraryPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
   const [folders, setFolders] = useState<FolderRow[]>([]);
   const [docs, setDocs] = useState<DocRow[]>([]);
+  const [libraryBooks, setLibraryBooks] = useState<{ id: string; title: string }[]>([]);
   const [query, setQuery] = useState("");
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<string>("");
@@ -741,6 +743,58 @@ export function LibraryPage() {
     }
   };
 
+  // Built-in textbooks the student can search without uploading, scoped to
+  // their discipline (books with no discipline are shared with everyone).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from("library_documents")
+        .select("id, title, discipline")
+        .eq("status", "approved");
+      if (cancelled || !data) return;
+      const disc = profile?.discipline ?? null;
+      setLibraryBooks(
+        data
+          .filter((b) => !b.discipline || b.discipline === disc)
+          .map((b) => ({ id: b.id, title: b.title })),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.discipline]);
+
+  // Offer an uploaded doc to the shared library. It lands as a pending
+  // submission the admin reviews; the student earns points if it's approved.
+  const shareToLibrary = async (doc: DocRow) => {
+    if (!user) return;
+    if (
+      !confirm(
+        `Share "${doc.file_name}" with other students?\n\nIt will be reviewed before it appears in the shared library. You earn points if it's approved.`,
+      )
+    )
+      return;
+    try {
+      const { error } = await supabase.from("library_documents").insert({
+        title: doc.file_name,
+        file_name: doc.file_name,
+        file_type: doc.file_type,
+        page_count: doc.page_count,
+        file_size: doc.file_size,
+        discipline: profile?.discipline ?? null,
+        subject: doc.suggested_subject,
+        source_document_id: doc.id,
+        submitted_by: user.id,
+        status: "pending",
+      });
+      if (error) throw error;
+      toast.success("Sent for review — you'll earn points if it's approved for the library.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not share this document");
+    }
+  };
+
   const onDelete = async (doc: DocRow) => {
     if (!user) return;
     if (!confirm(`Delete "${doc.file_name}"?`)) return;
@@ -1128,6 +1182,28 @@ export function LibraryPage() {
               </div>
             )}
 
+            {libraryBooks.length > 0 && !query.trim() && (
+              <div className="mb-4 rounded-2xl border border-border bg-surface p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <BookUp className="h-4 w-4 text-pop" />
+                  <h3 className="text-sm font-semibold text-foreground">Built-in textbooks</h3>
+                  <span className="text-xs text-muted-foreground">
+                    already searchable — no upload needed
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {libraryBooks.map((b) => (
+                    <span
+                      key={b.id}
+                      className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground"
+                    >
+                      {b.title}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {query.trim() && matchCount === 0 ? (
               <p className="py-10 text-center text-sm text-muted-foreground sm:py-12">
                 No documents match "{query}".
@@ -1147,6 +1223,7 @@ export function LibraryPage() {
                     allFolders={folders}
                     onDelete={onDelete}
                     onMove={moveDoc}
+                    onShare={shareToLibrary}
                   />
                 ))}
               </div>
@@ -1277,6 +1354,7 @@ function DocumentCard({
   allFolders,
   onDelete,
   onMove,
+  onShare,
 }: {
   doc: DocRow;
   folderName: string;
@@ -1284,6 +1362,7 @@ function DocumentCard({
   allFolders: FolderRow[];
   onDelete: (doc: DocRow) => void;
   onMove: (docId: string, folderId: string | null) => void;
+  onShare: (doc: DocRow) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const meta = [folderName, doc.page_count ? `${doc.page_count} pages` : null]
@@ -1335,6 +1414,18 @@ function DocumentCard({
                       {f.name}
                     </button>
                   ))}
+                {!isProcessing && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onShare(doc);
+                    }}
+                    className="flex w-full items-center gap-2 border-t border-border px-3 py-2 text-left text-sm hover:bg-surface-elevated"
+                  >
+                    <BookUp className="h-3.5 w-3.5 text-pop" />
+                    Share to library
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setMenuOpen(false);

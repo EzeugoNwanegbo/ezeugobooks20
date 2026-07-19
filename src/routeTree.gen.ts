@@ -24,6 +24,7 @@ import { Route as AppLastMinuteRouteImport } from './routes/app.last-minute'
 import { Route as AppHistoryRouteImport } from './routes/app.history'
 import { Route as AppFeedbackRouteImport } from './routes/app.feedback'
 import { Route as AppChatRouteImport } from './routes/app.chat'
+import { Route as AppAdminRouteImport } from './routes/app.admin'
 
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
@@ -100,6 +101,11 @@ const AppChatRoute = AppChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAdminRoute = AppAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -108,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/delete-account': typeof DeleteAccountRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/app/admin': typeof AppAdminRoute
   '/app/chat': typeof AppChatRoute
   '/app/feedback': typeof AppFeedbackRoute
   '/app/history': typeof AppHistoryRoute
@@ -125,6 +132,7 @@ export interface FileRoutesByTo {
   '/delete-account': typeof DeleteAccountRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/app/admin': typeof AppAdminRoute
   '/app/chat': typeof AppChatRoute
   '/app/feedback': typeof AppFeedbackRoute
   '/app/history': typeof AppHistoryRoute
@@ -143,6 +151,7 @@ export interface FileRoutesById {
   '/delete-account': typeof DeleteAccountRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/app/admin': typeof AppAdminRoute
   '/app/chat': typeof AppChatRoute
   '/app/feedback': typeof AppFeedbackRoute
   '/app/history': typeof AppHistoryRoute
@@ -162,6 +171,7 @@ export interface FileRouteTypes {
     | '/delete-account'
     | '/onboarding'
     | '/privacy'
+    | '/app/admin'
     | '/app/chat'
     | '/app/feedback'
     | '/app/history'
@@ -179,6 +189,7 @@ export interface FileRouteTypes {
     | '/delete-account'
     | '/onboarding'
     | '/privacy'
+    | '/app/admin'
     | '/app/chat'
     | '/app/feedback'
     | '/app/history'
@@ -196,6 +207,7 @@ export interface FileRouteTypes {
     | '/delete-account'
     | '/onboarding'
     | '/privacy'
+    | '/app/admin'
     | '/app/chat'
     | '/app/feedback'
     | '/app/history'
@@ -323,10 +335,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppChatRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/admin': {
+      id: '/app/admin'
+      path: '/admin'
+      fullPath: '/app/admin'
+      preLoaderRoute: typeof AppAdminRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
 interface AppRouteChildren {
+  AppAdminRoute: typeof AppAdminRoute
   AppChatRoute: typeof AppChatRoute
   AppFeedbackRoute: typeof AppFeedbackRoute
   AppHistoryRoute: typeof AppHistoryRoute
@@ -339,6 +359,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAdminRoute: AppAdminRoute,
   AppChatRoute: AppChatRoute,
   AppFeedbackRoute: AppFeedbackRoute,
   AppHistoryRoute: AppHistoryRoute,

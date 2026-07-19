@@ -19,6 +19,7 @@ export type Profile = {
   weak_areas: string[] | null;
   recent_topics: string[] | null;
   onboarded: boolean | null;
+  is_admin: boolean | null;
 };
 
 type AuthContextValue = {
