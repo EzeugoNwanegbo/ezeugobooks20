@@ -417,7 +417,7 @@ function modeInstruction(mode: Mode, examFormat: string): string {
 - HARD LIMIT: 3 short paragraphs maximum. Condense the draft - do not expand it.
 - Use plain English and one real-world analogy to make the concept click.
 - No jargon without an immediate plain-English explanation.
-- If there is a source reference, put it in one short inline line, not a separate section.
+- If the research draft has a source, keep the required "Source:" line - it sits above the 3 paragraphs and does not count toward the limit. Do not drop it to save space.
 - End with "Study tip:" - one sentence directly relevant to ${examFormat} assessment.`;
 }
 
@@ -522,9 +522,9 @@ RULES:
 - Use only the research draft plus any supplied web-curriculum guidance. Do not invent new facts.
 - Preserve every fact from the research summary; do not drop important evidence.
 - Lead with the direct answer, then the source evidence, then the explanation.
-- Keep source references (document names / page numbers) where they appear in the summary.
-- For uploaded-file answers, include a short "Source:" line near the top using the document name and page/chunk label from the research draft. Do not hide the source in prose.
-- If a page number is not available, write the source as the document name plus the chunk/source excerpt label instead of omitting it.
+- CITATION (mandatory, overrides every mode length/format limit): whenever the research draft contains a "Where found:" section or any document name with a page/chunk label, you MUST reproduce it as a short "Source:" line near the top of the answer, formatted exactly as "Source: <document name>, <Page N or chunk label>". This line is required even in Simplified mode and never counts against the paragraph limit. Never drop, summarise away, or bury the source in prose.
+- Copy the page/chunk label verbatim from the research draft. If the draft gives a page number, cite the page; if it only gives a chunk/excerpt label, cite that label. Never omit the source because no page number was available, and never invent a page number the draft did not provide.
+- The "never mention internal steps" identity rule does NOT apply to source citations: document names and page labels are the student's own uploaded material and must always be shown.
 - If the summary says "[General knowledge]", keep that label so the student knows.
 - Write as if you are talking directly to ${p.name || "the student"} - warm, clear, encouraging.
 - Use clean, organized Markdown: headings, short paragraphs, numbered steps, hyphen bullets, and tables where helpful.

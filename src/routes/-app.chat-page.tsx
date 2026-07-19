@@ -419,6 +419,22 @@ function pickSmartDocs(
   ).map((item) => item.doc);
 }
 
+// Extracted text carries "[Page N]" markers (see extract-pdf / document-chunks).
+// A snippet sliced around a keyword rarely starts on one of those markers, so
+// find the nearest marker at or before the slice start and return its page
+// label. This is what lets the fallback excerpt path still cite a page instead
+// of an anonymous "[Relevant excerpt N]".
+function pageLabelAtOffset(text: string, offset: number): string | null {
+  const marker = /\[Page\s+(\d+)\]/g;
+  let page: string | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = marker.exec(text)) !== null) {
+    if (match.index > offset) break;
+    page = match[1];
+  }
+  return page ? `Page ${page}` : null;
+}
+
 function relevantExcerpt(doc: DocumentCtx, content: string, messages: DisplayMessage[]): string {
   const text = doc.excerpt || "";
   if (text.length <= SNIPPET_WINDOW_CHARS * 2) return text;
@@ -459,7 +475,9 @@ function relevantExcerpt(doc: DocumentCtx, content: string, messages: DisplayMes
   return chosen
     .sort((a, b) => a.start - b.start)
     .map((part, index) => {
-      const label = `[Relevant excerpt ${index + 1} from ${doc.file_name}]`;
+      const page = pageLabelAtOffset(text, part.start);
+      const where = page ? `${doc.file_name}, ${page}` : doc.file_name;
+      const label = `[Relevant excerpt ${index + 1} from ${where}]`;
       return `${label}\n${text.slice(part.start, part.end)}`;
     })
     .join("\n\n---\n\n");
