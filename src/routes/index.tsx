@@ -493,17 +493,18 @@ function HeroMedicine({ c }: { c: Content }) {
   return (
     <section className="gd-hero gd-hero-med">
       <div className="gd-hero-copy">
-        <span className="gd-eyebrow gd-instrument gd-rise gd-rise-1">
+        <figure className="gd-med-epigraph gd-rise gd-rise-1">
+          <blockquote>&ldquo;{c.quote.text}&rdquo;</blockquote>
+          <figcaption>- {c.quote.author}</figcaption>
+        </figure>
+        <span className="gd-eyebrow gd-instrument gd-rise gd-rise-2">
           ▎ {c.heroKicker}
         </span>
-        <h1 className="gd-h1 gd-rise gd-rise-2">{c.heroH1}</h1>
-        <p className="gd-lead gd-rise gd-rise-3">{c.heroSub}</p>
-        <div className="gd-actions gd-rise gd-rise-4">
+        <h1 className="gd-h1 gd-rise gd-rise-3">{c.heroH1}</h1>
+        <p className="gd-lead gd-rise gd-rise-4">{c.heroSub}</p>
+        <div className="gd-actions gd-rise gd-rise-5">
           <TryForFreeButton className="gd-btn-lg" label={c.become.cta} />
         </div>
-        <p className="gd-hero-annot gd-rise gd-rise-5">
-          &ldquo;{c.quote.text}&rdquo; <span>- {c.quote.author}</span>
-        </p>
       </div>
 
       <div className="gd-hero-visual gd-rise gd-rise-3" aria-hidden="true">
@@ -942,8 +943,9 @@ const GD_CSS = `
 .gd-hero-visual { display: flex; justify-content: center; }
 
 /* Medicine hero specifics */
-.gd-hero-annot { margin-top: 1.75rem; max-width: 44ch; font-size: 0.9rem; line-height: 1.5; color: var(--on-dim); font-style: italic; }
-.gd-hero-annot span { font-style: normal; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.gd-med-epigraph { margin: 0 0 1.5rem; padding-left: 1.15rem; border-left: 2px solid var(--accent); max-width: 34ch; }
+.gd-med-epigraph blockquote { margin: 0; font-family: var(--font-quote); font-style: italic; font-size: clamp(1.15rem, 1.9vw, 1.55rem); line-height: 1.45; color: var(--on); }
+.gd-med-epigraph figcaption { margin-top: 0.6rem; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
 .gd-instrument-card { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 0.75rem; }
 .gd-vitals { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; padding: 0 0.4rem; font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em; color: var(--on-dim); }
 .gd-vitals-item { position: relative; }
