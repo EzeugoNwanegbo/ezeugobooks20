@@ -29,7 +29,6 @@ export function OnboardingPage() {
 function OnboardingFlow() {
   const navigate = useNavigate();
   const { user, profile, loading, refreshProfile } = useAuth();
-  const [started, setStarted] = useState(false);
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
 
@@ -114,39 +113,6 @@ function OnboardingFlow() {
         <div className="text-center">
           <div className="luxury-brand-text">G&D</div>
           <p className="mt-2 text-xs text-muted-foreground">Preparing your setup...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!started) {
-    return (
-      <div className="luxury-auth-page relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-background px-6 text-center">
-        <div className="symbiote-blob auth-blob-one" />
-        <div className="symbiote-blob auth-blob-two" />
-        <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
-          <ThemeToggle />
-        </div>
-        <div className="relative z-10 flex flex-col items-center">
-          <div className="luxury-brand-text text-6xl sm:text-7xl">G&D</div>
-          <span
-            aria-hidden="true"
-            className="ai-symbiote-mark is-active mt-8 inline-flex h-20 w-20 items-center justify-center sm:h-24 sm:w-24"
-          >
-            <span className="ai-symbiote-dot h-3 w-3" />
-          </span>
-          <p className="mt-8 max-w-xs text-sm text-muted-foreground sm:text-base">
-            The study AI built for medical and law students. Upload your material and get exact,
-            source-backed answers in seconds.
-          </p>
-          <button
-            type="button"
-            onClick={() => setStarted(true)}
-            className="mt-10 inline-flex items-center gap-2 rounded-lg bg-gradient-primary px-8 py-3.5 text-base font-semibold text-primary-foreground shadow-glow transition-opacity hover:opacity-90"
-          >
-            Get Started
-            <ArrowRight className="h-5 w-5" />
-          </button>
         </div>
       </div>
     );

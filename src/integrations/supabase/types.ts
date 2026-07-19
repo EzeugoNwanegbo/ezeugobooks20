@@ -275,6 +275,7 @@ export type Database = {
           points?: number;
           preferred_mode?: Database["public"]["Enums"]["response_mode"] | null;
           recent_topics?: string[] | null;
+          study_track?: string | null;
           university?: string | null;
           updated_at?: string | null;
           weak_areas?: string[] | null;

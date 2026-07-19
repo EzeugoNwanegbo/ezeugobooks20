@@ -391,15 +391,37 @@ function PulseRule() {
   );
 }
 
-// Narrative block - the poetic short-line copy.
-function Narrative({ lines, className = "" }: { lines: string[]; className?: string }) {
+// Narrative block - the poetic short-line copy. Collapsible so the page reads
+// short by default, with a small tap to reveal the full stanza.
+function Narrative({
+  lines,
+  className = "",
+  collapsible = false,
+  preview = 2,
+}: {
+  lines: string[];
+  className?: string;
+  collapsible?: boolean;
+  preview?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const canCollapse = collapsible && lines.length > preview;
+  const shown = canCollapse && !open ? lines.slice(0, preview) : lines;
   return (
     <div className={`gd-narrative ${className}`}>
-      {lines.map((line, i) => (
+      {shown.map((line, i) => (
         <p key={i} className="gd-line">
           {line}
         </p>
       ))}
+      {canCollapse && (
+        <button type="button" className="gd-more" onClick={() => setOpen((o) => !o)}>
+          {open ? "Show less" : "Read more"}
+          <span className="material-symbols-outlined" aria-hidden="true">
+            {open ? "expand_less" : "expand_more"}
+          </span>
+        </button>
+      )}
     </div>
   );
 }
@@ -621,7 +643,7 @@ function LandingVariant({
         <section className="gd-section gd-section-narrow gd-feels">
           <SectionHead track={c.track} index="01" kicker="The problem" title={c.feels.title} />
           <div className="gd-r">
-            <Narrative lines={c.feels.lines} className="gd-narrative-feels" />
+            <Narrative lines={c.feels.lines} className="gd-narrative-feels" collapsible preview={2} />
           </div>
         </section>
 
@@ -630,7 +652,7 @@ function LandingVariant({
           <div className="gd-split">
             <div className="gd-split-copy gd-r">
               <SectionHead track={c.track} index="02" kicker="Trust" title={c.trust.title} />
-              <Narrative lines={c.trust.lines} />
+              <Narrative lines={c.trust.lines} collapsible preview={1} />
             </div>
             <div className="gd-split-visual" aria-hidden="true">
               <div className="gd-preview gd-r">
@@ -657,7 +679,7 @@ function LandingVariant({
         <section className="gd-section gd-section-narrow gd-time">
           <SectionHead track={c.track} index="03" kicker="Your time" title={c.time.title} />
           <div className="gd-r">
-            <Narrative lines={c.time.lines} />
+            <Narrative lines={c.time.lines} collapsible preview={2} />
           </div>
         </section>
 
@@ -671,7 +693,7 @@ function LandingVariant({
                 kicker="Master it"
                 title={c.understanding.title}
               />
-              <Narrative lines={c.understanding.lines} />
+              <Narrative lines={c.understanding.lines} collapsible preview={1} />
             </div>
             <div className="gd-split-visual" aria-hidden="true">
               <div className="gd-quiz-card gd-r">
@@ -971,6 +993,17 @@ const GD_CSS = `
 .gd-narrative { display: flex; flex-direction: column; gap: 0.55rem; margin-top: 0.75rem; }
 .gd-line { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: clamp(1.1rem, 1.7vw, 1.4rem); line-height: 1.45; color: var(--on); letter-spacing: -0.01em; }
 .gd-line:last-child { color: var(--accent); font-weight: 500; }
+.gd-more {
+  align-self: flex-start; margin-top: 0.75rem;
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  background: none; border: none; cursor: pointer; padding: 0.15rem 0;
+  font-family: var(--font-mono, "JetBrains Mono", monospace); font-size: 0.72rem;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent);
+  opacity: 0.85; transition: opacity 0.2s ease;
+}
+.gd-more:hover { opacity: 1; }
+.gd-more .material-symbols-outlined { font-size: 16px; }
+.gd-section-narrow .gd-more { align-self: center; }
 .gd-variant-law .gd-line { font-family: var(--font-quote); font-style: italic; letter-spacing: 0; }
 .gd-variant-law .gd-line:last-child { font-style: italic; }
 .gd-variant-medicine .gd-section-narrow .gd-line { max-width: 42ch; }

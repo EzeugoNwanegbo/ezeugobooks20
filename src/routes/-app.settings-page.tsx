@@ -20,6 +20,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+type Discipline = "medicine" | "law";
+const DISCIPLINE_LABEL: Record<Discipline, string> = { medicine: "Medicine", law: "Law" };
+const TRACKS: Record<Discipline, string[]> = {
+  medicine: ["Pre-clinical", "Clinical"],
+  law: ["LLB", "Bar / Professional", "Postgraduate"],
+};
+
 const YEARS = ["Year 1", "Year 2", "Year 3", "Year 4", "Year 5", "Other"] as const;
 const EXAM_FORMATS = [
   { value: "MCQ" as const, label: "Quiz" },
@@ -34,6 +41,8 @@ export function SettingsPage() {
   const navigate = useNavigate();
 
   const [name, setName] = useState("");
+  const [discipline, setDiscipline] = useState<Discipline | null>(null);
+  const [track, setTrack] = useState<string>("");
   const [university, setUniversity] = useState("");
   const [year, setYear] = useState<string>("Year 1");
   const [examFormat, setExamFormat] = useState<"MCQ" | "SAQ" | "OSCE" | "Viva">("MCQ");
@@ -50,6 +59,8 @@ export function SettingsPage() {
   useEffect(() => {
     if (!profile) return;
     setName(profile.name ?? "");
+    setDiscipline(profile.discipline ?? null);
+    setTrack(profile.study_track ?? "");
     setUniversity(profile.university ?? "");
     setYear(profile.year ?? "Year 1");
     setExamFormat(profile.exam_format ?? "MCQ");
@@ -89,14 +100,26 @@ export function SettingsPage() {
     }
   };
 
+  // Switching discipline changes which tracks apply; default to the first.
+  const chooseDiscipline = (d: Discipline) => {
+    setDiscipline(d);
+    if (!TRACKS[d].includes(track)) setTrack(TRACKS[d][0]);
+  };
+
   const save = async () => {
     if (!user || saving) return;
     setSaving(true);
     try {
+      const courseLabel = discipline
+        ? `${DISCIPLINE_LABEL[discipline]}${track ? ` - ${track}` : ""}`
+        : (profile?.course ?? null);
       const { error } = await supabase
         .from("user_profiles")
         .update({
           name,
+          discipline,
+          study_track: track || null,
+          course: courseLabel,
           university,
           year,
           exam_format: examFormat,
@@ -173,6 +196,51 @@ export function SettingsPage() {
                 className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
               />
             </div>
+
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Course</label>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {(["medicine", "law"] as Discipline[]).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => chooseDiscipline(d)}
+                    className={`rounded-xl border py-2.5 text-sm font-semibold transition-colors ${
+                      discipline === d
+                        ? "border-pop/45 bg-pop/10 text-pop"
+                        : "border-border bg-background hover:bg-surface-elevated"
+                    }`}
+                  >
+                    {DISCIPLINE_LABEL[d]}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Changes how G&amp;D reasons, the examples it uses, and the look of the app.
+              </p>
+            </div>
+
+            {discipline && (
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Stage</label>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {TRACKS[discipline].map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setTrack(t)}
+                      className={`rounded-xl border px-2 py-2 text-sm font-medium transition-colors ${
+                        track === t
+                          ? "border-pop/45 bg-pop/10 text-pop"
+                          : "border-border bg-background hover:bg-surface-elevated"
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="text-xs font-medium text-muted-foreground">
