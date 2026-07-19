@@ -78,6 +78,23 @@ const DEEPSEEK_VISUALS_TIMEOUT_MS = 120_000;
 const LENGTH_LIMIT_NOTE =
   '\n\nNote: The AI hit its response length limit before finishing. Ask "continue" and it can pick up from here.';
 
+// The final student-facing answer is the ONLY place a premium model runs -
+// DeepSeek does all the token-heavy document reading upstream, so the answer
+// step only reshapes a short draft. The model is an env var so it can be pointed
+// at GPT-5.6 for judging and reverted to cheap gpt-4o-mini afterwards without a
+// code change. Defaults stay cheap.
+const ANSWER_MODEL = Deno.env.get("OPENAI_ANSWER_MODEL") || "gpt-4o-mini";
+// Hard cap on the streamed answer so a premium model cannot run up an unbounded
+// bill (the old call had no cap at all). Raise via env if answers get truncated.
+const ANSWER_MAX_TOKENS = Number(Deno.env.get("OPENAI_ANSWER_MAX_TOKENS")) || 1200;
+// Optional reasoning budget for GPT-5-class models (e.g. "minimal" / "low").
+// Only sent when set - keeps reasoning-token cost down without guessing whether
+// the configured model is a reasoning model at all.
+const ANSWER_REASONING_EFFORT = Deno.env.get("OPENAI_ANSWER_REASONING_EFFORT") || "";
+// GPT-5-class reasoning models reject a custom temperature; only the mini
+// default takes one so we keep its warmth without breaking a premium swap.
+const ANSWER_IS_DEFAULT_MINI = ANSWER_MODEL === "gpt-4o-mini";
+
 async function fetchWithTimeout(
   input: string,
   init: RequestInit,
@@ -621,12 +638,25 @@ async function callDeepSeekSync(
   return withLengthLimitNote(choice?.message?.content ?? "", choice?.finish_reason);
 }
 
-/** Call GPT-4o-mini with streaming - this is what the student sees. */
+/** Stream the final student-facing answer from ANSWER_MODEL (default gpt-4o-mini). */
 async function callGPTStream(
   apiKey: string,
   systemPrompt: string,
   messages: ChatBody["messages"],
 ): Promise<Response> {
+  const payload: Record<string, unknown> = {
+    model: ANSWER_MODEL,
+    stream: true,
+    // Cap output so a premium model cannot stream an unbounded (costly) answer.
+    max_completion_tokens: ANSWER_MAX_TOKENS,
+    messages: [{ role: "system", content: systemPrompt }, ...messages],
+  };
+  // gpt-4o-mini keeps its warm temperature; GPT-5-class models reject a custom
+  // one, so we omit it there and let the model default.
+  if (ANSWER_IS_DEFAULT_MINI) payload.temperature = 0.75;
+  // Keep reasoning-token spend low on GPT-5-class models when configured.
+  if (ANSWER_REASONING_EFFORT) payload.reasoning_effort = ANSWER_REASONING_EFFORT;
+
   return fetchWithTimeout(
     "https://api.openai.com/v1/chat/completions",
     {
@@ -635,12 +665,7 @@ async function callGPTStream(
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        stream: true,
-        temperature: 0.75, // Slightly higher - we want GPT's natural warmth
-        messages: [{ role: "system", content: systemPrompt }, ...messages],
-      }),
+      body: JSON.stringify(payload),
     },
     GPT_REWRITE_START_TIMEOUT_MS,
   );
