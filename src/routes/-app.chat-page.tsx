@@ -2154,7 +2154,7 @@ export function ChatPage() {
                 <EmptyState name={profile.name || "there"} onPick={(s) => send(s)} mode={mode} />
               </>
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-8 sm:space-y-10">
                 {messages.map((m, i) => (
                   <div key={i} className="gd-msg-in">
                     <Message
@@ -2782,7 +2782,7 @@ function EmptyState({
             <button
               key={s}
               onClick={() => onPick(s)}
-              className="group flex items-center gap-3 rounded-2xl border border-border/70 bg-surface/50 p-4 text-left text-sm leading-snug text-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-pop/40 hover:bg-pop/[0.05] hover:shadow-[0_12px_32px_-20px_rgba(0,0,0,0.45)]"
+              className="group flex items-center gap-3 rounded-2xl border border-border/70 bg-surface/50 p-4 text-left text-sm leading-snug text-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-pop/40 hover:bg-pop/[0.05] hover:shadow-[0_12px_32px_-20px_rgba(0,0,0,0.45)] active:translate-y-0 active:scale-[0.99]"
             >
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-pop/10 text-pop transition-colors group-hover:bg-pop group-hover:text-pop-foreground">
                 <Icon className="h-4 w-4" />
@@ -2904,6 +2904,48 @@ function PersonalizationCard({
         >
           {saving ? "Saving…" : "Save background"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// Steps shown while an answer is being prepared. They advance on a timer so
+// the loader reads as real progress, then hold on "Writing your answer…" until
+// the first streamed token replaces the whole loader.
+const GROUNDED_LOADER_STEPS = [
+  "Reading your material",
+  "Pulling the strongest sources",
+  "Writing your answer",
+];
+const GENERAL_LOADER_STEPS = ["Thinking it through", "Writing your answer"];
+
+function AnswerLoader({ grounded }: { grounded: boolean }) {
+  const steps = grounded ? GROUNDED_LOADER_STEPS : GENERAL_LOADER_STEPS;
+  const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    if (step >= steps.length - 1) return;
+    const timer = window.setTimeout(
+      () => setStep((current) => Math.min(current + 1, steps.length - 1)),
+      1500,
+    );
+    return () => window.clearTimeout(timer);
+  }, [step, steps.length]);
+
+  return (
+    <div className="gd-answer-forming" aria-live="polite" aria-busy="true">
+      <span className="gd-forming-status">
+        <span className="gd-forming-orb" aria-hidden="true" />
+        {/* key={step} re-mounts the word so its rise-in plays on each advance. */}
+        <span key={step} className="gd-forming-label">
+          {steps[step]}…
+        </span>
+      </span>
+      <div className="gd-skeleton" aria-hidden="true">
+        <span className="gd-skeleton-line" style={{ width: "100%" }} />
+        <span className="gd-skeleton-line" style={{ width: "92%" }} />
+        <span className="gd-skeleton-line" style={{ width: "74%" }} />
+        <span className="gd-skeleton-line" style={{ width: "58%" }} />
       </div>
     </div>
   );
@@ -4147,40 +4189,10 @@ function Message({
 
   const renderInlineMarkdown = () => {
     if (!displayContent) {
-      // General question (nothing uploaded/selected): no step text, just a clean
-      // animated dot loader. The document-grounded steps below would be
-      // misleading here since there is no material to read.
-      if (!hasDocuments) {
-        return (
-          <div
-            className="flex items-center py-1.5 text-primary"
-            aria-live="polite"
-            aria-busy="true"
-          >
-            <LoadingDots size="md" />
-          </div>
-        );
-      }
-      return (
-        <div className="gd-answer-loader" aria-live="polite" aria-busy="true">
-          <div className="gd-loader-step is-active">
-            <span />
-            Reading selected material
-          </div>
-          <div className="gd-loader-step">
-            <span />
-            Finding the strongest context
-          </div>
-          <div className="gd-loader-step">
-            <span />
-            Checking citations
-          </div>
-          <div className="gd-loader-step">
-            <span />
-            Building your study answer
-          </div>
-        </div>
-      );
+      // A single loader that reads as an answer forming. Grounded questions get
+      // material-aware step wording; general questions get a shorter sequence.
+      // The steps actually advance (see AnswerLoader), unlike the old static list.
+      return <AnswerLoader grounded={Boolean(hasDocuments)} />;
     }
 
     // Wrap detected key terms in dotted-underline lookup buttons. `termUsed` is

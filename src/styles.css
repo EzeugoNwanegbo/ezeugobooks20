@@ -430,8 +430,26 @@ html {
   filter: saturate(1.06);
 }
 .btn-pop:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translateY(0) scale(0.96);
   box-shadow: var(--shadow-pop);
+}
+
+/* Tactile press — a primary control should visibly compress when pressed, so
+   every tap feels acknowledged (Emil: buttons must feel responsive to press).
+   Applied via className to buttons that don't already own their transform. */
+.gd-press {
+  transition: transform 150ms var(--motion-ease);
+}
+.gd-press:active:not(:disabled) {
+  transform: scale(0.96);
+}
+@media (prefers-reduced-motion: reduce) {
+  .gd-press {
+    transition: none;
+  }
+  .gd-press:active:not(:disabled) {
+    transform: none;
+  }
 }
 .btn-pop:disabled {
   background: var(--muted);
@@ -686,6 +704,136 @@ html.gd-low-power .gd-loader-step span {
 html.gd-low-power .gd-loader-step.is-active {
   animation: none;
   -webkit-text-fill-color: var(--foreground);
+}
+
+/* ── Answer loader v2 — an answer visibly *forming*, not a fake step list ──
+   Replaces .gd-answer-loader. A single advancing status word (it actually
+   progresses on a timer) over shimmering skeleton lines that read as a
+   document materialising. Physical, honest, reduced-motion safe. */
+.gd-answer-forming {
+  display: grid;
+  gap: 0.95rem;
+  max-width: 560px;
+}
+.gd-forming-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+.gd-forming-orb {
+  position: relative;
+  width: 0.85rem;
+  height: 0.85rem;
+  flex: none;
+}
+.gd-forming-orb::before,
+.gd-forming-orb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--gradient-pop);
+}
+.gd-forming-orb::after {
+  animation: gdOrbPing 1.7s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+@keyframes gdOrbPing {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  70%,
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+/* The status word swaps with a soft rise + a slow rose sheen, so "progress"
+   reads as real motion rather than a static claim. */
+.gd-forming-label {
+  display: inline-block;
+  background: linear-gradient(
+    90deg,
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 35%,
+    color-mix(in srgb, var(--pop) 85%, var(--foreground)) 50%,
+    var(--muted-foreground) 65%,
+    var(--muted-foreground) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation:
+    gdLabelIn 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    gdLoaderSheen 2.4s linear infinite;
+}
+@keyframes gdLabelIn {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.gd-skeleton {
+  display: grid;
+  gap: 0.72rem;
+}
+.gd-skeleton-line {
+  position: relative;
+  height: 0.85rem;
+  overflow: hidden;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
+}
+.gd-skeleton-line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--pop) 15%, transparent),
+    transparent
+  );
+  animation: gdSkeletonSweep 1.5s ease-in-out infinite;
+}
+.gd-skeleton-line:nth-child(2)::after {
+  animation-delay: 0.12s;
+}
+.gd-skeleton-line:nth-child(3)::after {
+  animation-delay: 0.24s;
+}
+.gd-skeleton-line:nth-child(4)::after {
+  animation-delay: 0.36s;
+}
+@keyframes gdSkeletonSweep {
+  100% {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gd-forming-orb::after,
+  .gd-skeleton-line::after {
+    animation: none;
+  }
+  .gd-forming-label {
+    animation: none;
+    -webkit-text-fill-color: var(--muted-foreground);
+  }
+}
+html.gd-low-power .gd-skeleton-line::after {
+  animation-duration: 2.4s;
+}
+html.gd-low-power .gd-forming-orb::after {
+  animation-duration: 2.6s;
 }
 
 /* Markdown prose styling */
