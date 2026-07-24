@@ -27,6 +27,9 @@
     "render": "remotion render MarshalAd out/marshal.mp4",
     "render:bright": "node -e \"require('fs').rmSync('node_modules/.cache/webpack',{recursive:true,force:true})\" && remotion render GandDBrightAd out/gandd-bright.mp4",
     "render:alive": "remotion render TextbookAlive out/textbook-alive.mp4",
+    "render:future": "remotion render GD1FutureTrailer out/gd1-future-trailer.mp4",
+    "render:updates": "remotion render GD1ProductUpdate out/gd1-product-update.mp4",
+    "render:launch": "remotion render GandDPremiumLaunch out/gandd-premium-launch.mp4",
     "build": "remotion bundle",
     "upgrade": "remotion upgrade",
     "lint": "eslint src && tsc"

@@ -39,3 +39,13 @@ supabase/.temp/
 .env
 .env.*
 !.env.example
+
+# Signing keys & secrets — never commit these (defense-in-depth; the
+# android/ and gandd-mobile/ subfolders also ignore them locally)
+*.jks
+*.keystore
+*.p8
+*.p12
+*.pem
+keystore.properties
+credentials.json

@@ -74,7 +74,7 @@ No prose, no markdown.`;
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: Deno.env.get("DEEPSEEK_MODEL") || "deepseek-chat",
+          model: Deno.env.get("DEEPSEEK_MODEL") || "deepseek-v4-pro",
           messages: [
             { role: "system", content: "You output strict JSON only. No markdown, no prose." },
             { role: "user", content: prompt },

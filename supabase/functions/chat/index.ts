@@ -601,7 +601,7 @@ async function callDeepSeekSync(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: Deno.env.get("DEEPSEEK_MODEL") || "deepseek-chat",
+        model: Deno.env.get("DEEPSEEK_MODEL") || "deepseek-v4-pro",
         stream: false,
         max_tokens: 8192,
         temperature: 0.2, // Low temp - we want accurate facts, not creative flair

@@ -152,7 +152,7 @@ async function callDeepSeekJson(apiKey: string, systemPrompt: string, userPrompt
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: Deno.env.get("DEEPSEEK_MODEL") || "deepseek-chat",
+        model: Deno.env.get("DEEPSEEK_MODEL") || "deepseek-v4-pro",
         temperature: 0.2,
         max_tokens: 8192,
         response_format: { type: "json_object" },

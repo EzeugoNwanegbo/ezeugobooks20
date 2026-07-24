@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
   type ReactNode,
 } from "react";
@@ -22,6 +23,7 @@ import {
   type WebSource,
 } from "@/lib/chat-client";
 import { takePendingChatDoc } from "@/lib/chat-handoff";
+import { buildContinuationPrompt } from "@/lib/chat-portability";
 import { PERSONALIZATION_PROMPT } from "@/lib/personalization";
 import { isNativeApp } from "@/lib/native";
 import { lookupTerm, isTermLookupComplete, type TermLookupState } from "@/lib/term-lookup";
@@ -231,6 +233,19 @@ const SOURCE_SHORT: Record<SourceMode, string> = {
   "Files + general": "Files + gen",
   "General knowledge": "General",
 };
+
+// Chat-area accent: a warm rose (#da627d) scoped to the chat surface. It
+// overrides the global/discipline `--pop` accent for this subtree only, so the
+// send button, focus rings, active toggles, key-term highlights and section
+// bars in chat all read in one confident colour. Declared inline (not via a
+// class) so it reliably wins over the discipline theme set on <html>.
+const CHAT_ACCENT_STYLE = {
+  "--pop": "#da627d",
+  "--pop-2": "#c04d68",
+  "--pop-foreground": "#ffffff",
+  "--gradient-pop": "linear-gradient(145deg, #e2789a 0%, #c04d68 100%)",
+  "--shadow-pop": "0 10px 28px -8px rgba(218, 98, 125, 0.42)",
+} as CSSProperties;
 
 const SMART_DOC_LIMIT = 5;
 const SNIPPET_WINDOW_CHARS = 3200;
@@ -765,6 +780,8 @@ export function ChatPage() {
   const [listening, setListening] = useState(false);
   const [hideComposer, setHideComposer] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
+  // "Continue in another AI" — briefly flips to a checkmark after copying.
+  const [handoffCopied, setHandoffCopied] = useState(false);
   // On mobile the style/source selectors collapse to small pills and only
   // expand into their full segmented bar while the user is choosing.
   const [expandedSelector, setExpandedSelector] = useState<null | "style" | "source">(null);
@@ -1206,6 +1223,28 @@ export function ChatPage() {
     const controller = chatAbortRef.current;
     if (!controller || controller.signal.aborted) return;
     controller.abort();
+  };
+
+  // Build a self-contained prompt from this conversation and copy it, so the
+  // student can paste it into any other AI and keep going without starting over.
+  const copyContinuationPrompt = async () => {
+    const prompt = buildContinuationPrompt(messages, profile);
+    if (!prompt) {
+      toast("Nothing to carry over yet", {
+        description: "Ask something first, then you can continue it in another AI.",
+      });
+      return;
+    }
+    try {
+      await copyTextToClipboard(prompt);
+      setHandoffCopied(true);
+      window.setTimeout(() => setHandoffCopied(false), 2200);
+      toast.success("Prompt copied", {
+        description: "Paste it into ChatGPT, Gemini, or any AI to pick up where you left off.",
+      });
+    } catch {
+      toast.error("Couldn't copy — try again.");
+    }
   };
 
   const toggleVoiceInput = () => {
@@ -1920,7 +1959,10 @@ export function ChatPage() {
   }, [convos]);
 
   return (
-    <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-background min-w-0">
+    <div
+      className="flex h-full min-h-0 flex-1 overflow-hidden bg-background min-w-0"
+      style={CHAT_ACCENT_STYLE}
+    >
       {/* Conversations sidebar */}
       <aside
         className={`hidden lg:flex min-h-0 flex-col overflow-hidden border-r border-border/70 bg-background transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${sidebarOpen ? "w-72" : "w-16"}`}
@@ -2072,6 +2114,20 @@ export function ChatPage() {
                         : "Plain English with an analogy"
                 }
               />
+              {messages.length > 0 && (
+                <button
+                  onClick={copyContinuationPrompt}
+                  title="Copy a prompt to continue this chat in another AI"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-pop/10 hover:text-pop"
+                >
+                  {handoffCopied ? (
+                    <Check className="h-3.5 w-3.5 text-pop" />
+                  ) : (
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  )}
+                  {handoffCopied ? "Copied" : "Continue elsewhere"}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -2243,6 +2299,21 @@ export function ChatPage() {
                       ) : (
                         <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
                       )}
+                    </button>
+                  )}
+                  {messages.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={copyContinuationPrompt}
+                      title="Copy a prompt to continue this chat in another AI"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/25 bg-pop/[0.06] px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-pop/10"
+                    >
+                      {handoffCopied ? (
+                        <Check className="h-3 w-3 text-pop" />
+                      ) : (
+                        <ExternalLink className="h-3 w-3 text-pop" />
+                      )}
+                      {handoffCopied ? "Copied" : "Continue elsewhere"}
                     </button>
                   )}
                 </div>

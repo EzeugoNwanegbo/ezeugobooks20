@@ -138,7 +138,7 @@ Deno.serve(async (req: Request) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: Deno.env.get("DEEPSEEK_MODEL") || "deepseek-chat",
+          model: Deno.env.get("DEEPSEEK_MODEL") || "deepseek-v4-pro",
           temperature: 0.4,
           response_format: { type: "json_object" },
           messages: [
