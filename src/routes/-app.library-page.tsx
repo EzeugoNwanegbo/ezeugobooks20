@@ -671,16 +671,25 @@ export function LibraryPage() {
             embedding: null,
           }));
 
+          // Insert chunks in parallel batches instead of one-at-a-time. The
+          // browser caps ~6 concurrent requests per host, so a big textbook's
+          // chunks drain in a few waves rather than dozens of serial round
+          // trips - that serial loop was the bulk of the long "saving" wait.
+          const CHUNK_BATCH = 200;
+          const batchStarts: number[] = [];
+          for (let i = 0; i < rows.length; i += CHUNK_BATCH) {
+            batchStarts.push(i);
+          }
           const tChunks = performance.now();
-          for (let i = 0; i < rows.length; i += 100) {
-            const { error: chunkErr } = await supabase
-              .from("document_chunks")
-              .insert(rows.slice(i, i + 100));
-            if (chunkErr) {
-              console.error("save document chunks", chunkErr);
-              chunkSaveFailed = true;
-              break;
-            }
+          const results = await Promise.all(
+            batchStarts.map((start) =>
+              supabase.from("document_chunks").insert(rows.slice(start, start + CHUNK_BATCH)),
+            ),
+          );
+          const failedBatch = results.find((result) => result.error);
+          if (failedBatch?.error) {
+            console.error("save document chunks", failedBatch.error);
+            chunkSaveFailed = true;
           }
           mark(`chunk-insert(${rows.length})`, tChunks);
         }

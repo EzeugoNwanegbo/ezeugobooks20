@@ -45,8 +45,6 @@ import {
   Plus,
   MessageSquare,
   Trash2,
-  PanelLeftClose,
-  PanelLeftOpen,
   Network,
   BookText,
   FileText,
@@ -2076,9 +2074,9 @@ export function ChatPage() {
                   title={sidebarOpen ? "Hide chats" : "Show chats"}
                 >
                   {sidebarOpen ? (
-                    <PanelLeftClose className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                    <ChevronLeft className="h-[18px] w-[18px]" strokeWidth={2} />
                   ) : (
-                    <PanelLeftOpen className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                    <ChevronRight className="h-[18px] w-[18px]" strokeWidth={2} />
                   )}
                 </button>
                 <h1 className="truncate text-[15px] font-semibold tracking-[-0.01em] sm:text-base">

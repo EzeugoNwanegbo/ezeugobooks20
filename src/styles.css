@@ -171,71 +171,72 @@ html {
   /* App is dark by default. */
 }
 
+/* Light theme: warm beige (#c6ac8f) ground, charcoal (#353535) ink, with a
+   little near-black (#0a0908) for the deepest accents. */
 .light {
-  --background: #fbfaf7;
-  --foreground: #171512;
+  --background: #e3d6bf;
+  --foreground: #353535;
 
-  --surface: #f2eee7;
-  --surface-elevated: #e7e0d5;
+  --surface: #d8c7a8;
+  --surface-elevated: #ccba98;
 
-  --card: rgba(255, 255, 255, 0.72);
-  --card-foreground: #171512;
+  --card: rgba(255, 252, 244, 0.5);
+  --card-foreground: #353535;
 
-  --popover: #fffdf8;
-  --popover-foreground: #171512;
+  --popover: #ebe0cc;
+  --popover-foreground: #353535;
 
-  --primary: #171512;
-  --primary-foreground: #fbfaf7;
-  --primary-glow: #665d50;
+  --primary: #353535;
+  --primary-foreground: #e3d6bf;
+  --primary-glow: #5a5148;
 
-  --secondary: #ede7dd;
-  --secondary-foreground: #171512;
+  --secondary: #d2c0a0;
+  --secondary-foreground: #353535;
 
-  --muted: #ede7dd;
-  --muted-foreground: #6d655b;
+  --muted: #d2c0a0;
+  --muted-foreground: #6f6350;
 
-  --accent: #7d715f;
-  --accent-foreground: #fbfaf7;
+  --accent: #c6ac8f;
+  --accent-foreground: #0a0908;
 
-  --coral: #7d715f;
-  --coral-foreground: #fbfaf7;
+  --coral: #b06a4e;
+  --coral-foreground: #ffffff;
 
   --destructive: #a24f45;
   --destructive-foreground: #fff8f4;
 
-  --border: rgba(23, 21, 18, 0.14);
-  --input: rgba(23, 21, 18, 0.18);
-  --ring: #6d655b;
+  --border: rgba(53, 53, 53, 0.18);
+  --input: rgba(53, 53, 53, 0.22);
+  --ring: #353535;
 
-  --source-library: #171512;
-  --source-general: #665d50;
-  --source-web: #83796d;
+  --source-library: #353535;
+  --source-general: #6f6350;
+  --source-web: #857a67;
 
-  --luxury-soft: rgba(23, 21, 18, 0.045);
-  --luxury-soft-strong: rgba(23, 21, 18, 0.075);
-  --luxury-border-soft: rgba(23, 21, 18, 0.12);
-  --luxury-border-strong: rgba(23, 21, 18, 0.2);
-  --luxury-muted: #6d655b;
-  --luxury-subtle: #83796d;
-  --luxury-faint: #a79d91;
-  --luxury-ai-bg: #f5f1e9;
-  --luxury-selection: rgba(23, 21, 18, 0.12);
-  --luxury-button-sheen: rgba(255, 255, 255, 0.2);
-  --luxury-code-bg: #f0e9dd;
-  --luxury-pulse: rgba(23, 21, 18, 0.14);
-  --shadow-elegant: 0 18px 70px -42px rgba(43, 35, 24, 0.36);
-  --shadow-glow: 0 0 30px rgba(23, 21, 18, 0.08);
+  --luxury-soft: rgba(53, 53, 53, 0.05);
+  --luxury-soft-strong: rgba(53, 53, 53, 0.09);
+  --luxury-border-soft: rgba(53, 53, 53, 0.14);
+  --luxury-border-strong: rgba(53, 53, 53, 0.24);
+  --luxury-muted: #6f6350;
+  --luxury-subtle: #857a67;
+  --luxury-faint: #a2957f;
+  --luxury-ai-bg: #ebe0cc;
+  --luxury-selection: rgba(53, 53, 53, 0.16);
+  --luxury-button-sheen: rgba(255, 255, 255, 0.25);
+  --luxury-code-bg: #ddd0b7;
+  --luxury-pulse: rgba(53, 53, 53, 0.16);
+  --shadow-elegant: 0 18px 70px -42px rgba(10, 9, 8, 0.42);
+  --shadow-glow: 0 0 30px rgba(53, 53, 53, 0.08);
 
-  /* Light theme: a deep petrol teal so small coloured text and borders stay
-     crisp on the warm cream. White foreground reads cleanly on it. */
-  --pop: #3b82f6;
-  --pop-2: #2563eb;
-  --pop-foreground: #ffffff;
-  --gradient-pop: linear-gradient(145deg, #4f92ff 0%, #2563eb 100%);
-  --shadow-pop: 0 10px 26px -8px rgba(59, 130, 246, 0.4);
+  /* Charcoal → near-black accent so buttons and highlights stay grounded on
+     the beige (no coloured pop in this theme). */
+  --pop: #353535;
+  --pop-2: #0a0908;
+  --pop-foreground: #e3d6bf;
+  --gradient-pop: linear-gradient(145deg, #454545 0%, #0a0908 100%);
+  --shadow-pop: 0 10px 26px -8px rgba(10, 9, 8, 0.32);
 
-  /* Deeper brass so the "from your files" chip stays legible on cream. */
-  --leaf: #9a6b12;
+  --leaf: #8a6a2a;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2069,20 +2070,20 @@ html.gd-low-power [style*="gd-dot-wave"] {
    theme. */
 .gd-app-sidebar,
 .gd-mobile-menu {
-  background: #d9ed92;
-  --foreground: #20250f;
-  --muted-foreground: #4c5626;
-  --border: rgba(32, 37, 15, 0.16);
-  --primary: #20250f;
-  --primary-foreground: #d9ed92;
-  color: #20250f;
+  background: #353535;
+  --foreground: #f2efe9;
+  --muted-foreground: #a7a199;
+  --border: rgba(255, 255, 255, 0.12);
+  --primary: #f2efe9;
+  --primary-foreground: #353535;
+  color: #f2efe9;
 }
 .gd-app-sidebar::before {
   content: "";
   display: block;
   height: 3px;
   flex: 0 0 auto;
-  background: rgba(32, 37, 15, 0.22);
+  background: rgba(255, 255, 255, 0.14);
 }
 .gd-sidebar-brand { color: var(--foreground); }
 .gd-nav-label,
