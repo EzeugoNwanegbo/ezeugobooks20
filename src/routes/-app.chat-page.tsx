@@ -234,17 +234,17 @@ const SOURCE_SHORT: Record<SourceMode, string> = {
   "General knowledge": "General",
 };
 
-// Chat-area accent: a warm rose (#da627d) scoped to the chat surface. It
+// Chat-area accent: a warm coral (#ee6c4d) scoped to the chat surface. It
 // overrides the global/discipline `--pop` accent for this subtree only, so the
 // send button, focus rings, active toggles, key-term highlights and section
 // bars in chat all read in one confident colour. Declared inline (not via a
 // class) so it reliably wins over the discipline theme set on <html>.
 const CHAT_ACCENT_STYLE = {
-  "--pop": "#da627d",
-  "--pop-2": "#c04d68",
+  "--pop": "#ee6c4d",
+  "--pop-2": "#d8542f",
   "--pop-foreground": "#ffffff",
-  "--gradient-pop": "linear-gradient(145deg, #e2789a 0%, #c04d68 100%)",
-  "--shadow-pop": "0 10px 28px -8px rgba(218, 98, 125, 0.42)",
+  "--gradient-pop": "linear-gradient(145deg, #f4855f 0%, #d8542f 100%)",
+  "--shadow-pop": "0 10px 28px -8px rgba(238, 108, 77, 0.42)",
 } as CSSProperties;
 
 const SMART_DOC_LIMIT = 5;
