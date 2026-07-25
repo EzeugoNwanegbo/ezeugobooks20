@@ -1010,17 +1010,6 @@ export function LibraryPage() {
                   browse
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openFilePicker();
-                }}
-                className="btn-pop inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold"
-              >
-                <Upload className="h-4 w-4" />
-                Upload files
-              </button>
             </div>
           )}
         </div>
