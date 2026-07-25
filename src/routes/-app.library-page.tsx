@@ -13,6 +13,7 @@ import { backfillMissingEmbeddings } from "@/lib/embeddings";
 import { getCached, setCached } from "@/lib/data-cache";
 import { GUEST_DOCUMENT_LIMIT, isGuestUser } from "@/lib/guest-session";
 import { stageDocForChat } from "@/lib/chat-handoff";
+import { importChunk } from "@/lib/lazy-import";
 import { toast } from "sonner";
 import {
   Upload,
@@ -380,7 +381,7 @@ export function LibraryPage() {
       // open, which makes Android Chrome more likely to discard/kill the
       // page (the "blank, stuck until reload" symptom).
       setStage("pdf:importing-engine");
-      const { extractPdfText } = await import("@/lib/pdf");
+      const { extractPdfText } = await importChunk(() => import("@/lib/pdf"));
       setStage("pdf:engine-loaded");
       // Scanned PDFs with no text layer get a second, much slower OCR pass -
       // watch the stage stream so the progress bar says so instead of silently
@@ -441,7 +442,7 @@ export function LibraryPage() {
       // pdfjs decide - it throws a clean error if it isn't really a PDF.
       try {
         setStage("probe:importing-engine");
-        const { extractPdfText } = await import("@/lib/pdf");
+        const { extractPdfText } = await importChunk(() => import("@/lib/pdf"));
         const r = await extractPdfText(
           file,
           Number.POSITIVE_INFINITY,

@@ -4,9 +4,16 @@ import { RouterProvider } from "@tanstack/react-router";
 import { getRouter } from "./router";
 import { AppErrorBoundary } from "./components/error-boundary";
 import { initNativeShell, isNativeApp } from "./lib/native";
+import { installChunkReloadHandler } from "./lib/lazy-import";
 import { PostHogProvider } from "@posthog/react";
 import { posthog } from "./lib/analytics";
 import "./styles.css";
+
+// Recover from stale code-split chunks after a deploy: if a lazy module 404s
+// because this tab predates the current build, reload once to fetch the new
+// chunk names instead of dead-ending on "Failed to fetch dynamically imported
+// module".
+installChunkReloadHandler();
 
 // Mark the document as the native app and configure the status bar before the
 // first paint, so safe-area styling and native auth behavior apply from the
