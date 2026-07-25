@@ -8,6 +8,16 @@
 @source "../src";
 @import "tw-animate-css";
 
+/* Varsity — self-hosted collegiate display face (public/fonts). Used for the
+   app's large display type / headings via --font-display. */
+@font-face {
+  font-family: "Varsity";
+  src: url("/fonts/varsity_regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ── Global mobile-first resets ── */
 *,
 *::before,
@@ -61,7 +71,8 @@ html {
   --color-leaf: var(--leaf);
 
   --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
+  /* Varsity collegiate display face for large headings. */
+  --font-display: "Varsity", "Sora", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   /* Friendly, rounded reading face for AI answers - warm but still professional. */
   --font-reading: "Nunito", "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
@@ -2053,17 +2064,25 @@ html.gd-low-power [style*="gd-dot-wave"] {
 }
 
 /* Product workspace refresh: a quiet shell with distinct study tools. */
-.gd-app-sidebar {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--background) 96%, #b9d9ff 4%), var(--background) 44%),
-    var(--background);
+/* Side menu: a solid light lime (#d9ed92). Dark ink is scoped to its subtree so
+   the brand, nav labels and icons stay legible on the pale ground in either
+   theme. */
+.gd-app-sidebar,
+.gd-mobile-menu {
+  background: #d9ed92;
+  --foreground: #20250f;
+  --muted-foreground: #4c5626;
+  --border: rgba(32, 37, 15, 0.16);
+  --primary: #20250f;
+  --primary-foreground: #d9ed92;
+  color: #20250f;
 }
 .gd-app-sidebar::before {
   content: "";
   display: block;
   height: 3px;
   flex: 0 0 auto;
-  background: linear-gradient(90deg, #58a6ff, #9a7cff 52%, #ff9d78);
+  background: rgba(32, 37, 15, 0.22);
 }
 .gd-sidebar-brand { color: var(--foreground); }
 .gd-nav-label,

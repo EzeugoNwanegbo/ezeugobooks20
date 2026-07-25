@@ -549,7 +549,7 @@ function AppLayout() {
           onTouchStart={onDrawerTouchStart}
           onTouchEnd={onDrawerTouchEnd}
           aria-hidden={!mobileMenuOpen}
-          className={`fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-[19rem] flex-col border-r border-border/60 bg-background/98 text-foreground shadow-[20px_0_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-transform will-change-transform md:hidden ${
+          className={`gd-mobile-menu fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-[19rem] flex-col border-r border-border/60 text-foreground shadow-[20px_0_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-transform will-change-transform md:hidden ${
             mobileMenuOpen
               ? "translate-x-0 duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
               : "-translate-x-full duration-200 ease-in"
