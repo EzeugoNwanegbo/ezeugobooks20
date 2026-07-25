@@ -234,17 +234,47 @@ const SOURCE_SHORT: Record<SourceMode, string> = {
   "General knowledge": "General",
 };
 
-// Chat-area accent: a warm coral (#ee6c4d) scoped to the chat surface. It
-// overrides the global/discipline `--pop` accent for this subtree only, so the
-// send button, focus rings, active toggles, key-term highlights and section
-// bars in chat all read in one confident colour. Declared inline (not via a
-// class) so it reliably wins over the discipline theme set on <html>.
+// Chat surface theme, scoped to the chat subtree (overrides the global +
+// discipline tokens for this subtree only, so it wins reliably). A near-black
+// #001219 ground; the primary action (send, key terms, empty state) keeps the
+// warm coral pop, while individual controls own their own deep jewel tone
+// (below) so the settings read as colour-coded without a rainbow.
 const CHAT_ACCENT_STYLE = {
+  "--background": "#001219",
+  "--surface": "#04222e",
+  "--surface-elevated": "#062c3b",
+  "--border": "rgba(148, 210, 220, 0.12)",
+  "--input": "rgba(148, 210, 220, 0.16)",
   "--pop": "#ee6c4d",
   "--pop-2": "#d8542f",
   "--pop-foreground": "#ffffff",
   "--gradient-pop": "linear-gradient(145deg, #f4855f 0%, #d8542f 100%)",
   "--shadow-pop": "0 10px 28px -8px rgba(238, 108, 77, 0.42)",
+} as CSSProperties;
+
+// Answer-style slider (Simplified → Detailed → Storytelling): deep blue.
+const ACCENT_MODE = {
+  "--pop": "#004e89",
+  "--pop-foreground": "#ffffff",
+  "--gradient-pop": "linear-gradient(145deg, #0a5c9c 0%, #003f70 100%)",
+  "--shadow-pop": "0 8px 22px -8px rgba(0, 78, 137, 0.55)",
+} as CSSProperties;
+
+// Source slider (My files / Files + general / General knowledge): crimson.
+const ACCENT_SOURCE = {
+  "--pop": "#800f2f",
+  "--pop-foreground": "#ffffff",
+  "--gradient-pop": "linear-gradient(145deg, #9c1238 0%, #660b25 100%)",
+  "--shadow-pop": "0 8px 22px -8px rgba(128, 15, 47, 0.55)",
+} as CSSProperties;
+
+// The general-context toggle on the composer: deep wine. Light-rose foreground
+// keeps the label legible on the near-black fill.
+const ACCENT_GENERAL = {
+  "--pop": "#49111c",
+  "--pop-foreground": "#f3c9d0",
+  "--gradient-pop": "linear-gradient(145deg, #5c1624 0%, #360d15 100%)",
+  "--shadow-pop": "0 8px 22px -8px rgba(73, 17, 28, 0.7)",
 } as CSSProperties;
 
 const SMART_DOC_LIMIT = 5;
@@ -2042,13 +2072,13 @@ export function ChatPage() {
               <div className="flex min-w-0 items-center gap-2">
                 <button
                   onClick={() => setSidebarOpen((v) => !v)}
-                  className="hidden rounded-xl p-2 text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground lg:inline-flex"
+                  className="gd-press hidden rounded-lg p-1.5 text-muted-foreground/55 transition-colors hover:text-foreground lg:inline-flex"
                   title={sidebarOpen ? "Hide chats" : "Show chats"}
                 >
                   {sidebarOpen ? (
-                    <PanelLeftClose className="h-4 w-4" />
+                    <PanelLeftClose className="h-[18px] w-[18px]" strokeWidth={1.75} />
                   ) : (
-                    <PanelLeftOpen className="h-4 w-4" />
+                    <PanelLeftOpen className="h-[18px] w-[18px]" strokeWidth={1.75} />
                   )}
                 </button>
                 <h1 className="truncate text-[15px] font-semibold tracking-[-0.01em] sm:text-base">
@@ -2062,6 +2092,7 @@ export function ChatPage() {
               <>
                 <div className="hidden shrink-0 sm:block">
                   <SegmentedControl
+                    style={ACCENT_SOURCE}
                     options={SOURCE_MODES}
                     value={sourceMode}
                     onChange={applySourceMode}
@@ -2093,6 +2124,7 @@ export function ChatPage() {
                 </button>
               </>
               <SegmentedControl
+                style={ACCENT_MODE}
                 className="chat-mode-selector shrink-0"
                 options={CHAT_MODES}
                 value={mode}
@@ -2209,6 +2241,7 @@ export function ChatPage() {
             <div className="mb-2 md:hidden">
               {expandedSelector === "style" ? (
                 <SegmentedControl
+                  style={ACCENT_MODE}
                   className="selector-reveal"
                   options={CHAT_MODES}
                   value={mode}
@@ -2226,6 +2259,7 @@ export function ChatPage() {
                 />
               ) : expandedSelector === "source" ? (
                 <SegmentedControl
+                  style={ACCENT_SOURCE}
                   className="selector-reveal"
                   options={SOURCE_MODES}
                   value={sourceMode}
@@ -2241,7 +2275,8 @@ export function ChatPage() {
                     type="button"
                     onClick={() => setExpandedSelector("style")}
                     title={`Answer style: ${mode}`}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/25 bg-pop/[0.06] px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-pop/10"
+                    style={ACCENT_MODE}
+                    className="gd-press inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/40 bg-pop/[0.1] px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-pop/20"
                   >
                     {mode === "Storytelling" && <BookText className="h-3 w-3 text-pop" />}
                     {mode === "Visuals" && <Sparkles className="h-3 w-3 text-pop" />}
@@ -2252,7 +2287,8 @@ export function ChatPage() {
                     type="button"
                     onClick={() => setExpandedSelector("source")}
                     title={`Sources: ${sourceMode}`}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/25 bg-pop/[0.06] px-2.5 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors hover:bg-pop/10"
+                    style={ACCENT_SOURCE}
+                    className="gd-press inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/40 bg-pop/[0.1] px-2.5 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors hover:bg-pop/20"
                   >
                     <FileText className="h-3 w-3 text-pop" />
                     {SOURCE_SHORT[sourceMode]}
@@ -2432,7 +2468,7 @@ export function ChatPage() {
                     title={listening ? "Stop voice input" : "Use voice input"}
                     aria-pressed={listening}
                     aria-label={listening ? "Stop voice input" : "Start voice input"}
-                    className={`inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-xl border transition-colors ${
+                    className={`gd-press inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-xl border transition-colors ${
                       listening
                         ? "border-transparent bg-pop text-pop-foreground shadow-pop ring-2 ring-pop/30"
                         : "border-border/70 bg-background text-muted-foreground hover:border-pop/40 hover:bg-pop/[0.06] hover:text-pop"
@@ -2478,10 +2514,11 @@ export function ChatPage() {
                   title={webSearch ? "General context on" : "Add general context"}
                   aria-pressed={webSearch}
                   aria-label={webSearch ? "Turn general context off" : "Turn general context on"}
-                  className={`inline-flex h-[44px] shrink-0 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-medium transition-colors sm:px-3.5 ${
+                  style={ACCENT_GENERAL}
+                  className={`gd-press inline-flex h-[44px] shrink-0 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-medium transition-colors sm:px-3.5 ${
                     webSearch
-                      ? "border-transparent bg-pop text-pop-foreground shadow-pop ring-2 ring-pop/30"
-                      : "border-border/70 bg-background text-muted-foreground hover:border-pop/40 hover:bg-pop/[0.06] hover:text-pop"
+                      ? "border-transparent bg-pop text-pop-foreground shadow-pop ring-2 ring-pop/40"
+                      : "border-border/70 bg-background text-muted-foreground hover:border-pop/60 hover:text-foreground"
                   }`}
                 >
                   <Search className="h-4 w-4" />
@@ -2987,6 +3024,7 @@ function SegmentedControl<T extends string>({
   getLabel,
   getTitle,
   className,
+  style,
 }: {
   options: readonly T[];
   value: T;
@@ -2995,12 +3033,14 @@ function SegmentedControl<T extends string>({
   getLabel?: (option: T) => string;
   getTitle?: (option: T) => string;
   className?: string;
+  style?: CSSProperties;
 }) {
   const count = options.length;
   const activeIndex = Math.max(0, options.indexOf(value));
 
   return (
     <div
+      style={style}
       className={`relative flex rounded-xl border border-border/70 bg-foreground/[0.03] p-0.5 ${className ?? ""}`}
     >
       <span

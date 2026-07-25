@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Hanken+Grotesk:wght@300;400;500;600&family=Nunito:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Anton&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Hanken+Grotesk:wght@300;400;500;600&family=Nunito:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 /* Per-discipline display + mono faces: Medicine (Schibsted Grotesk / IBM Plex
    Mono), Law (Fraunces / Courier Prime). Loaded globally; applied only when a
    discipline theme is active. */
@@ -61,9 +61,7 @@ html {
   --color-leaf: var(--leaf);
 
   --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
-  /* Anton — heavy condensed face for large display type and banners. Sora
-     stays as the fallback and for lighter display contexts. */
-  --font-display: "Anton", "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   /* Friendly, rounded reading face for AI answers - warm but still professional. */
   --font-reading: "Nunito", "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
@@ -440,10 +438,12 @@ html {
    every tap feels acknowledged (Emil: buttons must feel responsive to press).
    Applied via className to buttons that don't already own their transform. */
 .gd-press {
-  transition: transform 150ms var(--motion-ease);
+  /* Bump: presses in fast, then springs back past its size and settles — a
+     tactile "bump" rather than a flat scale (the overshoot lives in the curve). */
+  transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .gd-press:active:not(:disabled) {
-  transform: scale(0.96);
+  transform: scale(0.93);
 }
 @media (prefers-reduced-motion: reduce) {
   .gd-press {
@@ -520,14 +520,17 @@ html {
 
 /* Messages rise and fade in as they appear. */
 .gd-msg-in {
-  animation: gdMsgIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: gdMsgIn 0.5s cubic-bezier(0.34, 1.4, 0.5, 1) both;
 }
 @keyframes gdMsgIn {
-  from {
+  0% {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(12px) scale(0.985);
   }
-  to {
+  60% {
+    opacity: 1;
+  }
+  100% {
     opacity: 1;
     transform: none;
   }
@@ -1101,7 +1104,9 @@ html.gd-low-power .gd-forming-orb::after {
 .segmented-thumb {
   background: var(--gradient-pop);
   box-shadow: var(--shadow-pop);
-  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* The thumb overshoots slightly as it lands on the next option — a fluid
+     bump instead of a mechanical glide. */
+  transition: transform 420ms cubic-bezier(0.34, 1.42, 0.5, 1);
 }
 @media (prefers-reduced-motion: reduce) {
   .segmented-thumb {
