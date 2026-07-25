@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Hanken+Grotesk:wght@300;400;500;600&family=Nunito:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Hanken+Grotesk:wght@300;400;500;600&family=Nunito:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Anton&display=swap");
 /* Per-discipline display + mono faces: Medicine (Schibsted Grotesk / IBM Plex
    Mono), Law (Fraunces / Courier Prime). Loaded globally; applied only when a
    discipline theme is active. */
@@ -61,7 +61,9 @@ html {
   --color-leaf: var(--leaf);
 
   --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
+  /* Anton — heavy condensed face for large display type and banners. Sora
+     stays as the fallback and for lighter display contexts. */
+  --font-display: "Anton", "Sora", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   /* Friendly, rounded reading face for AI answers - warm but still professional. */
   --font-reading: "Nunito", "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
