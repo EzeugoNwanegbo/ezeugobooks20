@@ -995,87 +995,26 @@ html.gd-low-power .gd-forming-orb::after {
   background: color-mix(in srgb, var(--border) 90%, transparent);
 }
 
-/* Tap-to-look-up key term: a dotted underline that reads as "there's more here"
-   without shouting. Styled as a bare inline button so it flows inside prose. */
+/* Tap-to-look-up key term: a quiet neutral dotted underline that reads as
+   "there's more here" without shouting — no colour highlight. Styled as a bare
+   inline button so it flows inside prose. */
 .ai-term-trigger {
   color: inherit;
-  /* Subtle highlighter wash so key terms read as "there's more here" without
-     shouting - the accent used like a marker pen. */
-  background: linear-gradient(
-    transparent 62%,
-    color-mix(in srgb, var(--pop) 16%, transparent) 0
-  );
+  background: none;
   border: 0;
-  padding: 0 1px;
-  border-radius: 2px;
+  padding: 0;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
   text-decoration: underline dotted;
   text-underline-offset: 3px;
-  text-decoration-color: color-mix(in srgb, var(--pop) 55%, transparent);
-  transition: color 120ms ease, background 120ms ease, text-decoration-color 120ms ease;
+  text-decoration-color: color-mix(in srgb, var(--foreground) 38%, transparent);
+  transition: text-decoration-color 120ms ease;
 }
 .ai-term-trigger:hover,
 .ai-term-trigger:focus-visible {
-  color: var(--pop);
-  background: linear-gradient(
-    transparent 55%,
-    color-mix(in srgb, var(--pop) 24%, transparent) 0
-  );
-  text-decoration-color: var(--pop);
+  text-decoration-color: var(--foreground);
   outline: none;
-}
-
-/* Study-tip callout: the single accent card per answer. Applied by the chat
-   renderer when a paragraph starts with "Study tip:" / "The takeaway:". */
-.gd-study-tip {
-  display: flex;
-  gap: 0.7rem;
-  align-items: flex-start;
-  margin: 1rem 0 0.35rem;
-  padding: 0.8rem 0.95rem;
-  border-radius: 13px;
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--pop) 12%, transparent),
-    color-mix(in srgb, var(--pop) 5%, transparent)
-  );
-  border: 1px solid color-mix(in srgb, var(--pop) 26%, transparent);
-}
-.gd-study-tip .gd-study-tip-ic {
-  flex: none;
-  width: 1.6rem;
-  height: 1.6rem;
-  border-radius: 8px;
-  background: var(--gradient-pop);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  box-shadow: var(--shadow-pop);
-}
-.gd-study-tip .gd-study-tip-ic svg {
-  width: 0.9rem;
-  height: 0.9rem;
-}
-.gd-study-tip .gd-study-tip-body {
-  min-width: 0;
-  font-family: var(--font-reading);
-}
-.gd-study-tip .gd-study-tip-label {
-  display: block;
-  font-family: var(--font-sans);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--pop);
-  margin-bottom: 0.1rem;
-}
-.gd-study-tip .gd-study-tip-text {
-  font-size: 0.95rem;
-  line-height: 1.55;
-  color: var(--foreground);
 }
 
 /* Answer question eyebrow ("You asked") gets a short gradient dash. */

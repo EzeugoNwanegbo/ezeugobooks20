@@ -1142,6 +1142,23 @@ function SessionView({
       recordGamificationEvent(user.id, "coach_session_completed");
       if (mastered) await awardRoadmapIfComplete(user.id, session.plan_id);
 
+      // Keep the per-question grades in state so each answer can show its model
+      // answer, explanation, and AI feedback in the review below.
+      const gradeMap: Record<string, Grade> = {};
+      questions.forEach((question, index) => {
+        const grade =
+          gradingAnswers.find((item) => item.question_id === question.id) ??
+          gradingAnswers[index] ??
+          {};
+        gradeMap[question.id] = {
+          is_correct: grade.is_correct ?? null,
+          score: grade.score ?? null,
+          feedback: grade.feedback ?? "",
+          missing_points: grade.missing_points ?? [],
+        };
+      });
+      setGrades(gradeMap);
+
       setReview(result);
       setCompleted(true);
       toast.success(
@@ -1544,28 +1561,46 @@ function SessionView({
                       </div>
                     ) : null}
 
-                    {incorrectQuestions.length > 0 ? (
-                      <div>
-                        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
-                          <XCircle className="h-4 w-4 text-destructive" />
-                          Incorrect questions review
-                        </h3>
-                        <div className="space-y-3">
-                          {incorrectQuestions.map((question, index) => (
+                    {incorrectQuestions.length === 0 && (
+                      <div className="rounded-2xl border border-leaf/30 bg-leaf/10 p-4 text-center text-sm font-medium text-leaf">
+                        Perfect score - every question correct. 🎉
+                      </div>
+                    )}
+                    <div>
+                      <h3 className="mb-2 text-sm font-semibold">Answers &amp; explanations</h3>
+                      <div className="space-y-3">
+                        {questions.map((question, index) => {
+                          const correct = isGradeCorrect(grades[question.id]);
+                          return (
                             <div
                               key={question.id}
-                              className="rounded-2xl border border-destructive/30 bg-destructive/5 p-3 sm:p-4"
+                              className={`rounded-2xl border p-3 sm:p-4 ${
+                                correct
+                                  ? "border-leaf/30 bg-leaf/5"
+                                  : "border-destructive/30 bg-destructive/5"
+                              }`}
                             >
-                              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                {question.question_type} · {index + 1}
+                              <div className="mb-2 flex items-center justify-between gap-2">
+                                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                  {question.question_type} · {index + 1}
+                                </span>
+                                <span
+                                  className={`inline-flex items-center gap-1 text-xs font-semibold ${
+                                    correct ? "text-leaf" : "text-destructive"
+                                  }`}
+                                >
+                                  {correct ? (
+                                    <CheckCircle2 className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <XCircle className="h-3.5 w-3.5" />
+                                  )}
+                                  {correct ? "Correct" : "Incorrect"}
+                                </span>
                               </div>
                               <p className="text-sm font-medium break-words">{question.prompt}</p>
                               <p className="mt-2 flex items-start gap-1.5 text-sm break-words">
-                                <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
                                 <span className="min-w-0">
-                                  <span className="font-semibold text-destructive">
-                                    Your answer:{" "}
-                                  </span>
+                                  <span className="font-semibold">Your answer: </span>
                                   {question.question_type === "mcq"
                                     ? optionLabel(question, answers[question.id])
                                     : answers[question.id] || "-"}
@@ -1573,14 +1608,10 @@ function SessionView({
                               </p>
                               <AnswerFeedback question={question} grade={grades[question.id]} />
                             </div>
-                          ))}
-                        </div>
+                          );
+                        })}
                       </div>
-                    ) : (
-                      <div className="rounded-2xl border border-leaf/30 bg-leaf/10 p-4 text-center text-sm font-medium text-leaf">
-                        Perfect score - every question correct. 🎉
-                      </div>
-                    )}
+                    </div>
 
                     <button
                       onClick={backToTopics}
@@ -1791,6 +1822,9 @@ function SessionView({
                         placeholder="Write your answer"
                         className="mt-3 min-h-28 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40 disabled:opacity-70"
                       />
+                    )}
+                    {completed && (
+                      <AnswerFeedback question={question} grade={grades[question.id]} />
                     )}
                   </div>
                 ))}

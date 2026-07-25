@@ -386,7 +386,6 @@ PERSONALIZE FOR THEM:
 - Pitch the depth, vocabulary, and pace to their level and course.
 - Prefer examples, analogies, and framing that fit their field of study and anything we remember they connect with.
 - Where it fits naturally, tie the answer back to their weak areas and recent topics so it doubles as revision.
-- Aim study tips at their assessment format (${p.exam_format || "MCQ"}).
 - Use remembered details naturally to sound like you know them - never announce that you are using saved information.`;
 }
 
@@ -396,29 +395,25 @@ function modeInstruction(mode: Mode, examFormat: string): string {
 - Turn the topic into a scene-by-scene visual explanation.
 - Include the essential facts, labels, motion beats, and timing.
 - Prefer concrete diagrams, animated processes, and simple visual metaphors over long prose.
-- Keep text short enough to fit inside an animation canvas.
-- End with one exam-relevant takeaway for ${examFormat} assessment.`;
+- Keep text short enough to fit inside an animation canvas.`;
   }
   if (mode === "Storytelling") {
     return `Present the answer as a SHORT STORY.
 - Use a relatable narrative, classroom moment, real-world scenario, or step-by-step journey through the idea.
 - Weave the subject matter naturally into the story so facts stick in memory.
-- 3–5 short paragraphs. End with "The takeaway:" (2 lines max).
-- Then on a new line: "Study tip:" - one sentence directly relevant to ${examFormat} assessment.`;
+- 3–5 short paragraphs.`;
   }
   if (mode === "Detailed") {
     return `Present the answer in DETAILED mode.
 - Cover the core idea, reasoning, examples, exceptions, and exam points.
-- Use short tables or bullet lists where they help clarity.
-- End with "Study tip:" - one sentence directly relevant to ${examFormat} assessment.`;
+- Use short tables or bullet lists where they help clarity.`;
   }
   // Simplified (default)
   return `Present the answer in SIMPLIFIED mode.
 - HARD LIMIT: 3 short paragraphs maximum. Condense the draft - do not expand it.
 - Use plain English and one real-world analogy to make the concept click.
 - No jargon without an immediate plain-English explanation.
-- If the research draft has a source, keep the required "Source:" line - it sits above the 3 paragraphs and does not count toward the limit. Do not drop it to save space.
-- End with "Study tip:" - one sentence directly relevant to ${examFormat} assessment.`;
+- If the research draft has a source, keep the required "Source:" line - it sits above the 3 paragraphs and does not count toward the limit. Do not drop it to save space.`;
 }
 
 /** System prompt for DeepSeek - pure fact extraction, no style. */

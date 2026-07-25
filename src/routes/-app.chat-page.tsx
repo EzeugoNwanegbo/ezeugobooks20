@@ -3685,12 +3685,6 @@ function wrapTermsInChildren(
   });
 }
 
-// Answers usually close with a "Study tip:" / "The takeaway:" line (see the
-// mode instructions). We lift that line out of the plain prose into an accent
-// callout card so the single most actionable sentence pops.
-const STUDY_TIP_LABEL =
-  /^\s*(study tip|the takeaway|takeaway|key takeaway|exam tip|pro tip|remember)\s*[:\-–]\s*/i;
-
 function nodeToPlainText(node: ReactNode): string {
   if (node == null || typeof node === "boolean") return "";
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -3699,22 +3693,6 @@ function nodeToPlainText(node: ReactNode): string {
     return nodeToPlainText((node.props as { children?: ReactNode }).children);
   }
   return "";
-}
-
-function StudyTipCallout({ label, text }: { label: string; text: string }) {
-  return (
-    <div className="gd-study-tip">
-      <span className="gd-study-tip-ic" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-          <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12c1 1 1 2 1 3h6c0-1 0-2 1-3a7 7 0 0 0-4-12z" />
-        </svg>
-      </span>
-      <span className="gd-study-tip-body">
-        <span className="gd-study-tip-label">{label}</span>
-        <span className="gd-study-tip-text">{text}</span>
-      </span>
-    </div>
-  );
 }
 
 // Renders a ```mermaid code block as an inline diagram. Mermaid is heavy, so it
@@ -4215,18 +4193,10 @@ function Message({
         }
         return <pre {...props}>{children}</pre>;
       },
-      // Always overridden: a "Study tip:" paragraph becomes an accent callout;
-      // any other paragraph just gets key-term wrapping (a no-op when there are
-      // no terms), so this is safe whether or not termRegex is set.
+      // Every paragraph gets key-term wrapping (a no-op when there are no
+      // terms), so this is safe whether or not termRegex is set.
       p({ node, children, ...props }) {
         void node;
-        const plain = nodeToPlainText(children);
-        const tipMatch = plain.match(STUDY_TIP_LABEL);
-        if (tipMatch) {
-          const label = tipMatch[1].replace(/\s+/g, " ").trim();
-          const body = plain.slice(tipMatch[0].length).trim();
-          if (body) return <StudyTipCallout label={label} text={body} />;
-        }
         return (
           <p {...props}>{wrapTermsInChildren(children, termRegex, termUsed, handleTermClick)}</p>
         );
@@ -4494,11 +4464,8 @@ function Message({
             <Pencil className="h-3.5 w-3.5" />
           </button>
         )}
-        <div className="max-w-[760px] flex-1 rounded-r-xl border-l-2 border-pop/50 bg-pop/[0.05] px-4 py-3 text-sm leading-relaxed break-words">
-          <div className="gd-eyebrow mb-1 inline-flex items-center text-[11px] font-semibold uppercase tracking-[0.12em] text-pop">
-            You asked
-          </div>
-          <div className="text-[15px] leading-relaxed text-foreground">{msg.content}</div>
+        <div className="max-w-[760px] flex-1 rounded-2xl border border-border/60 bg-foreground/[0.02] px-4 py-3 text-[15px] leading-relaxed text-foreground break-words">
+          {msg.content}
         </div>
       </div>
     );
