@@ -234,15 +234,13 @@ const SOURCE_SHORT: Record<SourceMode, string> = {
 
 // Chat surface theme, scoped to the chat subtree (overrides the global +
 // discipline tokens for this subtree only, so it wins reliably). A near-black
-// #001219 ground; the primary action (send, key terms, empty state) keeps the
-// warm coral pop, while individual controls own their own deep jewel tone
-// (below) so the settings read as colour-coded without a rainbow.
+// The chat surface now FOLLOWS the app theme (beige in light, near-black in
+// dark) — no hardcoded ground — so it stays consistent with the rest of the
+// app. Only the accent is pinned: the primary action (send, key terms, empty
+// state) keeps the warm coral pop, and it's declared inline so it reliably wins
+// over the discipline theme set on <html>. Individual controls own their own
+// deep jewel tone (below), colour-coding the settings without a rainbow.
 const CHAT_ACCENT_STYLE = {
-  "--background": "#001219",
-  "--surface": "#04222e",
-  "--surface-elevated": "#062c3b",
-  "--border": "rgba(148, 210, 220, 0.12)",
-  "--input": "rgba(148, 210, 220, 0.16)",
   "--pop": "#ee6c4d",
   "--pop-2": "#d8542f",
   "--pop-foreground": "#ffffff",
