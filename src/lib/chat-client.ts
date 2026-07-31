@@ -22,7 +22,10 @@ export type DocumentCtx = {
   excerpt: string;
 };
 
-export type ChatMode = "Simplified" | "Detailed" | "Storytelling" | "Visuals";
+// "Detailed+" is the study-notes mode: a fully structured, headed, PDF-ready
+// write-up. "Visuals" is retired (see CHAT_MODES in the chat page) but stays in
+// the union so old saved messages/preferences still type-check.
+export type ChatMode = "Simplified" | "Detailed" | "Detailed+" | "Storytelling" | "Visuals";
 export type DocumentMode = "none" | "smart" | "selected";
 
 export type WebSource = {

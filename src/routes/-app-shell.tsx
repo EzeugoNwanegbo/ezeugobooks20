@@ -32,6 +32,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AppShellSkeleton } from "@/components/app-skeletons";
+import { FeatureTour } from "@/components/feature-tour";
+import { hasSeenTour } from "@/lib/feature-tour";
 import { useAuth } from "@/lib/auth-context";
 import { isGuestUser } from "@/lib/guest-session";
 import { rememberRoute } from "@/lib/last-route";
@@ -66,6 +68,7 @@ function AppLayout() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [hideMobileTopbar, setHideMobileTopbar] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   const [gamification, setGamification] =
     useState<GamificationStats>(emptyGamificationStats);
 
@@ -84,6 +87,15 @@ function AppLayout() {
   useEffect(() => {
     setHideMobileTopbar(false);
   }, [location.pathname]);
+
+  // First run: once the profile is in (so onboarding is behind them and the
+  // shell has actually rendered its nav), offer the guided tour. Seen-state
+  // lives in localStorage, so it never fires twice on a device.
+  useEffect(() => {
+    if (loading || !profile || hasSeenTour()) return;
+    const timer = window.setTimeout(() => setTourOpen(true), 900);
+    return () => window.clearTimeout(timer);
+  }, [loading, profile]);
 
   // Theme the whole app to the student's discipline (medicine/law) via a
   // root attribute, parallel to the .dark/.light theme classes. Guests and
@@ -307,11 +319,14 @@ function AppLayout() {
     icon: ReactNode,
     label: string,
     accent: "blue" | "violet" | "coral" | "amber" | "slate" = "slate",
+    // Lets the guided tour spotlight this entry (see src/lib/feature-tour.ts).
+    tourAnchor?: string,
   ) => {
     const active = location.pathname.startsWith(to);
     return (
       <Link
         to={to}
+        data-tour={tourAnchor}
         className={`gd-side-nav-item gd-side-nav-${accent} ${active ? "gd-side-nav-active" : ""} group/nav relative flex items-center overflow-hidden rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-200 ${
           active
             ? "text-foreground"
@@ -424,13 +439,37 @@ function AppLayout() {
           {!isSidebarCollapsed && <p className="gd-nav-label px-3">Study space</p>}
           <div className="space-y-1">
             {navItem("/app/chat", <MessageSquare className="h-4 w-4 shrink-0" />, "Chat", "blue")}
-            {navItem("/app/library", <BookOpen className="h-4 w-4 shrink-0" />, "Library", "blue")}
-            {navItem("/app/studybody", <BrainCircuit className="h-4 w-4 shrink-0" />, "My Coach", "violet")}
-            {navItem("/app/last-minute", <TimerReset className="h-4 w-4 shrink-0" />, "Last Minute", "coral")}
+            {navItem(
+              "/app/library",
+              <BookOpen className="h-4 w-4 shrink-0" />,
+              "Library",
+              "blue",
+              "nav-library",
+            )}
+            {navItem(
+              "/app/studybody",
+              <BrainCircuit className="h-4 w-4 shrink-0" />,
+              "My Coach",
+              "violet",
+              "nav-studybody",
+            )}
+            {navItem(
+              "/app/last-minute",
+              <TimerReset className="h-4 w-4 shrink-0" />,
+              "Last Minute",
+              "coral",
+              "nav-last-minute",
+            )}
           </div>
           <div className="space-y-1 border-t border-border/60 pt-5">
             {!isSidebarCollapsed && <p className="gd-nav-label px-3">Your work</p>}
-            {navItem("/app/history", <Clock className="h-4 w-4 shrink-0" />, "History")}
+            {navItem(
+              "/app/history",
+              <Clock className="h-4 w-4 shrink-0" />,
+              "History",
+              "slate",
+              "nav-history",
+            )}
             {navItem("/app/leaderboard", <Trophy className="h-4 w-4 shrink-0" />, "Leaderboard", "amber")}
             {navItem("/app/feedback", <Heart className="h-4 w-4 shrink-0" />, "Feedback")}
             {navItem("/app/settings", <Settings className="h-4 w-4 shrink-0" />, "Settings")}
@@ -465,6 +504,28 @@ function AppLayout() {
               {[profile.year, profile.university].filter(Boolean).join(" - ")}
             </div>
           </div>
+          <button
+            type="button"
+            data-tour="tour-launcher"
+            onClick={() => setTourOpen(true)}
+            title={isSidebarCollapsed ? "Guide" : "Replay the app guide"}
+            className={`mb-1 flex items-center text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground ${
+              isSidebarCollapsed
+                ? "justify-center rounded-lg p-2"
+                : "w-full gap-3 rounded-lg px-3 py-2 text-sm font-medium"
+            }`}
+          >
+            <Map className="h-4 w-4 shrink-0" />
+            <span
+              className={`whitespace-nowrap transition-all duration-300 ${
+                isSidebarCollapsed
+                  ? "max-w-0 -translate-x-2 opacity-0"
+                  : "max-w-24 translate-x-0 opacity-100"
+              }`}
+            >
+              Guide
+            </span>
+          </button>
           <div className={isSidebarCollapsed ? "" : "mb-2 px-3"}>
             <ThemeToggle showLabel={!isSidebarCollapsed} />
           </div>
@@ -579,24 +640,28 @@ function AppLayout() {
                 icon={<BookOpen className="h-4 w-4" />}
                 label="Library"
                 onPick={() => goToMobileRoute("/app/library")}
+                tourAnchor="nav-library"
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("last-minute")}
                 icon={<TimerReset className="h-4 w-4" />}
                 label="Last Minute"
                 onPick={() => goToMobileRoute("/app/last-minute")}
+                tourAnchor="nav-last-minute"
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("studybody")}
                 icon={<BrainCircuit className="h-4 w-4" />}
                 label="My Coach"
                 onPick={() => goToMobileRoute("/app/studybody")}
+                tourAnchor="nav-studybody"
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("history")}
                 icon={<Clock className="h-4 w-4" />}
                 label="History"
                 onPick={() => goToMobileRoute("/app/history")}
+                tourAnchor="nav-history"
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("leaderboard")}
@@ -618,6 +683,16 @@ function AppLayout() {
                 icon={<Settings className="h-4 w-4" />}
                 label="Settings"
                 onPick={() => goToMobileRoute("/app/settings")}
+              />
+              <MobileDrawerNavItem
+                active={false}
+                icon={<Map className="h-4 w-4" />}
+                label="Guide"
+                onPick={() => {
+                  setMobileMenuOpen(false);
+                  setTourOpen(true);
+                }}
+                tourAnchor="tour-launcher"
               />
             </nav>
           </div>
@@ -746,6 +821,13 @@ function AppLayout() {
           <Outlet />
         </main>
       </div>
+
+      <FeatureTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        onOpenMobileNav={() => setMobileMenuOpen(true)}
+        onCloseMobileNav={() => setMobileMenuOpen(false)}
+      />
     </div>
   );
 }
@@ -755,15 +837,20 @@ function MobileDrawerNavItem({
   icon,
   label,
   onPick,
+  tourAnchor,
 }: {
   active: boolean;
   icon: ReactNode;
   label: string;
   onPick: () => void;
+  // On mobile the drawer holds the only copy of these entries, so the tour
+  // spotlights them here instead of in the (hidden) sidebar.
+  tourAnchor?: string;
 }) {
   return (
     <button
       type="button"
+      data-tour={tourAnchor}
       onClick={onPick}
       className={`flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors ${
         active

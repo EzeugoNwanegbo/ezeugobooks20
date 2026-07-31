@@ -23,7 +23,7 @@ import {
   type WebSource,
 } from "@/lib/chat-client";
 import { takePendingChatDoc } from "@/lib/chat-handoff";
-import { buildContinuationPrompt } from "@/lib/chat-portability";
+import { buildContinuationPrompt, buildExplainLastAnswerPrompt } from "@/lib/chat-portability";
 import { PERSONALIZATION_PROMPT } from "@/lib/personalization";
 import { isNativeApp } from "@/lib/native";
 import { lookupTerm, isTermLookupComplete, type TermLookupState } from "@/lib/term-lookup";
@@ -47,6 +47,8 @@ import {
   Trash2,
   Network,
   BookText,
+  NotebookPen,
+  FileDown,
   FileText,
   Search,
   Square,
@@ -76,6 +78,10 @@ const REMARK_PLUGINS = [remarkGfm];
 
 type ChatSearch = { c?: string };
 type MessageSource = "library" | "general" | "interlink" | "visuals";
+
+// The two ways a student can carry this conversation into another AI:
+// the whole thread, or just the latest answer with an ask to unpack it.
+type HandoffKind = "history" | "explain";
 
 type BrowserSpeechRecognition = {
   continuous: boolean;
@@ -120,6 +126,9 @@ type DisplayMessage = ChatMessage & {
   source?: MessageSource;
   model?: string;
   webSources?: WebSource[];
+  // The answer style this message was produced in (persisted in messages.mode).
+  // Only "Detailed+" changes anything on render - it unlocks the PDF export.
+  mode?: ChatMode;
   // Present on an assistant message that has been regenerated at least once
   // (via editing the user question above it). `content`/`source`/`model`/
   // `webSources` always mirror `versions[activeVersion]`.
@@ -214,7 +223,15 @@ const VISUAL_SUGGESTIONS = [
 // "Visuals" (the old animated-video mode) is retired - answers now draw inline
 // diagrams automatically when a concept is visual, in every mode. The backend
 // Visuals pipeline stays dormant; users just can't pick it any more.
-const CHAT_MODES = ["Simplified", "Detailed", "Storytelling"] as const;
+// "Detailed+" is full study notes, structured for revision and offered as a PDF
+// once the answer lands. It is capped per day (see NOTES_DAILY_LIMIT).
+const CHAT_MODES = ["Simplified", "Detailed", "Detailed+", "Storytelling"] as const;
+// Detailed+ answers are the long, expensive ones (deep model tier + a full set
+// of notes), so each student gets a couple a day. Signed-in usage is counted
+// from their own saved messages; guests fall back to a per-day local tally.
+const NOTES_DAILY_LIMIT = 2;
+const NOTES_GUEST_USAGE_KEY = "gd_notes_usage";
+
 const SOURCE_MODES = ["My files only", "Files + general", "General knowledge"] as const;
 type SourceMode = (typeof SOURCE_MODES)[number];
 
@@ -223,6 +240,7 @@ type SourceMode = (typeof SOURCE_MODES)[number];
 const MODE_SHORT: Record<ChatMode, string> = {
   Simplified: "Simple",
   Detailed: "Detailed",
+  "Detailed+": "Detailed+",
   Storytelling: "Story",
   Visuals: "Visuals",
 };
@@ -248,7 +266,7 @@ const CHAT_ACCENT_STYLE = {
   "--shadow-pop": "0 10px 28px -8px rgba(238, 108, 77, 0.42)",
 } as CSSProperties;
 
-// Answer-style slider (Simplified → Detailed → Storytelling): deep blue.
+// Answer-style slider (Simplified → Detailed → Detailed+ → Story): deep blue.
 const ACCENT_MODE = {
   "--pop": "#004e89",
   "--pop-foreground": "#ffffff",
@@ -617,12 +635,54 @@ function webSourcesFromJson(value: unknown): WebSource[] | undefined {
   return sources.length > 0 ? sources : undefined;
 }
 
+/** Local midnight, as the ISO string Postgres wants for a created_at filter. */
+function startOfTodayIso(): string {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  return start.toISOString();
+}
+
+function todayKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+}
+
+// Guests have no saved messages to count, so their tally lives locally and
+// resets by date. Cheap to bypass, but guests are already ephemeral.
+function readGuestNotesUsage(): number {
+  try {
+    const raw = window.localStorage.getItem(NOTES_GUEST_USAGE_KEY);
+    if (!raw) return 0;
+    const parsed = JSON.parse(raw) as { day?: string; used?: number };
+    return parsed.day === todayKey() ? (parsed.used ?? 0) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeGuestNotesUsage(used: number): void {
+  try {
+    window.localStorage.setItem(NOTES_GUEST_USAGE_KEY, JSON.stringify({ day: todayKey(), used }));
+  } catch {
+    // Storage unavailable - the in-memory count still holds for this session.
+  }
+}
+
 function normalizeChatMode(value: unknown): ChatMode {
   // Note: the retired "Visuals" mode is no longer in CHAT_MODES, so an old
   // persisted "Visuals" session falls back to Simplified here.
   return (CHAT_MODES as readonly string[]).includes(value as string)
     ? (value as ChatMode)
     : "Simplified";
+}
+
+// Like normalizeChatMode but for a stored message's own mode, where "unknown"
+// (a row saved before mode was recorded) must stay unknown rather than being
+// reported as Simplified.
+function knownChatMode(value: unknown): ChatMode | undefined {
+  return (CHAT_MODES as readonly string[]).includes(value as string)
+    ? (value as ChatMode)
+    : undefined;
 }
 
 function totalMessageContentLength(messages: DisplayMessage[]): number {
@@ -806,6 +866,8 @@ export function ChatPage() {
   const [listening, setListening] = useState(false);
   const [hideComposer, setHideComposer] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
+  // Detailed+ answers used today, against NOTES_DAILY_LIMIT.
+  const [notesUsedToday, setNotesUsedToday] = useState(0);
   // "Continue in another AI" — briefly flips to a checkmark after copying.
   const [handoffCopied, setHandoffCopied] = useState(false);
   // On mobile the style/source selectors collapse to small pills and only
@@ -1154,7 +1216,7 @@ export function ChatPage() {
       setLoadingConvo(true);
       const { data, error } = await supabase
         .from("messages")
-        .select("role, content, source_type, model_used, source_refs")
+        .select("role, content, source_type, model_used, source_refs, mode")
         .eq("conversation_id", conversationId)
         .order("created_at");
       if (!active) return;
@@ -1169,6 +1231,7 @@ export function ChatPage() {
         source: (m.source_type as MessageSource | null) ?? undefined,
         model: m.model_used ?? undefined,
         webSources: webSourcesFromJson(m.source_refs),
+        mode: knownChatMode(m.mode),
       }));
       const cachedMessages =
         latestSessionRef.current?.conversationId === conversationId
@@ -1251,13 +1314,70 @@ export function ChatPage() {
     controller.abort();
   };
 
+  // How many Detailed+ answers this student has already had today. Counted from
+  // their own saved messages so the cap follows the account across devices.
+  useEffect(() => {
+    if (!user) {
+      setNotesUsedToday(readGuestNotesUsage());
+      return;
+    }
+    let active = true;
+    (async () => {
+      const { count, error } = await supabase
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("role", "assistant")
+        .eq("mode", "Detailed+")
+        .gte("created_at", startOfTodayIso());
+      if (!active) return;
+      // On error, leave the count at 0 rather than locking someone out over a
+      // failed query.
+      if (error) {
+        console.warn("notes quota lookup", error);
+        return;
+      }
+      setNotesUsedToday(count ?? 0);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  const notesLeftToday = Math.max(0, NOTES_DAILY_LIMIT - notesUsedToday);
+
+  // Switching into Detailed+ is blocked once the day's allowance is gone.
+  const applyMode = (next: ChatMode) => {
+    if (next === "Detailed+" && notesLeftToday === 0) {
+      toast("Detailed+ used up for today", {
+        description: `You get ${NOTES_DAILY_LIMIT} sets of full notes a day. It resets at midnight — Detailed still gives you the depth without the notes format.`,
+      });
+      return;
+    }
+    setMode(next);
+  };
+
+  // Gates the "Explain recent response" handoff option — it needs a finished
+  // answer to point at.
+  const hasAssistantAnswer = messages.some(
+    (m) => m.role === "assistant" && m.content.trim().length > 0,
+  );
+
   // Build a self-contained prompt from this conversation and copy it, so the
   // student can paste it into any other AI and keep going without starting over.
-  const copyContinuationPrompt = async () => {
-    const prompt = buildContinuationPrompt(messages, profile);
+  // "history" carries the whole thread; "explain" carries only the latest answer
+  // with an ask to unpack it.
+  const copyHandoffPrompt = async (kind: HandoffKind) => {
+    const prompt =
+      kind === "history"
+        ? buildContinuationPrompt(messages, profile)
+        : buildExplainLastAnswerPrompt(messages, profile);
     if (!prompt) {
-      toast("Nothing to carry over yet", {
-        description: "Ask something first, then you can continue it in another AI.",
+      toast(kind === "history" ? "Nothing to carry over yet" : "No answer to explain yet", {
+        description:
+          kind === "history"
+            ? "Ask something first, then you can continue it in another AI."
+            : "Wait for an answer, then you can have another AI break it down.",
       });
       return;
     }
@@ -1265,8 +1385,11 @@ export function ChatPage() {
       await copyTextToClipboard(prompt);
       setHandoffCopied(true);
       window.setTimeout(() => setHandoffCopied(false), 2200);
-      toast.success("Prompt copied", {
-        description: "Paste it into ChatGPT, Gemini, or any AI to pick up where you left off.",
+      toast.success(kind === "history" ? "Chat history copied" : "Explainer prompt copied", {
+        description:
+          kind === "history"
+            ? "Paste it into ChatGPT, Gemini, or any AI to pick up where you left off."
+            : "Paste it into ChatGPT, Gemini, or any AI to have the last answer broken down.",
       });
     } catch {
       toast.error("Couldn't copy — try again.");
@@ -1466,6 +1589,19 @@ export function ChatPage() {
   ) => {
     const content = (text ?? input).trim();
     if (!content || streaming) return;
+
+    // The selector can still be sitting on Detailed+ from a restored session
+    // after the allowance is gone, so the cap is enforced here too - this is the
+    // one path every answer goes through. Falls back to Detailed rather than
+    // refusing to answer.
+    const overNotesLimit = mode === "Detailed+" && notesLeftToday === 0;
+    const sendMode: ChatMode = overNotesLimit ? "Detailed" : mode;
+    if (overNotesLimit) {
+      setMode("Detailed");
+      toast("Detailed+ used up for today", {
+        description: `You get ${NOTES_DAILY_LIMIT} sets of full notes a day. Answering in Detailed instead - it resets at midnight.`,
+      });
+    }
     // Edit-and-rerun passes an explicitly truncated history (everything before
     // the edited message) rather than relying on `messages` state having
     // already been updated synchronously, plus the answer versions carried
@@ -1538,6 +1674,7 @@ export function ChatPage() {
       {
         role: "assistant",
         content: "",
+        mode: sendMode,
         ...(priorVersions.length > 0
           ? { versions: priorVersions, activeVersion: priorVersions.length }
           : {}),
@@ -1616,7 +1753,7 @@ export function ChatPage() {
           user_id: user.id,
           role: "user",
           content,
-          mode,
+          mode: sendMode,
         })
         .then(({ error }) => {
           if (error) console.error("save user msg", error);
@@ -1656,7 +1793,7 @@ export function ChatPage() {
             content: noMatchText,
             model_used: "library-search",
             source_type: "library",
-            mode,
+            mode: sendMode,
           })
           .then(({ error }) => {
             if (error) console.error("save assistant miss", error);
@@ -1691,6 +1828,9 @@ export function ChatPage() {
           source: metaSource,
           model: metaModel,
           webSources,
+          // Remembered per answer so the PDF offer keeps showing on a Detailed+
+          // answer even after the student switches the selector to another mode.
+          mode: sendMode,
           // The freshly-generated version isn't appended to `versions` until
           // it finishes (see onDone) - until then this just carries the prior
           // versions along so the nav row's data stays intact mid-stream.
@@ -1750,7 +1890,7 @@ export function ChatPage() {
       await streamChat({
         messages: requestMessages,
         profile: profileForRequest,
-        mode,
+        mode: sendMode,
         documents: documentsForRequest.length > 0 ? documentsForRequest : undefined,
         documentMode:
           documentsForRequest.length === 0 ? "none" : manuallySelected ? "selected" : "smart",
@@ -1825,6 +1965,15 @@ export function ChatPage() {
             });
           }
           logTiming("ai stream done", { chars: assistant.length });
+          // Only a delivered answer spends the allowance - a failed or cancelled
+          // request costs the student nothing.
+          if (assistant && sendMode === "Detailed+") {
+            setNotesUsedToday((used) => {
+              const next = used + 1;
+              if (!user) writeGuestNotesUsage(next);
+              return next;
+            });
+          }
           if (assistant && user) {
             await supabase.from("messages").insert({
               conversation_id: cid,
@@ -1834,7 +1983,7 @@ export function ChatPage() {
               model_used: metaModel || null,
               source_type: metaSource,
               source_refs: webSources.length > 0 ? webSources : null,
-              mode,
+              mode: sendMode,
             });
             await supabase
               .from("conversations")
@@ -2089,6 +2238,7 @@ export function ChatPage() {
                 <div className="hidden shrink-0 sm:block">
                   <SegmentedControl
                     style={ACCENT_SOURCE}
+                    tourAnchor="answer-sources"
                     options={SOURCE_MODES}
                     value={sourceMode}
                     onChange={applySourceMode}
@@ -2121,12 +2271,15 @@ export function ChatPage() {
               </>
               <SegmentedControl
                 style={ACCENT_MODE}
+                tourAnchor="answer-style"
                 className="chat-mode-selector shrink-0"
                 options={CHAT_MODES}
                 value={mode}
-                onChange={setMode}
+                onChange={applyMode}
                 getIcon={(m) =>
-                  m === "Storytelling" ? (
+                  m === "Detailed+" ? (
+                    <NotebookPen className="h-3 w-3" />
+                  ) : m === "Storytelling" ? (
                     <BookText className="h-3 w-3" />
                   ) : m === "Visuals" ? (
                     <Sparkles className="h-3 w-3" />
@@ -2137,24 +2290,28 @@ export function ChatPage() {
                     ? "Create an animated visual explanation"
                     : m === "Storytelling"
                       ? "Explain as a story"
-                      : m === "Detailed"
-                        ? "Concepts + deeper detail"
-                        : "Plain English with an analogy"
+                      : m === "Detailed+"
+                        ? `Full study notes you can save as a PDF (${NOTES_DAILY_LIMIT}/day)`
+                        : m === "Detailed"
+                          ? "Concepts + deeper detail"
+                          : "Plain English with an analogy"
                 }
               />
-              {messages.length > 0 && (
-                <button
-                  onClick={copyContinuationPrompt}
-                  title="Copy a prompt to continue this chat in another AI"
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-pop/10 hover:text-pop"
+              {mode === "Detailed+" && (
+                <span
+                  className="shrink-0 rounded-full border border-pop/25 bg-pop/[0.06] px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                  title={`Detailed+ is limited to ${NOTES_DAILY_LIMIT} sets of notes a day`}
                 >
-                  {handoffCopied ? (
-                    <Check className="h-3.5 w-3.5 text-pop" />
-                  ) : (
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  )}
-                  {handoffCopied ? "Copied" : "Continue elsewhere"}
-                </button>
+                  {notesLeftToday} of {NOTES_DAILY_LIMIT} left today
+                </span>
+              )}
+              {messages.length > 0 && (
+                <ContinueElsewhereButton
+                  variant="toolbar"
+                  copied={handoffCopied}
+                  hasAnswer={hasAssistantAnswer && !streaming}
+                  onPick={copyHandoffPrompt}
+                />
               )}
             </div>
           </div>
@@ -2189,6 +2346,9 @@ export function ChatPage() {
                       msg={m}
                       profile={profile}
                       mode={mode}
+                      // The question above this answer, used to title its PDF
+                      // when the notes have no heading of their own.
+                      question={m.role === "assistant" ? messages[i - 1]?.content : undefined}
                       isLast={i === messages.length - 1}
                       streaming={streaming && i === messages.length - 1}
                       canEdit={!streaming}
@@ -2210,7 +2370,7 @@ export function ChatPage() {
             hideComposer ? "translate-y-[calc(100%+1rem)]" : "translate-y-0"
           }`}
         >
-          <div className="pointer-events-auto max-w-3xl mx-auto">
+          <div data-tour="composer" className="pointer-events-auto max-w-3xl mx-auto">
             {messages.some((m) => m.role === "user") && !flashPillDismissed && (
               <div className="mb-2 flex justify-center">
                 <div className="inline-flex items-center gap-1 rounded-xl border border-border/70 bg-background px-1 py-1 text-xs shadow-sm">
@@ -2242,11 +2402,13 @@ export function ChatPage() {
                   options={CHAT_MODES}
                   value={mode}
                   onChange={(m) => {
-                    setMode(m);
+                    applyMode(m);
                     setExpandedSelector(null);
                   }}
                   getIcon={(m) =>
-                    m === "Storytelling" ? (
+                    m === "Detailed+" ? (
+                      <NotebookPen className="h-3 w-3" />
+                    ) : m === "Storytelling" ? (
                       <BookText className="h-3 w-3" />
                     ) : m === "Visuals" ? (
                       <Sparkles className="h-3 w-3" />
@@ -2270,10 +2432,12 @@ export function ChatPage() {
                   <button
                     type="button"
                     onClick={() => setExpandedSelector("style")}
+                    data-tour="answer-style"
                     title={`Answer style: ${mode}`}
                     style={ACCENT_MODE}
                     className="gd-press inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/40 bg-pop/[0.1] px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-pop/20"
                   >
+                    {mode === "Detailed+" && <NotebookPen className="h-3 w-3 text-pop" />}
                     {mode === "Storytelling" && <BookText className="h-3 w-3 text-pop" />}
                     {mode === "Visuals" && <Sparkles className="h-3 w-3 text-pop" />}
                     {MODE_SHORT[mode]}
@@ -2282,6 +2446,7 @@ export function ChatPage() {
                   <button
                     type="button"
                     onClick={() => setExpandedSelector("source")}
+                    data-tour="answer-sources"
                     title={`Sources: ${sourceMode}`}
                     style={ACCENT_SOURCE}
                     className="gd-press inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/40 bg-pop/[0.1] px-2.5 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors hover:bg-pop/20"
@@ -2334,19 +2499,12 @@ export function ChatPage() {
                     </button>
                   )}
                   {messages.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={copyContinuationPrompt}
-                      title="Copy a prompt to continue this chat in another AI"
-                      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/25 bg-pop/[0.06] px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-pop/10"
-                    >
-                      {handoffCopied ? (
-                        <Check className="h-3 w-3 text-pop" />
-                      ) : (
-                        <ExternalLink className="h-3 w-3 text-pop" />
-                      )}
-                      {handoffCopied ? "Copied" : "Continue elsewhere"}
-                    </button>
+                    <ContinueElsewhereButton
+                      variant="pill"
+                      copied={handoffCopied}
+                      hasAnswer={hasAssistantAnswer && !streaming}
+                      onPick={copyHandoffPrompt}
+                    />
                   )}
                 </div>
               )}
@@ -3021,6 +3179,7 @@ function SegmentedControl<T extends string>({
   getTitle,
   className,
   style,
+  tourAnchor,
 }: {
   options: readonly T[];
   value: T;
@@ -3030,6 +3189,8 @@ function SegmentedControl<T extends string>({
   getTitle?: (option: T) => string;
   className?: string;
   style?: CSSProperties;
+  // Lets the guided tour spotlight this control.
+  tourAnchor?: string;
 }) {
   const count = options.length;
   const activeIndex = Math.max(0, options.indexOf(value));
@@ -3037,6 +3198,7 @@ function SegmentedControl<T extends string>({
   return (
     <div
       style={style}
+      data-tour={tourAnchor}
       className={`relative flex rounded-xl border border-border/70 bg-foreground/[0.03] p-0.5 ${className ?? ""}`}
     >
       <span
@@ -3473,14 +3635,25 @@ function textForSpeech(markdown: string): string {
     .trim();
 }
 
-function cleanAiResponseMarkdown(markdown: string): string {
-  return markdown
+function cleanProseAsterisks(prose: string): string {
+  return prose
     .replace(/^\s*\*\s+/gm, "- ")
     .replace(/\*\*([^*\n]+)\*\*/g, "$1")
     .replace(/\*([^*\n]+)\*/g, "$1")
     .replace(/(\d)\s*\*\s*(\d)/g, "$1 x $2")
     .replace(/([A-Za-z])\s*\*\s*([A-Za-z])/g, "$1 x $2")
     .replace(/\*/g, "");
+}
+
+// Strips the model's emphasis markers from prose, leaving fenced blocks alone:
+// inside a ```mermaid or ```code block those characters are syntax, and rewriting
+// them corrupts the diagram (or the snippet the student copies). The split keeps
+// fences at odd indices; an unterminated fence (still streaming) is matched too.
+function cleanAiResponseMarkdown(markdown: string): string {
+  return markdown
+    .split(/(```[\s\S]*?(?:```|$))/)
+    .map((part, index) => (index % 2 === 1 ? part : cleanProseAsterisks(part)))
+    .join("");
 }
 
 /**
@@ -3731,12 +3904,39 @@ function nodeToPlainText(node: ReactNode): string {
   return "";
 }
 
+// Mermaid rejects a few things the model writes often. The big one is an
+// unquoted node label containing brackets or parentheses - "A[Dose (mg)]" is a
+// syntax error, while 'A["Dose (mg)"]' renders. Quoting those labels turns most
+// "Syntax error in text" diagrams into real ones. Applied per line, and never to
+// an `%%{init: ...}%%` directive (its braces are config, not a node).
+function sanitizeMermaidSource(code: string): string {
+  const quoteLabels = (line: string) =>
+    line
+      .replace(/\[([^\]\n"]*[(){}][^\]\n"]*)\]/g, (_match, label: string) => `["${label.trim()}"]`)
+      .replace(/\{([^}\n"]*[()][^}\n"]*)\}/g, (_match, label: string) => `{"${label.trim()}"}`);
+
+  // The leading/trailing replaces drop stray fence markers the model sometimes
+  // leaves inside the block itself.
+  return code
+    .replace(/^\s*```(?:mermaid)?[ \t]*\n?/i, "")
+    .replace(/\n?```[ \t]*$/, "")
+    .split("\n")
+    .map((line) => (line.includes("%%{") ? line : quoteLabels(line)))
+    .join("\n")
+    .trim();
+}
+
 // Renders a ```mermaid code block as an inline diagram. Mermaid is heavy, so it
 // is dynamically imported only when an answer actually contains a diagram - it
-// never touches the initial bundle. Falls back to the raw code on any parse
-// error (e.g. while the block is still streaming in), and re-renders when the
-// app theme flips so the diagram always matches light/dark.
-function MermaidDiagram({ code }: { code: string }) {
+// never touches the initial bundle. Falls back to the raw code when the source
+// will not parse, and re-renders when the app theme flips so the diagram always
+// matches light/dark.
+//
+// Two things keep mermaid's own "Syntax error in text / mermaid version x" graph
+// off the page: `suppressErrorRendering` (without it mermaid appends that error
+// diagram to <body> and leaves it there), and skipping render entirely while the
+// answer is still streaming, when the block is by definition half-written.
+function MermaidDiagram({ code, streaming }: { code: string; streaming?: boolean }) {
   const [svg, setSvg] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [themeTick, setThemeTick] = useState(0);
@@ -3752,6 +3952,9 @@ function MermaidDiagram({ code }: { code: string }) {
   }, []);
 
   useEffect(() => {
+    // Half-written diagrams never parse; wait for the answer to land.
+    if (streaming) return;
+
     let cancelled = false;
     (async () => {
       try {
@@ -3760,17 +3963,31 @@ function MermaidDiagram({ code }: { code: string }) {
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: "strict",
+          suppressErrorRendering: true,
           theme: isLight ? "neutral" : "dark",
           fontFamily: "inherit",
         });
-        const { svg: rendered } = await mermaid.render(
-          `gdm-${Math.random().toString(36).slice(2)}`,
-          code,
-        );
-        if (!cancelled) {
+
+        // Try the source as written first, then the sanitized version, so a
+        // diagram that was already valid is never altered.
+        const sanitized = sanitizeMermaidSource(code);
+        const candidates = sanitized === code ? [code] : [code, sanitized];
+
+        for (const candidate of candidates) {
+          // parse() with suppressErrors returns false instead of throwing, so an
+          // unparseable diagram costs us nothing and renders nothing.
+          const parseable = await mermaid.parse(candidate, { suppressErrors: true });
+          if (!parseable || cancelled) continue;
+          const { svg: rendered } = await mermaid.render(
+            `gdm-${Math.random().toString(36).slice(2)}`,
+            candidate,
+          );
+          if (cancelled) return;
           setSvg(rendered);
           setFailed(false);
+          return;
         }
+        if (!cancelled) setFailed(true);
       } catch {
         if (!cancelled) setFailed(true);
       }
@@ -3778,8 +3995,10 @@ function MermaidDiagram({ code }: { code: string }) {
     return () => {
       cancelled = true;
     };
-  }, [code, themeTick]);
+  }, [code, streaming, themeTick]);
 
+  // A diagram we can't render is still useful as its source, so show the code
+  // rather than an error.
   if (failed) {
     return (
       <pre>
@@ -3825,11 +4044,159 @@ async function copyTextToClipboard(text: string): Promise<void> {
   if (!copied) throw new Error("Clipboard copy failed");
 }
 
+// "Continue elsewhere" trigger + its two-option menu. Rendered twice (desktop
+// toolbar and mobile composer pill), so the options and dismiss behaviour live
+// here rather than being duplicated at both call sites.
+function ContinueElsewhereButton({
+  copied,
+  variant,
+  hasAnswer,
+  onPick,
+}: {
+  copied: boolean;
+  variant: "toolbar" | "pill";
+  // "Explain recent response" needs an answer to point at.
+  hasAnswer: boolean;
+  onPick: (kind: HandoffKind) => void;
+}) {
+  // The menu is positioned `fixed` from the trigger's rect rather than absolutely:
+  // the desktop toolbar is a horizontally scrolling row below xl, which would clip
+  // an in-flow dropdown.
+  const [menu, setMenu] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const open = menu !== null;
+  const isPill = variant === "pill";
+
+  useEffect(() => {
+    if (!open) return;
+
+    const dismissOnOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest(".gd-handoff-menu")) return;
+      setMenu(null);
+    };
+    const dismissOnEsc = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenu(null);
+    };
+    // Fixed coordinates go stale the moment anything moves, so close instead of
+    // chasing the trigger.
+    const dismissOnMove = () => setMenu(null);
+
+    window.addEventListener("mousedown", dismissOnOutside);
+    window.addEventListener("touchstart", dismissOnOutside);
+    window.addEventListener("keydown", dismissOnEsc);
+    window.addEventListener("resize", dismissOnMove);
+    window.addEventListener("scroll", dismissOnMove, true);
+    return () => {
+      window.removeEventListener("mousedown", dismissOnOutside);
+      window.removeEventListener("touchstart", dismissOnOutside);
+      window.removeEventListener("keydown", dismissOnEsc);
+      window.removeEventListener("resize", dismissOnMove);
+      window.removeEventListener("scroll", dismissOnMove, true);
+    };
+  }, [open]);
+
+  const toggleMenu = () => {
+    if (open) {
+      setMenu(null);
+      return;
+    }
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    // Right-align with the trigger, clamped into the viewport.
+    const width = Math.min(288, window.innerWidth - 24);
+    const left = Math.max(12, Math.min(window.innerWidth - width - 12, rect.right - width));
+    // The composer pill sits near the bottom of the screen, so it opens upward.
+    setMenu(
+      isPill ? { left, bottom: window.innerHeight - rect.top + 6 } : { left, top: rect.bottom + 6 },
+    );
+  };
+
+  const iconSize = isPill ? "h-3 w-3" : "h-3.5 w-3.5";
+
+  const options: { kind: HandoffKind; label: string; hint: string; disabled?: boolean }[] = [
+    {
+      kind: "history",
+      label: "Copy whole chat history",
+      hint: "Everything so far — the other AI picks up where we left off.",
+    },
+    {
+      kind: "explain",
+      label: "Explain recent response",
+      hint: "Just the last answer, with an ask to break it down.",
+      disabled: !hasAnswer,
+    },
+  ];
+
+  return (
+    <div className="gd-handoff-menu shrink-0" data-tour="continue-elsewhere">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={toggleMenu}
+        title="Continue this chat in another AI"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={
+          isPill
+            ? "inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/25 bg-pop/[0.06] px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-pop/10"
+            : "inline-flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-pop/10 hover:text-pop"
+        }
+      >
+        {copied ? (
+          <Check className={`${iconSize} text-pop`} />
+        ) : (
+          <ExternalLink className={`${iconSize} ${isPill ? "text-pop" : ""}`} />
+        )}
+        {copied ? "Copied" : "Continue elsewhere"}
+        <ChevronDown
+          className={`${iconSize} shrink-0 opacity-60 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {menu && (
+        <div
+          role="menu"
+          style={{ left: menu.left, top: menu.top, bottom: menu.bottom }}
+          className="fixed z-50 w-[min(288px,calc(100vw-24px))] overflow-hidden rounded-xl border border-border/70 bg-background/95 p-1 text-left shadow-[0_18px_50px_rgba(0,0,0,0.16)] backdrop-blur-xl"
+        >
+          {options.map((option) => (
+            <button
+              key={option.kind}
+              type="button"
+              role="menuitem"
+              disabled={option.disabled}
+              title={option.disabled ? "Wait for an answer first" : undefined}
+              onClick={() => {
+                setMenu(null);
+                onPick(option.kind);
+              }}
+              className="block w-full rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-pop/[0.08] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              <span className="flex items-center gap-1.5 text-[12.5px] font-medium text-foreground">
+                {option.kind === "history" ? (
+                  <MessageSquare className="h-3.5 w-3.5 shrink-0 text-pop" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5 shrink-0 text-pop" />
+                )}
+                {option.label}
+              </span>
+              <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+                {option.hint}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Message({
   msg,
   streaming,
   profile,
   mode,
+  question,
   canEdit,
   hasDocuments,
   onEditUserMessage,
@@ -3838,6 +4205,8 @@ function Message({
   msg: DisplayMessage;
   profile: Profile;
   mode: ChatMode;
+  // The user question this answer replied to, used to name its PDF export.
+  question?: string;
   isLast: boolean;
   streaming: boolean;
   canEdit?: boolean;
@@ -3849,6 +4218,11 @@ function Message({
   onVersionChange?: (versionIndex: number) => void;
 }) {
   const [speaking, setSpeaking] = useState(false);
+  // Per-answer "Copy" — flips to a checkmark for a beat after a successful copy.
+  const [answerCopied, setAnswerCopied] = useState(false);
+  // Detailed+ answers offer a PDF once they finish: ask -> build -> saved, or
+  // dismissed if the student says not now.
+  const [pdfState, setPdfState] = useState<"ask" | "building" | "saved" | "dismissed">("ask");
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(msg.content);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -3892,6 +4266,28 @@ function Message({
   // One combined matcher for all detected terms (null when there are none, so the
   // markdown renderers can cheaply skip all term-wrapping work).
   const termRegex = useMemo(() => buildTermRegex(keyTerms), [keyTerms]);
+
+  // Study-notes answers are the ones worth exporting, so only they get the offer.
+  const isNotesAnswer = msg.role === "assistant" && msg.mode === "Detailed+";
+
+  // Builds the PDF in the browser (pdf-lib, loaded on demand) and hands it
+  // straight to the download — nothing is uploaded and no server is involved.
+  const saveNotesPdf = async () => {
+    setPdfState("building");
+    try {
+      const { buildNotesPdf, downloadPdfBytes } = await import("@/lib/notes-pdf");
+      const { bytes, filename } = await buildNotesPdf(displayContent, {
+        fallbackTitle: question?.trim().replace(/\s+/g, " ").slice(0, 90),
+        studentName: profile.name || undefined,
+      });
+      downloadPdfBytes(bytes, filename);
+      setPdfState("saved");
+    } catch (error) {
+      console.error("notes pdf", error);
+      toast.error("Couldn't build the PDF — try again.");
+      setPdfState("ask");
+    }
+  };
 
   const closeTermPopover = () => {
     termAbortRef.current?.abort();
@@ -4224,7 +4620,7 @@ function Message({
             const codeText = nodeToPlainText(
               (first.props as { children?: ReactNode }).children,
             ).trim();
-            if (codeText) return <MermaidDiagram code={codeText} />;
+            if (codeText) return <MermaidDiagram code={codeText} streaming={streaming} />;
           }
         }
         return <pre {...props}>{children}</pre>;
@@ -4650,30 +5046,101 @@ function Message({
             </div>
           </form>
         )}
-        {displayContent && !streaming && canSpeak && (
-          <button
-            type="button"
-            onClick={() => {
-              if (speaking) {
-                window.speechSynthesis.cancel();
-                setSpeaking(false);
-                return;
-              }
+        {displayContent && !streaming && (
+          <div className="mt-2 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await copyTextToClipboard(displayContent);
+                  setAnswerCopied(true);
+                  window.setTimeout(() => setAnswerCopied(false), 1800);
+                } catch {
+                  toast.error("Couldn't copy — try again.");
+                }
+              }}
+              title="Copy this answer"
+              aria-label="Copy this answer"
+              className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+            >
+              {answerCopied ? (
+                <Check className="h-3.5 w-3.5 text-pop" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+              {answerCopied ? "Copied" : "Copy"}
+            </button>
+            {canSpeak && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (speaking) {
+                    window.speechSynthesis.cancel();
+                    setSpeaking(false);
+                    return;
+                  }
 
-              const utterance = new SpeechSynthesisUtterance(textForSpeech(displayContent));
-              utterance.onend = () => setSpeaking(false);
-              utterance.onerror = () => setSpeaking(false);
-              window.speechSynthesis.cancel();
-              setSpeaking(true);
-              window.speechSynthesis.speak(utterance);
-            }}
-            title={speaking ? "Stop reading" : "Read answer aloud"}
-            aria-pressed={speaking}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-          >
-            <Volume2 className="h-3.5 w-3.5" />
-            {speaking ? "Stop" : "Listen"}
-          </button>
+                  const utterance = new SpeechSynthesisUtterance(textForSpeech(displayContent));
+                  utterance.onend = () => setSpeaking(false);
+                  utterance.onerror = () => setSpeaking(false);
+                  window.speechSynthesis.cancel();
+                  setSpeaking(true);
+                  window.speechSynthesis.speak(utterance);
+                }}
+                title={speaking ? "Stop reading" : "Read answer aloud"}
+                aria-pressed={speaking}
+                className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+              >
+                <Volume2 className="h-3.5 w-3.5" />
+                {speaking ? "Stop" : "Listen"}
+              </button>
+            )}
+          </div>
+        )}
+        {isNotesAnswer && displayContent && !streaming && pdfState !== "dismissed" && (
+          <div className="mt-3 rounded-xl border border-pop/25 bg-pop/[0.05] px-3 py-2.5">
+            {pdfState === "saved" ? (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
+                <Check className="h-3.5 w-3.5 shrink-0 text-pop" />
+                <span className="font-medium text-foreground">Saved to your downloads.</span>
+                <button
+                  type="button"
+                  onClick={saveNotesPdf}
+                  className="text-[12px] font-medium text-pop underline-offset-2 hover:underline"
+                >
+                  Save again
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-start gap-2">
+                  <NotebookPen className="mt-0.5 h-3.5 w-3.5 shrink-0 text-pop" />
+                  <p className="text-[12.5px] leading-snug text-foreground">
+                    These are full notes. Want them as a PDF you can print or revise offline?
+                  </p>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={saveNotesPdf}
+                    disabled={pdfState === "building"}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-pop px-2.5 py-1 text-[12px] font-medium text-pop-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+                  >
+                    <FileDown className="h-3.5 w-3.5" />
+                    {pdfState === "building" ? "Building PDF…" : "Yes, make the PDF"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPdfState("dismissed")}
+                    disabled={pdfState === "building"}
+                    className="rounded-lg px-2.5 py-1 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground disabled:opacity-60"
+                  >
+                    Not now
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         )}
         {htmlAnimation && <VisualPreview html={htmlAnimation} />}
         <WebSourceIcons sources={msg.webSources} />

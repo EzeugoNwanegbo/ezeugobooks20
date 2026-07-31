@@ -7,6 +7,11 @@
 //   2. The student's study context (discipline, level, goals, imported
 //      "who I am" background) so the tone/depth carries over.
 //   3. The conversation transcript, followed by a clear ask to continue.
+//
+// Two flavours, both built from those parts:
+//   - buildContinuationPrompt: the whole conversation, "keep going from here".
+//   - buildExplainLastAnswerPrompt: just the latest answer (plus the question
+//     that produced it), "help me actually understand this".
 
 import type { Profile } from "@/lib/auth-context";
 import type { ChatMessage } from "@/lib/chat-client";
@@ -15,6 +20,10 @@ import type { ChatMessage } from "@/lib/chat-client";
 // UIs. If a long conversation exceeds this, we keep the most recent turns and
 // note that earlier context was trimmed.
 const MAX_TRANSCRIPT_CHARS = 24_000;
+
+// A single answer is quoted in full unless it is enormous, in which case the
+// end (the part the student just read) is what matters.
+const MAX_SINGLE_ANSWER_CHARS = 12_000;
 
 function cleanValue(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -106,6 +115,55 @@ export function buildContinuationPrompt(messages: ChatMessage[], profile: Profil
     ask,
   ]
     .filter((part) => part !== null)
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * Build a paste-anywhere prompt that asks another AI to unpack the most recent
+ * G&D answer — for when the student understood the topic but not the
+ * explanation. Carries the question that produced it so the other AI has the
+ * intent, not just the text. Returns null when there is no answer yet.
+ */
+export function buildExplainLastAnswerPrompt(
+  messages: ChatMessage[],
+  profile: Profile,
+): string | null {
+  const lastAnswerIndex = messages.reduce(
+    (found, m, i) => (m.role === "assistant" && m.content.trim().length > 0 ? i : found),
+    -1,
+  );
+  if (lastAnswerIndex === -1) return null;
+
+  let answer = messages[lastAnswerIndex]!.content.trim();
+  if (answer.length > MAX_SINGLE_ANSWER_CHARS) {
+    answer = `_(Start of the answer was trimmed for length.)_\n\n…${answer.slice(-MAX_SINGLE_ANSWER_CHARS)}`;
+  }
+
+  // The question this answer was responding to, if there was one.
+  const question = messages
+    .slice(0, lastAnswerIndex)
+    .reverse()
+    .find((m) => m.role === "user" && m.content.trim().length > 0)
+    ?.content.trim();
+
+  const leadIn =
+    "A study assistant gave me the explanation below and I want to understand it properly. " +
+    "Please re-explain it in your own words, in plain language, at the level of the student " +
+    "context below. Break it into the key ideas, spell out anything it skipped or assumed I " +
+    "already knew, flag anything you think is wrong or oversimplified, and finish with two or " +
+    "three questions I should be able to answer if I've actually understood it.";
+
+  return [
+    leadIn,
+    "",
+    buildStudentContext(profile).trimEnd(),
+    "",
+    ...(question ? ["## What I asked", question, ""] : []),
+    "## The answer I got",
+    answer,
+  ]
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

@@ -51,7 +51,7 @@ interface WebAnnotation {
   };
 }
 
-type Mode = "Simplified" | "Detailed" | "Storytelling" | "Visuals";
+type Mode = "Simplified" | "Detailed" | "Detailed+" | "Storytelling" | "Visuals";
 type DocumentMode = "none" | "smart" | "selected";
 type RouteDecision = "direct" | "library" | "web_search" | "web_curriculum";
 
@@ -63,6 +63,20 @@ interface ChatBody {
   documentMode?: DocumentMode;
   forceWebSearch?: boolean;
   interlink?: boolean;
+}
+
+// OpenAI answer models. GPT-5 replaced the 4o line: `gpt-4o-mini-search-preview`
+// was shut down on 23 July 2026, and the GPT-5 family rejects `temperature` and
+// `max_tokens` outright (use `max_completion_tokens`), so neither the old model
+// names nor the old sampling parameters survive anywhere in this file.
+//
+// Two tiers, picked per mode: the deep tier costs ~4x input / 3x output, which
+// is worth it for the long structured answers and not for a three-paragraph one.
+const OPENAI_MODEL_FAST = "gpt-5-nano"; // $0.05 / $0.40 per 1M
+const OPENAI_MODEL_DEEP = "gpt-5.6-luna"; // $0.20 / $1.20 per 1M
+
+function answerModel(mode: Mode): string {
+  return mode === "Detailed" || mode === "Detailed+" ? OPENAI_MODEL_DEEP : OPENAI_MODEL_FAST;
 }
 
 // Keep the research prompt focused so the first streamed token arrives quickly.
@@ -403,6 +417,21 @@ function modeInstruction(mode: Mode, examFormat: string): string {
 - Weave the subject matter naturally into the story so facts stick in memory.
 - 3–5 short paragraphs.`;
   }
+  if (mode === "Detailed+") {
+    // These notes are also exported to PDF client-side, so the structure below is
+    // deliberately predictable: a title, then headed sections, then takeaways.
+    return `Present the answer as a complete set of STUDY NOTES the student could revise from and hand in. Structure matters as much as content here - this is the mode people save and print.
+- Open with a single "# " Markdown title naming the topic. No preamble, no greeting before it.
+- Then a short "Summary" section: 2-4 sentences on what the topic is and why it matters.
+- Then the body, broken into clearly headed "## " sections that follow the logic of the topic (definitions, mechanism/process, classification, key features, causes, management, exceptions, worked example - whichever genuinely apply). Use "### " subsections where a section has parts.
+- Inside sections, prefer numbered steps for processes, hyphen bullets for lists of features, and a Markdown table when you are comparing two or more things across the same attributes.
+- Bold nothing (no asterisks anywhere) - rely on headings and lists for structure.
+- Include a "## Key terms" section: each term on its own hyphen bullet as "Term - one-line definition".
+- Include a "## Key takeaways" section near the end: 4-7 hyphen bullets, each a single sentence a student could recall in an exam.
+- If the assessment format is ${examFormat}, add a short "## Exam pointers" section naming what is typically asked and the traps.
+- Be thorough but not padded: every line should carry information. No filler sentences, no "in conclusion" waffle.
+- Keep the required "Source:" line at the very top if the research draft has one, above the title.`;
+  }
   if (mode === "Detailed") {
     return `Present the answer in DETAILED mode.
 - Cover the core idea, reasoning, examples, exceptions, and exam points.
@@ -461,7 +490,7 @@ YOUR TASK:
 4. Then write "Where found:" and list document names plus page/chunk labels wherever available. If there is no page label, keep the document name and chunk/source excerpt label.
 5. Then write "Evidence:" and include the relevant facts. Keep quotes short; prefer paraphrase with source labels.
 6. Only after genuinely checking every excerpt, if the relevant info is truly not in the files, clearly say "I could not find an exact hit in your files" before adding any "[General knowledge]". Do not give up early.
-7. Do not apply Simplified, Detailed, or Storytelling style. A later step will do the final explanation.
+7. Do not apply Simplified, Detailed, Detailed+, or Storytelling style. A later step will do the final explanation.
 8. Keep document names and page/chunk labels visible. Never invent citations or page numbers.
 9. If you are uncertain about anything, say so explicitly.`;
 }
@@ -478,7 +507,7 @@ YOUR TASK:
 3. Include exam-relevant points where useful.
 4. If unsure, say what needs verification.
 5. Never invent citations or page numbers.
-6. Do not apply Simplified, Detailed, or Storytelling style. A later step will do the final explanation.`;
+6. Do not apply Simplified, Detailed, Detailed+, or Storytelling style. A later step will do the final explanation.`;
 }
 
 function buildGPTRewriterSystemPrompt(
@@ -524,6 +553,7 @@ RULES:
 - Write as if you are talking directly to ${p.name || "the student"} - warm, clear, encouraging.
 - Use clean, organized Markdown: headings, short paragraphs, numbered steps, hyphen bullets, and tables where helpful.
 - When the concept is naturally visual - a process, cycle, hierarchy, timeline, comparison, or how parts connect - include ONE small diagram as a fenced \`\`\`mermaid code block. Keep it simple and valid: prefer "flowchart LR", "flowchart TD", "mindmap", or "sequenceDiagram"; use short plain node labels; no colours, CSS, or style directives. Put it where it clarifies, then keep explaining in words. If the topic is not visual, do not force a diagram.
+- Mermaid label syntax is strict: if a node label contains anything other than letters, numbers, and spaces - parentheses, brackets, colons, slashes, commas, quotes - wrap the whole label in double quotes, e.g. A["Adrenaline (1:1000 IM)"] not A[Adrenaline (1:1000 IM)]. An unquoted label with punctuation is a syntax error and the diagram will not render.
 - Never output asterisk characters. Do not use asterisks for emphasis, bullets, multiplication, footnotes, or decoration. Use plain labels, hyphen bullets, and the x symbol for multiplication.
 - For maths, write equations clearly using plain text or fenced code/math blocks, define every variable, then explain the steps in order.
 - If the research summary says it is uncertain about something, reflect that uncertainty honestly.`;
@@ -616,9 +646,18 @@ async function callDeepSeekSync(
   return withLengthLimitNote(choice?.message?.content ?? "", choice?.finish_reason);
 }
 
-/** Call GPT-4o-mini with streaming - this is what the student sees. */
+/**
+ * The streamed answer the student actually watches appear.
+ *
+ * No `temperature`: the GPT-5 family rejects it (400) rather than ignoring it.
+ * `reasoning_effort: "minimal"` keeps first-token latency close to the old 4o
+ * behaviour - this stage is rewriting a finished research draft into the chosen
+ * style, so paying for deliberation here would be latency and billed reasoning
+ * tokens spent on nothing.
+ */
 async function callGPTStream(
   apiKey: string,
+  model: string,
   systemPrompt: string,
   messages: ChatBody["messages"],
 ): Promise<Response> {
@@ -631,9 +670,9 @@ async function callGPTStream(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model,
         stream: true,
-        temperature: 0.75, // Slightly higher - we want GPT's natural warmth
+        reasoning_effort: "minimal",
         messages: [{ role: "system", content: systemPrompt }, ...messages],
       }),
     },
@@ -643,17 +682,17 @@ async function callGPTStream(
 
 async function callOpenAISync({
   apiKey,
+  model = OPENAI_MODEL_FAST,
   systemPrompt,
   messages,
   maxTokens = 4096,
-  temperature = 0.35,
   timeoutMs = GPT_VISUAL_SCRIPT_TIMEOUT_MS,
 }: {
   apiKey: string;
+  model?: string;
   systemPrompt: string;
   messages: ChatBody["messages"];
   maxTokens?: number;
-  temperature?: number;
   timeoutMs?: number;
 }): Promise<string> {
   const resp = await fetchWithTimeout(
@@ -665,10 +704,11 @@ async function callOpenAISync({
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model,
         stream: false,
-        max_tokens: maxTokens,
-        temperature,
+        // GPT-5 renamed this; `max_tokens` is rejected outright.
+        max_completion_tokens: maxTokens,
+        reasoning_effort: "minimal",
         messages: [{ role: "system", content: systemPrompt }, ...messages],
       }),
     },
@@ -685,13 +725,29 @@ async function callOpenAISync({
   return withLengthLimitNote(choice?.message?.content ?? "", choice?.finish_reason);
 }
 
-async function callOpenAIWebCurriculumSync(
+/**
+ * One web-searched call, via the Responses API.
+ *
+ * The old `gpt-4o-mini-search-preview` model this used to hit was shut down on
+ * 23 July 2026 along with every other search-preview snapshot. Web search is now
+ * a tool you attach to a normal model rather than a model of its own, which
+ * means the Responses endpoint (`/v1/responses`) instead of chat completions,
+ * and a different response shape: an `output` array whose `message` item holds
+ * `output_text` parts, each carrying its own `url_citation` annotations.
+ *
+ * Reasoning effort is deliberately left at the default - web search is not
+ * supported with minimal reasoning.
+ */
+async function callOpenAIWebSearch(
   apiKey: string,
-  p: Profile,
-  studentQuestion: string,
-): Promise<{ text: string; sources: WebSource[] }> {
+  model: string,
+  instructions: string,
+  input: { role: "user" | "assistant"; content: string }[],
+  timeoutMs: number,
+  label: string,
+): Promise<{ text: string; annotations: WebAnnotation[]; incomplete: boolean }> {
   const resp = await fetchWithTimeout(
-    "https://api.openai.com/v1/chat/completions",
+    "https://api.openai.com/v1/responses",
     {
       method: "POST",
       headers: {
@@ -699,47 +755,75 @@ async function callOpenAIWebCurriculumSync(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini-search-preview",
-        web_search_options: {},
-        messages: [
-          {
-            role: "system",
-            content: `Search the web for current public course outline or syllabus guidance relevant to this student.
+        model,
+        tools: [{ type: "web_search" }],
+        instructions,
+        input,
+      }),
+    },
+    timeoutMs,
+  );
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`OpenAI ${label} error ${resp.status}: ${text}`);
+  }
+
+  const json = await resp.json();
+  const output = Array.isArray(json.output) ? json.output : [];
+  const parts: string[] = [];
+  const annotations: WebAnnotation[] = [];
+
+  for (const item of output) {
+    if (item?.type !== "message") continue;
+    for (const part of Array.isArray(item.content) ? item.content : []) {
+      if (part?.type !== "output_text") continue;
+      if (typeof part.text === "string") parts.push(part.text);
+      if (Array.isArray(part.annotations)) annotations.push(...part.annotations);
+    }
+  }
+
+  // `output_text` is the SDK's convenience field; fall back to it in case the
+  // walk above finds nothing (e.g. a shape change in a future model).
+  const text = parts.length > 0 ? parts.join("") : (json.output_text ?? "");
+
+  return { text, annotations, incomplete: json.status === "incomplete" };
+}
+
+async function callOpenAIWebCurriculumSync(
+  apiKey: string,
+  p: Profile,
+  studentQuestion: string,
+): Promise<{ text: string; sources: WebSource[] }> {
+  const { text, annotations } = await callOpenAIWebSearch(
+    apiKey,
+    // Pure research feeding another prompt - the cheap tier is enough.
+    OPENAI_MODEL_FAST,
+    `Search the web for current public course outline or syllabus guidance relevant to this student.
 Return a concise, source-grounded study structure:
 1. likely curriculum topics,
 2. key learning outcomes,
 3. exam-heavy points,
 4. a sensible order to study.
 Keep it short enough to paste into another answer prompt.`,
-          },
-          {
-            role: "user",
-            content: `Student context:
+    [
+      {
+        role: "user",
+        content: `Student context:
 - University: ${p.university || "Unknown"}
 - Level: ${p.year || "Unknown"}
 - Assessment format: ${p.exam_format || "MCQ"}
 - Question/topic: ${studentQuestion}`,
-          },
-        ],
-      }),
-    },
+      },
+    ],
     WEB_CURRICULUM_TIMEOUT_MS,
+    "web curriculum search",
   );
 
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`OpenAI web search error ${resp.status}: ${text}`);
-  }
-
-  const json = await resp.json();
-  const message = json.choices?.[0]?.message;
-  const annotations = (
-    Array.isArray(message?.annotations) ? message.annotations : []
-  ) as WebAnnotation[];
   const sources = await attachSourceImages(webSourcesFromAnnotations(annotations));
 
   return {
-    text: cleanWebAnswerText(message?.content ?? "", annotations),
+    text: cleanWebAnswerText(text, annotations),
     sources,
   };
 }
@@ -750,21 +834,12 @@ async function callOpenAIWebAnswerSync(
   mode: Mode,
   messages: ChatBody["messages"],
 ): Promise<{ text: string; sources: WebSource[] }> {
-  const resp = await fetchWithTimeout(
-    "https://api.openai.com/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini-search-preview",
-        web_search_options: {},
-        messages: [
-          {
-            role: "system",
-            content: `You are G&D, a warm precision-answer app using web search because the student requested it.
+  const { text, annotations, incomplete } = await callOpenAIWebSearch(
+    apiKey,
+    // This one IS the student's answer, so it follows the same tiering as the
+    // non-search path.
+    answerModel(mode),
+    `You are G&D, a warm precision-answer app using web search because the student requested it.
 
 IDENTITY (strict): You are G&D, and only G&D. Never mention or hint at any underlying model, provider, or internal step - including "DeepSeek", "GPT", "OpenAI", or "as an AI language model". If asked what you are, say you are G&D.
 
@@ -778,32 +853,19 @@ RULES:
 - If web results are weak or unrelated, say that plainly and answer from general knowledge.
 - Use clean, organized Markdown with headings, numbered steps, hyphen bullets, and tables where useful.
 - When the concept is naturally visual - a process, cycle, hierarchy, timeline, or comparison - include ONE small diagram as a fenced \`\`\`mermaid code block (prefer "flowchart LR", "flowchart TD", "mindmap", or "sequenceDiagram"; short plain labels; no style directives). Do not force a diagram when the topic is not visual.
+- Mermaid label syntax is strict: any node label containing punctuation (parentheses, brackets, colons, slashes, commas) must be wrapped in double quotes, e.g. A["Stage 2 (deep sleep)"]. Unquoted punctuation is a syntax error and the diagram will not render.
 - Never output asterisk characters. Use the x symbol for multiplication and plain labels instead of bold syntax.`,
-          },
-          ...messages,
-        ],
-      }),
-    },
+    messages,
     WEB_ANSWER_TIMEOUT_MS,
+    "web search",
   );
 
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`OpenAI web search error ${resp.status}: ${text}`);
-  }
-
-  const json = await resp.json();
-  const choice = json.choices?.[0];
-  const message = choice?.message;
-  const annotations = (
-    Array.isArray(message?.annotations) ? message.annotations : []
-  ) as WebAnnotation[];
   const sources = await attachSourceImages(webSourcesFromAnnotations(annotations));
 
   return {
     text: withLengthLimitNote(
-      cleanWebAnswerText(message?.content ?? "", annotations),
-      choice?.finish_reason,
+      cleanWebAnswerText(text, annotations),
+      incomplete ? "length" : undefined,
     ),
     sources,
   };
@@ -814,21 +876,10 @@ async function callOpenAIWebVisualResearchSync(
   p: Profile,
   studentQuestion: string,
 ): Promise<{ text: string; sources: WebSource[] }> {
-  const resp = await fetchWithTimeout(
-    "https://api.openai.com/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini-search-preview",
-        web_search_options: {},
-        messages: [
-          {
-            role: "system",
-            content: `Search the web only for facts needed to create an accurate educational animation.
+  const { text, annotations, incomplete } = await callOpenAIWebSearch(
+    apiKey,
+    OPENAI_MODEL_FAST,
+    `Search the web only for facts needed to create an accurate educational animation.
 
 Return a compact research brief:
 1. verified core facts,
@@ -838,39 +889,27 @@ Return a compact research brief:
 5. caveats or uncertainty.
 
 Do not write animation code. Do not list raw URLs in the body; source metadata is handled separately.`,
-          },
-          {
-            role: "user",
-            content: `Student context:
+    [
+      {
+        role: "user",
+        content: `Student context:
 - School: ${p.university || "Unknown"}
 - Level: ${p.year || "Unknown"}
 - Assessment format: ${p.exam_format || "MCQ"}
 
 Visual request: ${studentQuestion}`,
-          },
-        ],
-      }),
-    },
+      },
+    ],
     WEB_VISUAL_RESEARCH_TIMEOUT_MS,
+    "visual web search",
   );
 
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`OpenAI visual web search error ${resp.status}: ${text}`);
-  }
-
-  const json = await resp.json();
-  const choice = json.choices?.[0];
-  const message = choice?.message;
-  const annotations = (
-    Array.isArray(message?.annotations) ? message.annotations : []
-  ) as WebAnnotation[];
   const sources = await attachSourceImages(webSourcesFromAnnotations(annotations));
 
   return {
     text: withLengthLimitNote(
-      cleanWebAnswerText(message?.content ?? "", annotations),
-      choice?.finish_reason,
+      cleanWebAnswerText(text, annotations),
+      incomplete ? "length" : undefined,
     ),
     sources,
   };
@@ -1077,6 +1116,7 @@ async function openAIRewriteResponse({
   apiKey,
   systemPrompt,
   messages,
+  mode,
   model,
   source,
   sources,
@@ -1084,11 +1124,14 @@ async function openAIRewriteResponse({
   apiKey: string;
   systemPrompt: string;
   messages: ChatBody["messages"];
+  // Picks the OpenAI tier. Distinct from `model` below, which is the pipeline
+  // label reported back in the X-Medai-Model header.
+  mode: Mode;
   model: string;
   source: string;
   sources: WebSource[];
 }): Promise<Response> {
-  const gptResp = await callGPTStream(apiKey, systemPrompt, messages);
+  const gptResp = await callGPTStream(apiKey, answerModel(mode), systemPrompt, messages);
 
   if (!gptResp.ok) {
     const text = await gptResp.text();
@@ -1153,7 +1196,6 @@ Create the animation production script for DeepSeek.`,
       },
     ],
     maxTokens: 5000,
-    temperature: 0.3,
     timeoutMs: GPT_VISUAL_SCRIPT_TIMEOUT_MS,
   });
 
@@ -1426,6 +1468,7 @@ ${deepSeekText}
 ${curriculumGuidance ? `Web curriculum guidance:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer STRICTLY following the ${body.mode} mode rules in your system prompt. Do not exceed the length and structure limits for that mode. Do not add facts outside the research draft. Never mention the research draft, DeepSeek, GPT, OpenAI, or any internal step in your answer.`,
           },
         ],
+        mode: body.mode,
         model: useWebCurriculum
           ? "deepseek-to-openai-library-web-curriculum"
           : "deepseek-to-openai-library",
@@ -1480,6 +1523,7 @@ ${deepSeekText}
 ${curriculumGuidance ? `Web curriculum guidance:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer STRICTLY following the ${body.mode} mode rules in your system prompt. Do not exceed the length and structure limits for that mode. Do not add facts outside the research draft. Never mention the research draft, DeepSeek, GPT, OpenAI, or any internal step in your answer.`,
           },
         ],
+        mode: body.mode,
         model: useWebCurriculum ? "deepseek-to-openai-web-curriculum" : "deepseek-to-openai",
         source,
         sources: webSources,
