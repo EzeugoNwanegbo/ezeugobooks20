@@ -451,6 +451,12 @@ function buildDeepSeekSystemPrompt(
   docs: DocumentCtx[],
   interlink: boolean,
   usingWebCurriculum: boolean,
+  // Detailed+ streams this engine's output straight to the student, so the
+  // draft scaffolding ("Exact answer:", "Where found:", "a later step will
+  // explain") has to be swapped for an instruction to write the answer itself.
+  // Without this the two prompts contradict each other and the scaffolding
+  // leaks into the notes.
+  opts: { finalAnswer?: boolean } = {},
 ): string {
   const perDoc = Math.max(2000, Math.floor(MAX_DOC_CHARS_TOTAL / docs.length));
   const docList = docs
@@ -472,7 +478,23 @@ The student wants connections drawn ACROSS subjects/folders.
 - List all cross-subject links clearly so the next stage can highlight them.`
     : "";
 
-  return `You are G&D's internal document-retrieval research engine. Your job is to search the student's uploaded files and extract the exact evidence needed for a final teaching answer.
+  // Steps 1-2 (search everything, cross-check) are what makes retrieval good and
+  // are wanted either way. Only the output contract changes.
+  const outputTask = opts.finalAnswer
+    ? `3. Then write the student's final answer yourself, following the STYLE INSTRUCTIONS that appear below this section. Nothing runs after you - do not produce a draft, a summary for another step, or any "Exact answer:" / "Where found:" / "Evidence:" scaffolding.
+4. Put the source on the very first line as "Source: <document name>, <Page N or chunk label>", copied verbatim from the excerpts, above everything else.
+5. Only after genuinely checking every excerpt, if the relevant info is truly not in the files, say so plainly in the answer before adding anything from general knowledge. Do not give up early.`
+    : `3. Start with "Exact answer:" and give the answer in one or two clear sentences.
+4. Then write "Where found:" and list document names plus page/chunk labels wherever available. If there is no page label, keep the document name and chunk/source excerpt label.
+5. Then write "Evidence:" and include the relevant facts. Keep quotes short; prefer paraphrase with source labels.
+6. Only after genuinely checking every excerpt, if the relevant info is truly not in the files, clearly say "I could not find an exact hit in your files" before adding any "[General knowledge]". Do not give up early.
+7. Do not apply Simplified, Detailed, Detailed+, or Storytelling style. A later step will do the final explanation.`;
+
+  const role = opts.finalAnswer
+    ? `You are G&D. You search the student's uploaded files and then write their answer from what you find.`
+    : `You are G&D's internal document-retrieval research engine. Your job is to search the student's uploaded files and extract the exact evidence needed for a final teaching answer.`;
+
+  return `${role}
 
 ${buildStudentIdentity(p, { usingWebCurriculum })}
 
@@ -486,11 +508,7 @@ ${interlinkBlock}
 YOUR TASK:
 1. SEARCH THOROUGHLY before answering. Read EVERY excerpt and chunk provided above from start to finish - do not stop at the first chunk that looks relevant. The exact answer is often in a later chunk than the first keyword match. Scan all of them, then decide.
 2. Cross-check related chunks. If several chunks touch the topic, combine them and resolve any apparent conflicts using the most specific/complete passage.
-3. Start with "Exact answer:" and give the answer in one or two clear sentences.
-4. Then write "Where found:" and list document names plus page/chunk labels wherever available. If there is no page label, keep the document name and chunk/source excerpt label.
-5. Then write "Evidence:" and include the relevant facts. Keep quotes short; prefer paraphrase with source labels.
-6. Only after genuinely checking every excerpt, if the relevant info is truly not in the files, clearly say "I could not find an exact hit in your files" before adding any "[General knowledge]". Do not give up early.
-7. Do not apply Simplified, Detailed, Detailed+, or Storytelling style. A later step will do the final explanation.
+${outputTask}
 8. Keep document names and page/chunk labels visible. Never invent citations or page numbers.
 9. If you are uncertain about anything, say so explicitly.`;
 }
@@ -508,6 +526,63 @@ YOUR TASK:
 4. If unsure, say what needs verification.
 5. Never invent citations or page numbers.
 6. Do not apply Simplified, Detailed, Detailed+, or Storytelling style. A later step will do the final explanation.`;
+}
+
+/**
+ * Detailed+ writes its own notes.
+ *
+ * Every other mode runs research -> styling, because the styling pass adds the
+ * warmth and shaping that a research draft has none of. Detailed+ does not want
+ * that: its output is structural - a title, headed sections, tables, key terms,
+ * takeaways - which is what the research step is already good at. Sending a full
+ * set of notes through a second model doubled the most expensive output in the
+ * pipeline and added a hop before the first token.
+ *
+ * So the research engine writes the final answer here, which means it inherits
+ * everything the styling prompt used to own: the identity rule, the citation
+ * requirement, and the output bans. Those are not optional - this text goes
+ * straight to the student.
+ */
+function buildDeepSeekNotesSystemPrompt(
+  p: Profile,
+  mode: Mode,
+  interlink: boolean,
+  usingWebCurriculum: boolean,
+  docs: DocumentCtx[] | null,
+): string {
+  const interlinkBlock = interlink
+    ? `
+INTERLINK STYLE:
+- Explicitly highlight how concepts from different subjects connect.
+- Use a subheading per subject/folder, then a final "Connections found:" bullet list naming every source document used.`
+    : "";
+
+  const groundingBlock = docs?.length
+    ? `
+GROUNDING (mandatory):
+- Build the notes from the document content supplied below. Do not add facts that are not in it.
+- Reproduce the source as a "Source: <document name>, <Page N or chunk label>" line as the very first line, above the title. Copy the page/chunk label verbatim; never invent one.
+- If the material does not cover part of the question, say so plainly in the notes rather than filling the gap from general knowledge.`
+    : `
+GROUNDING:
+- No uploaded document is in scope, so answer from general knowledge and do not fabricate a "Source:" line.`;
+
+  return `You are G&D, a precision study app for medical and law students. You are writing the student's final answer yourself - nothing runs after you.
+
+IDENTITY (strict): You are G&D, and only G&D. Never mention, name, or hint at any underlying model, provider, or internal step - including "DeepSeek", "GPT", "OpenAI", "the draft", or "as an AI language model". If the student asks what you are or what powers you, say you are G&D.
+
+${buildStudentIdentity(p, { usingWebCurriculum })}
+
+STYLE INSTRUCTIONS:
+${modeInstruction(mode, p.exam_format || "MCQ")}
+${interlinkBlock}
+${groundingBlock}
+
+OUTPUT RULES:
+- Never output asterisk characters. Do not use asterisks for emphasis, bullets, multiplication, footnotes, or decoration. Use plain labels, hyphen bullets, and the x symbol for multiplication.
+- When the concept is naturally visual - a process, cycle, hierarchy, timeline, or comparison - include ONE small diagram as a fenced \`\`\`mermaid code block (prefer "flowchart LR", "flowchart TD", "mindmap", or "sequenceDiagram"; short plain labels; no style directives). Do not force a diagram when the topic is not visual.
+- Mermaid label syntax is strict: any node label containing punctuation (parentheses, brackets, colons, slashes, commas) must be wrapped in double quotes, e.g. A["Stage 2 (deep sleep)"]. Unquoted punctuation is a syntax error and the diagram will not render.
+- Write as if you are talking directly to ${p.name || "the student"} - warm and clear, but the notes themselves stay structural. No filler, no "in conclusion" waffle.`;
 }
 
 function buildGPTRewriterSystemPrompt(
@@ -644,6 +719,40 @@ async function callDeepSeekSync(
   const json = await resp.json();
   const choice = json.choices?.[0];
   return withLengthLimitNote(choice?.message?.content ?? "", choice?.finish_reason);
+}
+
+/**
+ * Streaming research engine, used when Detailed+ writes its own final answer.
+ * DeepSeek's API is OpenAI-compatible, so the SSE frames carry the same
+ * `choices[0].delta.content` shape the client already parses and the same
+ * [DONE] marker - the existing stream plumbing needs no special case.
+ */
+function callDeepSeekStream(
+  apiKey: string,
+  systemPrompt: string,
+  messages: ChatBody["messages"],
+  timeoutMs: number,
+): Promise<Response> {
+  return fetchWithTimeout(
+    "https://api.deepseek.com/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: Deno.env.get("DEEPSEEK_MODEL") || "deepseek-v4-pro",
+        stream: true,
+        max_tokens: 8192,
+        // Higher than the research draft's 0.2: this text is read by the
+        // student, so it needs some life, but notes stay structural.
+        temperature: 0.4,
+        messages: [{ role: "system", content: systemPrompt }, ...messages],
+      }),
+    },
+    timeoutMs,
+  );
 }
 
 /**
@@ -1158,6 +1267,52 @@ async function openAIRewriteResponse({
   });
 }
 
+/** Detailed+ notes streamed straight from the research engine, no styling pass. */
+async function deepSeekNotesResponse({
+  apiKey,
+  systemPrompt,
+  messages,
+  model,
+  source,
+  sources,
+  timeoutMs,
+}: {
+  apiKey: string;
+  systemPrompt: string;
+  messages: ChatBody["messages"];
+  model: string;
+  source: string;
+  sources: WebSource[];
+  timeoutMs: number;
+}): Promise<Response> {
+  const resp = await callDeepSeekStream(apiKey, systemPrompt, messages, timeoutMs);
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    console.error("DeepSeek notes error:", resp.status, text);
+    // User-facing copy never names the provider - see the identity rule.
+    const msg =
+      resp.status === 429
+        ? "G&D is rate limited right now. Please wait a few seconds and try again."
+        : resp.status === 401
+          ? "G&D's study engine rejected its key. Please check the Edge Function secrets."
+          : "G&D could not finish these notes. Please try again.";
+    return new Response(JSON.stringify({ error: msg }), {
+      status: resp.status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  return new Response(streamWithSources(resp.body, sources), {
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "text/event-stream",
+      "X-Medai-Model": model,
+      "X-Medai-Source": source,
+    },
+  });
+}
+
 async function createVisualAnimationText({
   deepSeekApiKey,
   openAIApiKey,
@@ -1439,6 +1594,22 @@ Answer the student's question by finding the exact relevant evidence in the uplo
         },
       ];
 
+      // Detailed+ writes its own notes: same research engine, but it streams the
+      // finished answer instead of a draft for a second model to restyle.
+      if (body.mode === "Detailed+") {
+        return deepSeekNotesResponse({
+          apiKey: DEEPSEEK_API_KEY!,
+          systemPrompt: `${buildDeepSeekSystemPrompt(body.profile, body.documents!, interlink, useWebCurriculum, { finalAnswer: true })}
+
+${buildDeepSeekNotesSystemPrompt(body.profile, body.mode, interlink, useWebCurriculum, body.documents!)}`,
+          messages: deepSeekMessages,
+          model: "deepseek-notes-library",
+          source,
+          sources: webSources,
+          timeoutMs: DEEPSEEK_DOCUMENT_TIMEOUT_MS,
+        });
+      }
+
       const deepSeekText = await callDeepSeekSync(
         DEEPSEEK_API_KEY!,
         buildDeepSeekSystemPrompt(body.profile, body.documents!, interlink, useWebCurriculum),
@@ -1493,6 +1664,25 @@ Prepare the factual draft for a final teaching answer.`,
             },
           ]
         : body.messages;
+
+      // See the library branch: Detailed+ answers itself.
+      if (body.mode === "Detailed+") {
+        return deepSeekNotesResponse({
+          apiKey: DEEPSEEK_API_KEY!,
+          systemPrompt: buildDeepSeekNotesSystemPrompt(
+            body.profile,
+            body.mode,
+            false,
+            useWebCurriculum,
+            null,
+          ),
+          messages: deepSeekMessages,
+          model: "deepseek-notes",
+          source,
+          sources: webSources,
+          timeoutMs: DEEPSEEK_CHAT_TIMEOUT_MS,
+        });
+      }
 
       const deepSeekText = await callDeepSeekSync(
         DEEPSEEK_API_KEY!,

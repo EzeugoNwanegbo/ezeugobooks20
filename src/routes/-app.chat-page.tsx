@@ -250,46 +250,18 @@ const SOURCE_SHORT: Record<SourceMode, string> = {
   "General knowledge": "General",
 };
 
-// Chat surface theme, scoped to the chat subtree (overrides the global +
-// discipline tokens for this subtree only, so it wins reliably). A near-black
-// The chat surface now FOLLOWS the app theme (beige in light, near-black in
-// dark) — no hardcoded ground — so it stays consistent with the rest of the
-// app. Only the accent is pinned: the primary action (send, key terms, empty
-// state) keeps the warm coral pop, and it's declared inline so it reliably wins
-// over the discipline theme set on <html>. Individual controls own their own
-// deep jewel tone (below), colour-coding the settings without a rainbow.
-const CHAT_ACCENT_STYLE = {
-  "--pop": "#ee6c4d",
-  "--pop-2": "#d8542f",
-  "--pop-foreground": "#ffffff",
-  "--gradient-pop": "linear-gradient(145deg, #f4855f 0%, #d8542f 100%)",
-  "--shadow-pop": "0 10px 28px -8px rgba(238, 108, 77, 0.42)",
-} as CSSProperties;
-
-// Answer-style slider (Simplified → Detailed → Detailed+ → Story): deep blue.
-const ACCENT_MODE = {
-  "--pop": "#004e89",
-  "--pop-foreground": "#ffffff",
-  "--gradient-pop": "linear-gradient(145deg, #0a5c9c 0%, #003f70 100%)",
-  "--shadow-pop": "0 8px 22px -8px rgba(0, 78, 137, 0.55)",
-} as CSSProperties;
-
-// Source slider (My files / Files + general / General knowledge): crimson.
-const ACCENT_SOURCE = {
-  "--pop": "#800f2f",
-  "--pop-foreground": "#ffffff",
-  "--gradient-pop": "linear-gradient(145deg, #9c1238 0%, #660b25 100%)",
-  "--shadow-pop": "0 8px 22px -8px rgba(128, 15, 47, 0.55)",
-} as CSSProperties;
-
-// The general-context toggle on the composer: deep wine. Light-rose foreground
-// keeps the label legible on the near-black fill.
-const ACCENT_GENERAL = {
-  "--pop": "#49111c",
-  "--pop-foreground": "#f3c9d0",
-  "--gradient-pop": "linear-gradient(145deg, #5c1624 0%, #360d15 100%)",
-  "--shadow-pop": "0 8px 22px -8px rgba(73, 17, 28, 0.7)",
-} as CSSProperties;
+// THE KEYED PLATE - one accent, and it means something.
+//
+// This block used to hold four competing jewel tones: coral for the chat
+// surface, deep blue for the answer-style slider, crimson for the source
+// slider, wine for the general-context toggle. Each was declared inline so it
+// would beat the discipline theme on <html> - which is exactly why the app read
+// as busy: four controls shouting in four colours, none of them carrying
+// meaning. They are gone. The single accent is now the discipline accent
+// (petrol teal for medicine, brass for law), inherited from the root theme, so
+// colour finally says something true about the student instead of decorating a
+// toolbar. Structure is carried by hairline rules and keyed numerals, not hue.
+const ACCENT_INHERIT = undefined;
 
 const SMART_DOC_LIMIT = 5;
 const SNIPPET_WINDOW_CHARS = 3200;
@@ -666,6 +638,35 @@ function writeGuestNotesUsage(used: number): void {
   } catch {
     // Storage unavailable - the in-memory count still holds for this session.
   }
+}
+
+// THE KEYED PLATE, the citation itself.
+//
+// Grounded answers are required to open with "Source: <document>, <Page N>".
+// Left in the prose it reads as a throwaway first sentence; lifted out it
+// becomes the plate's key - the one element that proves the answer came from
+// the student's own material rather than from the open web. Only a Source line
+// standing in the first few lines is lifted, so a mid-answer mention of the
+// word stays where the model put it.
+function splitSourceKey(markdown: string): { sourceKey: string | null; body: string } {
+  const lines = markdown.split("\n");
+  for (let i = 0; i < Math.min(lines.length, 5); i += 1) {
+    const line = lines[i]!.trim();
+    if (!line) continue;
+    // Detailed+ opens with a "# " title, and the model does not always put the
+    // source above it as instructed. Step over the title rather than giving up.
+    if (/^#{1,6}\s/.test(line)) continue;
+    const match = line.match(/^Source:\s*(.+)$/i);
+    if (!match) break; // Prose started; there is no key.
+    const key = match[1]!.trim();
+    // "general" is the no-document case, not a citation - leave it in the prose
+    // so the answer still says where it came from without faking a source key.
+    if (!key || /^general(\s+knowledge)?$/i.test(key)) break;
+    const rest = [...lines.slice(0, i), ...lines.slice(i + 1)].join("\n");
+    // Lifting the line out can leave a triple newline behind it.
+    return { sourceKey: key, body: rest.replace(/^\n+/, "").replace(/\n{3,}/g, "\n\n") };
+  }
+  return { sourceKey: null, body: markdown };
 }
 
 function normalizeChatMode(value: unknown): ChatMode {
@@ -2073,6 +2074,17 @@ export function ChatPage() {
     void send(trimmed, { baseMessages: truncated, priorVersions });
   };
 
+  // "Redo" on the latest answer: rerun the same question untouched. It routes
+  // through the edit path so the answer being replaced is kept as a browsable
+  // version rather than discarded.
+  const regenerateAnswer = (assistantIndex: number) => {
+    if (streaming) return;
+    const userIndex = assistantIndex - 1;
+    const userMsg = messages[userIndex];
+    if (messages[assistantIndex]?.role !== "assistant" || userMsg?.role !== "user") return;
+    editUserMessage(userIndex, userMsg.content);
+  };
+
   // Flips an assistant answer (and its paired question bubble) to a
   // previously-generated version.
   const setAnswerVersion = (assistantIndex: number, versionIndex: number) => {
@@ -2136,7 +2148,7 @@ export function ChatPage() {
   return (
     <div
       className="flex h-full min-h-0 flex-1 overflow-hidden bg-background min-w-0"
-      style={CHAT_ACCENT_STYLE}
+      style={ACCENT_INHERIT}
     >
       {/* Conversations sidebar */}
       <aside
@@ -2237,7 +2249,7 @@ export function ChatPage() {
               <>
                 <div className="hidden shrink-0 sm:block">
                   <SegmentedControl
-                    style={ACCENT_SOURCE}
+                    style={ACCENT_INHERIT}
                     tourAnchor="answer-sources"
                     options={SOURCE_MODES}
                     value={sourceMode}
@@ -2270,7 +2282,7 @@ export function ChatPage() {
                 </button>
               </>
               <SegmentedControl
-                style={ACCENT_MODE}
+                style={ACCENT_INHERIT}
                 tourAnchor="answer-style"
                 className="chat-mode-selector shrink-0"
                 options={CHAT_MODES}
@@ -2354,6 +2366,7 @@ export function ChatPage() {
                       canEdit={!streaming}
                       hasDocuments={selectedDocs.length > 0}
                       onEditUserMessage={(newText) => editUserMessage(i, newText)}
+                      onRegenerate={() => regenerateAnswer(i)}
                       onVersionChange={(versionIndex) => setAnswerVersion(i, versionIndex)}
                     />
                   </div>
@@ -2397,7 +2410,7 @@ export function ChatPage() {
             <div className="mb-2 md:hidden">
               {expandedSelector === "style" ? (
                 <SegmentedControl
-                  style={ACCENT_MODE}
+                  style={ACCENT_INHERIT}
                   className="selector-reveal"
                   options={CHAT_MODES}
                   value={mode}
@@ -2417,7 +2430,7 @@ export function ChatPage() {
                 />
               ) : expandedSelector === "source" ? (
                 <SegmentedControl
-                  style={ACCENT_SOURCE}
+                  style={ACCENT_INHERIT}
                   className="selector-reveal"
                   options={SOURCE_MODES}
                   value={sourceMode}
@@ -2434,7 +2447,7 @@ export function ChatPage() {
                     onClick={() => setExpandedSelector("style")}
                     data-tour="answer-style"
                     title={`Answer style: ${mode}`}
-                    style={ACCENT_MODE}
+                    style={ACCENT_INHERIT}
                     className="gd-press inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/40 bg-pop/[0.1] px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-pop/20"
                   >
                     {mode === "Detailed+" && <NotebookPen className="h-3 w-3 text-pop" />}
@@ -2448,7 +2461,7 @@ export function ChatPage() {
                     onClick={() => setExpandedSelector("source")}
                     data-tour="answer-sources"
                     title={`Sources: ${sourceMode}`}
-                    style={ACCENT_SOURCE}
+                    style={ACCENT_INHERIT}
                     className="gd-press inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/40 bg-pop/[0.1] px-2.5 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors hover:bg-pop/20"
                   >
                     <FileText className="h-3 w-3 text-pop" />
@@ -2668,7 +2681,7 @@ export function ChatPage() {
                   title={webSearch ? "General context on" : "Add general context"}
                   aria-pressed={webSearch}
                   aria-label={webSearch ? "Turn general context off" : "Turn general context on"}
-                  style={ACCENT_GENERAL}
+                  style={ACCENT_INHERIT}
                   className={`gd-press inline-flex h-[44px] shrink-0 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-medium transition-colors sm:px-3.5 ${
                     webSearch
                       ? "border-transparent bg-pop text-pop-foreground shadow-pop ring-2 ring-pop/40"
@@ -4197,9 +4210,11 @@ function Message({
   profile,
   mode,
   question,
+  isLast,
   canEdit,
   hasDocuments,
   onEditUserMessage,
+  onRegenerate,
   onVersionChange,
 }: {
   msg: DisplayMessage;
@@ -4215,6 +4230,9 @@ function Message({
   // question is general and we show only the clean bouncing-dot loader.
   hasDocuments?: boolean;
   onEditUserMessage?: (newText: string) => void;
+  // Rerun this question. Only offered on the newest answer, since rerunning an
+  // older one would drop everything asked after it.
+  onRegenerate?: () => void;
   onVersionChange?: (versionIndex: number) => void;
 }) {
   const [speaking, setSpeaking] = useState(false);
@@ -4255,7 +4273,10 @@ function Message({
       : visualParts
         ? visualParts.markdown || "Animation preview ready."
         : msg.content;
-  const displayContent = rawContent ? cleanAiResponseMarkdown(rawContent.replace(/—/g, " - ")) : "";
+  const cleanedContent = rawContent ? cleanAiResponseMarkdown(rawContent.replace(/—/g, " - ")) : "";
+  // The source line is lifted out of the prose and set as the plate key below.
+  // Copy, speech and the PDF still get the full text, key included.
+  const { sourceKey, body: displayContent } = splitSourceKey(cleanedContent);
 
   // Only surface tappable key terms once the answer has FINISHED streaming — mid
   // stream the text is still shifting, and firing lookups then would be wasteful.
@@ -4276,7 +4297,7 @@ function Message({
     setPdfState("building");
     try {
       const { buildNotesPdf, downloadPdfBytes } = await import("@/lib/notes-pdf");
-      const { bytes, filename } = await buildNotesPdf(displayContent, {
+      const { bytes, filename } = await buildNotesPdf(cleanedContent, {
         fallbackTitle: question?.trim().replace(/\s+/g, " ").slice(0, 90),
         studentName: profile.name || undefined,
       });
@@ -4919,6 +4940,13 @@ function Message({
           {msg.source && msg.source !== "general" && <SourceBadge source={msg.source} />}
           {msg.webSources?.length ? <WebSourceBadge count={msg.webSources.length} /> : null}
         </div>
+        {sourceKey && !streaming && (
+          <div className="gd-plate-key">
+            <span className="gd-plate-key-num">1</span>
+            <span className="gd-plate-key-label">Source</span>
+            <span className="gd-plate-key-value">{sourceKey}</span>
+          </div>
+        )}
         <div
           ref={contentRef}
           onMouseUp={openInlineComposer}
@@ -5052,7 +5080,7 @@ function Message({
               type="button"
               onClick={async () => {
                 try {
-                  await copyTextToClipboard(displayContent);
+                  await copyTextToClipboard(cleanedContent);
                   setAnswerCopied(true);
                   window.setTimeout(() => setAnswerCopied(false), 1800);
                 } catch {
@@ -5080,7 +5108,7 @@ function Message({
                     return;
                   }
 
-                  const utterance = new SpeechSynthesisUtterance(textForSpeech(displayContent));
+                  const utterance = new SpeechSynthesisUtterance(textForSpeech(cleanedContent));
                   utterance.onend = () => setSpeaking(false);
                   utterance.onerror = () => setSpeaking(false);
                   window.speechSynthesis.cancel();
@@ -5093,6 +5121,18 @@ function Message({
               >
                 <Volume2 className="h-3.5 w-3.5" />
                 {speaking ? "Stop" : "Listen"}
+              </button>
+            )}
+            {isLast && canEdit && onRegenerate && (
+              <button
+                type="button"
+                onClick={onRegenerate}
+                title="Answer this again"
+                aria-label="Answer this again"
+                className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Redo
               </button>
             )}
           </div>

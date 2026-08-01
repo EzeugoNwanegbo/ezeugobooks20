@@ -1,8 +1,7 @@
-@import url("https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Hanken+Grotesk:wght@300;400;500;600&family=Nunito:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 /* Per-discipline display + mono faces: Medicine (Schibsted Grotesk / IBM Plex
    Mono), Law (Fraunces / Courier Prime). Loaded globally; applied only when a
    discipline theme is active. */
-@import url("https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=IBM+Plex+Mono:wght@400;500&family=Courier+Prime:wght@400;700&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap");
 @import "tailwindcss" source(none);
 @source "../src";
@@ -70,12 +69,21 @@ html {
   --color-pop-foreground: var(--pop-foreground);
   --color-leaf: var(--leaf);
 
+  /* THE KEYED PLATE type system - one voice, two jobs.
+     A reference plate is set in a single workhorse face; what varies is size,
+     weight and measure, never the family. Four families competing (a rounded
+     face for answers, a collegiate face for headings, a serif for law) is what
+     made the app read like a toy. The wordmark keeps its own face because it is
+     the one protected mark; nothing else may borrow it. */
   --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
-  /* Varsity collegiate display face for large headings. */
-  --font-display: "Varsity", "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  /* Plate numerals, source keys, measurements. Tabular by default (see below). */
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  /* Friendly, rounded reading face for AI answers - warm but still professional. */
-  --font-reading: "Nunito", "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  /* Answers read in the same face as the interface, distinguished by measure
+     and leading rather than by a friendlier shape. */
+  --font-reading: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  /* The G&D mark only. Never apply to headings or UI. */
+  --font-wordmark: "Varsity", "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
@@ -138,15 +146,16 @@ html {
   --luxury-code-bg: #100f0d;
   --luxury-pulse: rgba(228, 228, 204, 0.18);
 
-  /* Accent — a deep petrol teal, the single confident jewel tone. Used with
-     restraint (send, focus rings, active toggles, section markers). Kept close
-     to solid; the "gradient" is one hue deepening, not a rainbow, so it reads
-     considered rather than generic. Dark theme values here; light overrides. */
-  --pop: #7db3ff;
-  --pop-2: #5b9dff;
-  --pop-foreground: #06183a;
-  --gradient-pop: linear-gradient(145deg, #8fbdff 0%, #5b9dff 100%);
-  --shadow-pop: 0 10px 28px -8px rgba(125, 179, 255, 0.42);
+  /* THE KEYED PLATE accent rule: colour arrives when we know who you are.
+     Before a discipline is set - a guest, or anyone pre-onboarding - the accent
+     is simply the plate's own ink and paper, so the interface is pure structure.
+     The medicine and law blocks below then introduce the one colour that means
+     something. This replaced a stray blue that belonged to no theme. */
+  --pop: #ece8de;
+  --pop-2: #d8d3c6;
+  --pop-foreground: #12161c;
+  --gradient-pop: none;
+  --shadow-pop: 0 8px 22px -10px rgba(0, 0, 0, 0.55);
 
   /* One warm supporting tone (brass/gold) - used ONLY to signal "answered from
      your own files", like a highlight on your own material. */
@@ -174,30 +183,36 @@ html {
 /* Light theme: warm beige (#c6ac8f) ground, charcoal (#353535) ink, with a
    little near-black (#0a0908) for the deepest accents. */
 .light {
+  /* Beige is the desk; the plate lifts off it.
+     The brand beige stays as the ground. What made the old light theme muddy
+     was not the beige - it was that ground, surface and card were all the same
+     mid-tone tan, so a card never separated from the page behind it. Here the
+     ground keeps its colour and everything you read on sits on warm near-white
+     stock above it, which is how a plate actually meets a desk. */
   --background: #e3d6bf;
-  --foreground: #353535;
+  --foreground: #12161c;
 
-  --surface: #d8c7a8;
-  --surface-elevated: #ccba98;
+  --surface: #fbf8f1;
+  --surface-elevated: #fffdf8;
 
-  --card: rgba(255, 252, 244, 0.5);
-  --card-foreground: #353535;
+  --card: #fbf8f1;
+  --card-foreground: #12161c;
 
-  --popover: #ebe0cc;
-  --popover-foreground: #353535;
+  --popover: #fffdf8;
+  --popover-foreground: #12161c;
 
-  --primary: #353535;
-  --primary-foreground: #e3d6bf;
-  --primary-glow: #5a5148;
+  --primary: #12161c;
+  --primary-foreground: #fbf8f1;
+  --primary-glow: #3a4250;
 
-  --secondary: #d2c0a0;
-  --secondary-foreground: #353535;
+  --secondary: #ede2cd;
+  --secondary-foreground: #12161c;
 
-  --muted: #d2c0a0;
-  --muted-foreground: #6f6350;
+  --muted: #ede2cd;
+  --muted-foreground: #5a5648;
 
-  --accent: #c6ac8f;
-  --accent-foreground: #0a0908;
+  --accent: #12161c;
+  --accent-foreground: #fbf8f1;
 
   --coral: #b06a4e;
   --coral-foreground: #ffffff;
@@ -205,36 +220,38 @@ html {
   --destructive: #a24f45;
   --destructive-foreground: #fff8f4;
 
-  --border: rgba(53, 53, 53, 0.18);
-  --input: rgba(53, 53, 53, 0.22);
-  --ring: #353535;
+  /* Plate rules: hairlines, not grey slabs. */
+  --border: rgba(18, 22, 28, 0.14);
+  --input: rgba(18, 22, 28, 0.2);
+  --ring: #12161c;
 
-  --source-library: #353535;
-  --source-general: #6f6350;
-  --source-web: #857a67;
+  --source-library: #12161c;
+  --source-general: #5a5648;
+  --source-web: #7b7563;
 
-  --luxury-soft: rgba(53, 53, 53, 0.05);
-  --luxury-soft-strong: rgba(53, 53, 53, 0.09);
-  --luxury-border-soft: rgba(53, 53, 53, 0.14);
-  --luxury-border-strong: rgba(53, 53, 53, 0.24);
-  --luxury-muted: #6f6350;
-  --luxury-subtle: #857a67;
-  --luxury-faint: #a2957f;
-  --luxury-ai-bg: #ebe0cc;
-  --luxury-selection: rgba(53, 53, 53, 0.16);
-  --luxury-button-sheen: rgba(255, 255, 255, 0.25);
-  --luxury-code-bg: #ddd0b7;
-  --luxury-pulse: rgba(53, 53, 53, 0.16);
-  --shadow-elegant: 0 18px 70px -42px rgba(10, 9, 8, 0.42);
-  --shadow-glow: 0 0 30px rgba(53, 53, 53, 0.08);
+  --luxury-soft: rgba(18, 22, 28, 0.04);
+  --luxury-soft-strong: rgba(18, 22, 28, 0.08);
+  --luxury-border-soft: rgba(18, 22, 28, 0.12);
+  --luxury-border-strong: rgba(18, 22, 28, 0.22);
+  --luxury-muted: #5a5648;
+  --luxury-subtle: #7b7563;
+  --luxury-faint: #a09880;
+  /* Answers read on the lifted stock, not on the beige ground. */
+  --luxury-ai-bg: #fbf8f1;
+  --luxury-selection: rgba(18, 22, 28, 0.14);
+  --luxury-button-sheen: rgba(255, 255, 255, 0.3);
+  --luxury-code-bg: #ede2cd;
+  --luxury-pulse: rgba(18, 22, 28, 0.14);
+  --shadow-elegant: 0 18px 48px -32px rgba(18, 22, 28, 0.3);
+  --shadow-glow: none;
 
-  /* Charcoal → near-black accent so buttons and highlights stay grounded on
-     the beige (no coloured pop in this theme). */
-  --pop: #353535;
-  --pop-2: #0a0908;
-  --pop-foreground: #e3d6bf;
-  --gradient-pop: linear-gradient(145deg, #454545 0%, #0a0908 100%);
-  --shadow-pop: 0 10px 26px -8px rgba(10, 9, 8, 0.32);
+  /* Plate ink is the accent on paper; the discipline blocks below override it
+     with the one colour that carries meaning. */
+  --pop: #12161c;
+  --pop-2: #000000;
+  --pop-foreground: #fbf8f1;
+  --gradient-pop: none;
+  --shadow-pop: 0 8px 20px -10px rgba(18, 22, 28, 0.35);
 
   --leaf: #8a6a2a;
 }
@@ -282,8 +299,8 @@ html {
   --luxury-selection: rgba(63, 218, 200, 0.22);
 
   --radius: 1rem;
-  --font-display: "Schibsted Grotesk", "Sora", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  /* Discipline theming stays in colour, radius and motion - not in a third
+     and fourth type family. */
   --motion-emphasis: 340ms;
   --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -318,8 +335,7 @@ html {
   --luxury-selection: rgba(203, 163, 92, 0.22);
 
   --radius: 0.25rem;
-  --font-display: "Fraunces", Georgia, serif;
-  --font-mono: "Courier Prime", "Courier New", ui-monospace, monospace;
+  /* See the medicine block: discipline character is colour, not type. */
   --motion-emphasis: 700ms;
   --motion-ease: cubic-bezier(0.32, 0, 0.12, 1);
 }
@@ -334,11 +350,14 @@ html {
   --accent: #0b7568;
   --accent-foreground: #ffffff;
   --ring: #0b7568;
-  --surface: #eef4f2;
-  --surface-elevated: #e2ece9;
+  /* Warm stock, petrol accent: the discipline is carried by the accent, not by
+     tinting every surface mint on a beige ground. */
+  --surface: #fbf8f1;
+  --surface-elevated: #fffdf8;
+  --luxury-ai-bg: #fbf8f1;
   --source-library: #0b7568;
-  --source-general: #4e7a73;
-  --source-web: #6c7f84;
+  --source-general: #5a5648;
+  --source-web: #7b7563;
   --luxury-selection: rgba(11, 117, 104, 0.2);
 }
 
@@ -352,8 +371,9 @@ html {
   --accent: #7e5d26;
   --accent-foreground: #ffffff;
   --ring: #7e5d26;
-  --surface: #f3ede1;
-  --surface-elevated: #e9e0cf;
+  --surface: #fbf8f1;
+  --surface-elevated: #fffdf8;
+  --luxury-ai-bg: #fbf8f1;
   --source-library: #7e5d26;
   --source-general: #7a6b4e;
   --source-web: #837a6b;
@@ -450,9 +470,9 @@ html {
    every tap feels acknowledged (Emil: buttons must feel responsive to press).
    Applied via className to buttons that don't already own their transform. */
 .gd-press {
-  /* Bump: presses in fast, then springs back past its size and settles — a
-     tactile "bump" rather than a flat scale (the overshoot lives in the curve). */
-  transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Presses in and settles on an exponential ease-out. The old curve overshot
+     its own size, which reads springy and toy-like next to a ruled plate. */
+  transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .gd-press:active:not(:disabled) {
   transform: scale(0.93);
@@ -475,12 +495,11 @@ html {
 
 /* ── Chat "zass": welcome hero + ambient depth + entrance motion ── */
 
-/* Accent-gradient name in the empty-state greeting. */
+/* The student's name in the greeting, in the plate accent. Solid: emphasis is
+   weight and colour, never a gradient fill. */
 .gd-name-accent {
-  background: var(--gradient-pop);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--pop);
+  font-weight: 600;
 }
 
 /* Soft green halo behind the welcome mark, gently breathing. */
@@ -532,7 +551,7 @@ html {
 
 /* Messages rise and fade in as they appear. */
 .gd-msg-in {
-  animation: gdMsgIn 0.5s cubic-bezier(0.34, 1.4, 0.5, 1) both;
+  animation: gdMsgIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 @keyframes gdMsgIn {
   0% {
@@ -952,7 +971,7 @@ html.gd-low-power .gd-forming-orb::after {
   border: 1px solid var(--border);
 }
 .medai-prose blockquote {
-  border-left: 3px solid var(--primary-glow);
+  border-left: 1px solid var(--pop);
   padding-left: 12px;
   color: var(--muted-foreground);
   margin: 0.75rem 0;
@@ -1116,9 +1135,8 @@ html.gd-low-power .gd-forming-orb::after {
 .segmented-thumb {
   background: var(--gradient-pop);
   box-shadow: var(--shadow-pop);
-  /* The thumb overshoots slightly as it lands on the next option — a fluid
-     bump instead of a mechanical glide. */
-  transition: transform 420ms cubic-bezier(0.34, 1.42, 0.5, 1);
+  /* The thumb decelerates onto the next option; no overshoot. */
+  transition: transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 @media (prefers-reduced-motion: reduce) {
   .segmented-thumb {
@@ -1226,7 +1244,7 @@ a.bg-gradient-primary > * {
 
 .luxury-brand-text {
   color: var(--foreground);
-  font-family: var(--font-display);
+  font-family: var(--font-wordmark);
   font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -2271,3 +2289,60 @@ html.gd-low-power [style*="gd-dot-wave"] {
   font-size: 0.72rem;
 }
 :root[data-discipline="law"] .luxury-brand-text { letter-spacing: 0.01em; }
+
+/* ── THE KEYED PLATE: the source key ──────────────────────────────────────
+   A grounded answer opens with the document and page it came from. On a
+   reference plate that is not a sentence, it is the key: a numeral, a hairline,
+   and the citation set in tabular figures so page numbers line up between
+   answers. This is the one element that proves the answer came from the
+   student's own material, so it gets the accent and nothing else on the plate
+   competes for it. */
+.gd-plate-key {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+
+.gd-plate-key-num {
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--pop);
+  border-radius: 3px;
+  color: var(--pop);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.gd-plate-key-label {
+  flex: none;
+  color: var(--pop);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.gd-plate-key-value {
+  min-width: 0;
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tabular figures wherever the interface counts things - page numbers, answer
+   versions, points, the Detailed+ allowance - so digits never jitter. */
+.tabular-nums,
+.gd-plate-key,
+.medai-prose table {
+  font-variant-numeric: tabular-nums;
+}
