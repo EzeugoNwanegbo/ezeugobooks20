@@ -393,14 +393,22 @@ html {
 
    Two rules the structural section at the bottom of this file obeys:
    1. --pop must survive as TEXT on paper — `text-pop` is everywhere — so the
-      loud flat fills live in --brutal-hi, which only ever carries ink.
+      loud flat fills live in --brutal-hi.
    2. The reading surface (.medai-prose) keeps its metrics and sentence case.
       Brutalism is the frame; the answer is still the product.
+
+   The fills are deep rather than fluorescent, which means the text sitting on
+   them can no longer be assumed to be ink: black clears 8.7:1 on the gold but
+   only 4.3:1 on the teal, where paper reads better. So every fill carries its
+   own --brutal-hi-ink, chosen per discipline for contrast, and nothing hard
+   codes a colour on top of --brutal-hi.
    ═══════════════════════════════════════════════════════════════════════════ */
 .brutal {
   /* Structure tokens the brutal rules below are built from. */
   --brutal-ink: #0d0d0d;
-  --brutal-hi: #ffe23d;
+  /* Deep gold. Black on it: 8.7:1. */
+  --brutal-hi: #c9a227;
+  --brutal-hi-ink: #0d0d0d;
   --brutal-shadow: 5px 5px 0 0 var(--brutal-ink);
   --brutal-shadow-sm: 3px 3px 0 0 var(--brutal-ink);
   --brutal-shadow-xs: 2px 2px 0 0 var(--brutal-ink);
@@ -430,11 +438,11 @@ html {
   --accent: #0d0d0d;
   --accent-foreground: #fffdf7;
 
-  /* Warnings get the one genuinely loud hue in the theme. */
-  --coral: #e2452a;
+  /* Warnings get the one genuinely loud hue in the theme — burnt, not neon. */
+  --coral: #b93b1f;
   --coral-foreground: #fffdf7;
 
-  --destructive: #d92d20;
+  --destructive: #a52216;
   --destructive-foreground: #fffdf7;
 
   /* Rules are ink. There are no hairlines here. */
@@ -454,8 +462,9 @@ html {
   --luxury-subtle: #6b675e;
   --luxury-faint: #8b8679;
   --luxury-ai-bg: #fffdf7;
-  /* Selecting text should look like a marker pen, not a tint. */
-  --luxury-selection: #ffe23d;
+  /* Selecting text should look like a marker pen, not a tint. Lightened off the
+     fill so the body ink underneath stays legible while selected. */
+  --luxury-selection: color-mix(in srgb, var(--brutal-hi) 45%, #ffffff);
   --luxury-button-sheen: transparent;
   --luxury-code-bg: #e7e2d2;
   --luxury-pulse: rgba(13, 13, 13, 0.16);
@@ -484,9 +493,11 @@ html {
   --motion-ease: linear;
 }
 
-/* ── MEDICINE (brutal) ── petrol reads on paper; the loud fill is pale teal ── */
+/* ── MEDICINE (brutal) ── petrol reads on paper; the fill is deep teal ── */
 .brutal[data-discipline="medicine"] {
-  --brutal-hi: #74efdd;
+  /* Paper on this teal is 4.8:1; black would be 4.3:1, so the fill flips. */
+  --brutal-hi: #0f7f70;
+  --brutal-hi-ink: #fffdf7;
   --pop: #0b7568;
   --pop-2: #0b7568;
   --pop-foreground: #ffffff;
@@ -512,16 +523,18 @@ html {
   --source-web: #6b675e;
   --leaf: #b58900;
 
-  --luxury-selection: #74efdd;
+  --luxury-selection: color-mix(in srgb, var(--brutal-hi) 45%, #ffffff);
 
   --radius: 0px;
   --motion-emphasis: 120ms;
   --motion-ease: linear;
 }
 
-/* ── LAW (brutal) ── bronze reads on paper; the loud fill is pale gold ── */
+/* ── LAW (brutal) ── bronze reads on paper; the fill is deep bronze ── */
 .brutal[data-discipline="law"] {
-  --brutal-hi: #f5d98a;
+  /* Black on this bronze is 4.9:1, ahead of paper's 4.3:1. */
+  --brutal-hi: #9a7326;
+  --brutal-hi-ink: #0d0d0d;
   --pop: #7e5d26;
   --pop-2: #7e5d26;
   --pop-foreground: #ffffff;
@@ -547,7 +560,7 @@ html {
   --source-web: #6b675e;
   --leaf: #b58900;
 
-  --luxury-selection: #f5d98a;
+  --luxury-selection: color-mix(in srgb, var(--brutal-hi) 45%, #ffffff);
 
   --radius: 0px;
   --motion-emphasis: 120ms;
@@ -2562,12 +2575,17 @@ html.gd-low-power [style*="gd-dot-wave"] {
 .brutal .app-blob-two,
 .brutal .auth-blob-one,
 .brutal .auth-blob-two,
-.brutal .gd-chat-glow,
 .brutal .gd-mark-halo::before,
 .brutal .luxury-primary::before,
 .brutal .luxury-card::before,
 .brutal .gd-side-nav-item::after {
   display: none !important;
+}
+/* .gd-chat-glow is the chat SCROLL CONTAINER, not a decorative layer — it just
+   carries a radial wash. Only the wash goes; hiding the element blanks every
+   message in the thread. Nothing that holds content may be display:none here. */
+.brutal .gd-chat-glow {
+  background: none;
 }
 /* The shimmer sweep across loading skeletons is soft light too — a brutal
    skeleton is just a solid block. */
@@ -2704,7 +2722,7 @@ html.gd-low-power [style*="gd-dot-wave"] {
 }
 .brutal .medai-prose th {
   background: var(--brutal-hi);
-  color: var(--brutal-ink);
+  color: var(--brutal-hi-ink);
   text-transform: uppercase;
   font-weight: 800;
 }
@@ -2723,7 +2741,7 @@ html.gd-low-power [style*="gd-dot-wave"] {
 .brutal .ai-term-trigger:hover,
 .brutal .ai-term-trigger:focus-visible {
   background: var(--brutal-hi);
-  color: var(--brutal-ink);
+  color: var(--brutal-hi-ink);
 }
 .brutal .ai-term-popover,
 .brutal .luxury-panel {
@@ -2753,7 +2771,7 @@ html.gd-low-power [style*="gd-dot-wave"] {
 .brutal .gd-side-nav-item.gd-side-nav-active {
   background: var(--brutal-hi) !important;
   border-color: var(--brutal-ink);
-  color: var(--brutal-ink);
+  color: var(--brutal-hi-ink);
   box-shadow: var(--brutal-shadow-xs);
 }
 /* The per-item nav accents are a colour system this theme does not have. */
@@ -2763,7 +2781,7 @@ html.gd-low-power [style*="gd-dot-wave"] {
 }
 .brutal .gd-profile-mark {
   background: var(--brutal-hi);
-  color: var(--brutal-ink);
+  color: var(--brutal-hi-ink);
   border: 2px solid var(--brutal-ink);
 }
 .brutal .gd-sidebar-profile {
@@ -2782,14 +2800,16 @@ html.gd-low-power [style*="gd-dot-wave"] {
 .brutal .gd-plate-key {
   border: 2px solid var(--brutal-ink);
   background: var(--brutal-hi);
-  color: var(--brutal-ink);
+  color: var(--brutal-hi-ink);
 }
 .brutal .gd-plate-key-label {
-  color: var(--brutal-ink);
+  color: var(--brutal-hi-ink);
 }
 .brutal .segmented-thumb {
   border: 2px solid var(--brutal-ink);
-  background: var(--brutal-hi);
+  /* NOT --brutal-hi: the active label is `text-pop-foreground` (paper), which
+     would sit at 2.4:1 on the deep gold. --pop owns that foreground. */
+  background: var(--pop);
   box-shadow: none;
 }
 .brutal .ai-inline-composer,
@@ -2804,7 +2824,7 @@ html.gd-low-power [style*="gd-dot-wave"] {
 /* The student's name in the greeting, marked up like a highlighter pass. */
 .brutal .gd-name-accent {
   background: var(--brutal-hi);
-  color: var(--brutal-ink);
+  color: var(--brutal-hi-ink);
   box-shadow: 0 0 0 4px var(--brutal-hi);
 }
 
@@ -2822,13 +2842,14 @@ html.gd-low-power [style*="gd-dot-wave"] {
 }
 .brutal .luxury-nav-links a:hover {
   background: var(--brutal-hi);
+  color: var(--brutal-hi-ink);
   box-shadow: 0 0 0 4px var(--brutal-hi);
 }
 .brutal .luxury-eyebrow {
   display: inline-block;
   border: 2px solid var(--brutal-ink);
   background: var(--brutal-hi);
-  color: var(--brutal-ink);
+  color: var(--brutal-hi-ink);
   padding: 4px 10px;
   font-weight: 800;
 }
@@ -2840,7 +2861,7 @@ html.gd-low-power [style*="gd-dot-wave"] {
 .brutal .luxury-hero h1 em {
   font-style: normal;
   background: var(--brutal-hi);
-  color: var(--brutal-ink);
+  color: var(--brutal-hi-ink);
   box-shadow: 0 0 0 6px var(--brutal-hi);
 }
 .brutal .luxury-primary,

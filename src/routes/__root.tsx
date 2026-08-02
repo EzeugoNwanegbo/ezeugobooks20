@@ -8,7 +8,8 @@ const themeInitScript = `
 (function () {
   try {
     var stored = window.localStorage.getItem("gd-theme");
-    var theme = stored === "light" || stored === "brutal" ? stored : "dark";
+    // Brutal is the default; an explicit stored choice always wins.
+    var theme = stored === "light" || stored === "dark" ? stored : "brutal";
     var root = document.documentElement;
     var nav = window.navigator || {};
     var memory = Number(nav.deviceMemory || 0);
@@ -84,7 +85,7 @@ export const Route = createRootRoute({
 
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" className="brutal" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <HeadContent />

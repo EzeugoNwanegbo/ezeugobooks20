@@ -6,7 +6,11 @@ import { useEffect, useState } from "react";
 // so it replaces the .dark/.light class rather than stacking on it.
 export type Theme = "dark" | "light" | "brutal";
 
-const THEMES: Theme[] = ["dark", "light", "brutal"];
+// Brutal leads: it is the default, so the cycle starts from what a new student
+// actually sees. Anyone who has already chosen a theme keeps their choice —
+// this only decides what happens with nothing stored.
+const THEMES: Theme[] = ["brutal", "dark", "light"];
+const DEFAULT_THEME: Theme = "brutal";
 
 const THEME_STORAGE_KEY = "gd-theme";
 
@@ -25,9 +29,9 @@ function isTheme(value: string | null): value is Theme {
 }
 
 function getStoredTheme(): Theme {
-  if (typeof window === "undefined") return "dark";
+  if (typeof window === "undefined") return DEFAULT_THEME;
   const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return isTheme(stored) ? stored : "dark";
+  return isTheme(stored) ? stored : DEFAULT_THEME;
 }
 
 function applyTheme(theme: Theme) {
@@ -44,7 +48,7 @@ export function ThemeToggle({
   className?: string;
   showLabel?: boolean;
 }) {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
 
   useEffect(() => {
     const stored = getStoredTheme();
