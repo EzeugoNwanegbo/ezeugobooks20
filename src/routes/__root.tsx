@@ -7,7 +7,8 @@ import appCss from "../styles.css?url";
 const themeInitScript = `
 (function () {
   try {
-    var theme = window.localStorage.getItem("gd-theme") === "light" ? "light" : "dark";
+    var stored = window.localStorage.getItem("gd-theme");
+    var theme = stored === "light" || stored === "brutal" ? stored : "dark";
     var root = document.documentElement;
     var nav = window.navigator || {};
     var memory = Number(nav.deviceMemory || 0);
@@ -19,8 +20,10 @@ const themeInitScript = `
     var lowPower = nativeApp || oldAndroid || oldIos || (memory > 0 && memory <= 4) || (cores > 0 && cores <= 4);
     root.classList.toggle("light", theme === "light");
     root.classList.toggle("dark", theme === "dark");
+    root.classList.toggle("brutal", theme === "brutal");
     root.classList.toggle("gd-low-power", lowPower);
-    root.style.colorScheme = theme;
+    // Brutalism is a paper theme, so it takes the light color-scheme.
+    root.style.colorScheme = theme === "dark" ? "dark" : "light";
   } catch (_) {}
 })();
 `;

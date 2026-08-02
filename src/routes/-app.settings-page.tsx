@@ -394,7 +394,9 @@ export function SettingsPage() {
         <section className="flex items-center justify-between rounded-2xl border border-border bg-surface p-5 sm:p-6">
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-wider text-pop">Appearance</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Switch between light and dark.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Cycle through dark, light and brutal.
+            </p>
           </div>
           <ThemeToggle />
         </section>

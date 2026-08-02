@@ -1,21 +1,40 @@
-import { Moon, Sun } from "lucide-react";
+import { Moon, Square, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
-type Theme = "dark" | "light";
+// Three looks, one control, cycled in this order. `brutal` is not a light/dark
+// variant — it is its own complete skin (see the BRUTALISM block in styles.css),
+// so it replaces the .dark/.light class rather than stacking on it.
+export type Theme = "dark" | "light" | "brutal";
+
+const THEMES: Theme[] = ["dark", "light", "brutal"];
 
 const THEME_STORAGE_KEY = "gd-theme";
 
+// Brutalism runs on paper, so the browser should still paint form controls,
+// scrollbars and overscroll for a light background.
+const COLOR_SCHEME: Record<Theme, string> = { dark: "dark", light: "light", brutal: "light" };
+
+const LABELS: Record<Theme, string> = {
+  dark: "Dark mode",
+  light: "Light mode",
+  brutal: "Brutal mode",
+};
+
+function isTheme(value: string | null): value is Theme {
+  return value === "dark" || value === "light" || value === "brutal";
+}
+
 function getStoredTheme(): Theme {
   if (typeof window === "undefined") return "dark";
-  return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return isTheme(stored) ? stored : "dark";
 }
 
 function applyTheme(theme: Theme) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
-  root.classList.toggle("light", theme === "light");
-  root.classList.toggle("dark", theme === "dark");
-  root.style.colorScheme = theme;
+  for (const name of THEMES) root.classList.toggle(name, name === theme);
+  root.style.colorScheme = COLOR_SCHEME[theme];
 }
 
 export function ThemeToggle({
@@ -33,14 +52,15 @@ export function ThemeToggle({
     applyTheme(stored);
   }, []);
 
-  const nextTheme: Theme = theme === "dark" ? "light" : "dark";
-  const label = theme === "dark" ? "Light mode" : "Dark mode";
+  const nextTheme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+  // The button has always shown where it takes you, not where you are.
+  const Icon = nextTheme === "dark" ? Moon : nextTheme === "light" ? Sun : Square;
 
   return (
     <button
       type="button"
-      aria-label={`Switch to ${nextTheme} mode`}
-      title={`Switch to ${nextTheme} mode`}
+      aria-label={`Switch to ${LABELS[nextTheme].toLowerCase()}`}
+      title={`Switch to ${LABELS[nextTheme].toLowerCase()}`}
       onClick={() => {
         setTheme(nextTheme);
         applyTheme(nextTheme);
@@ -50,8 +70,9 @@ export function ThemeToggle({
         showLabel ? "w-full px-3 text-sm font-medium" : "w-9"
       } ${className}`}
     >
-      {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-      {showLabel && <span>{label}</span>}
+      {/* The heavy stroke is brutal mode's tell at icon size. */}
+      <Icon className="h-4 w-4" strokeWidth={nextTheme === "brutal" ? 3 : 2} />
+      {showLabel && <span>{LABELS[nextTheme]}</span>}
     </button>
   );
 }

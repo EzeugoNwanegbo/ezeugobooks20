@@ -88,11 +88,18 @@ const WINANSI_SAFE =
 function toPdfText(text: string): string {
   let out = text;
   for (const [pattern, replacement] of CHAR_REPLACEMENTS) out = out.replace(pattern, replacement);
-  return out
-    .split("")
-    .map((char) => (WINANSI_SAFE.test(char) ? char : "?"))
-    .join("")
-    .replace(/[ \t]{2,}/g, " ");
+  return (
+    out
+      .split("")
+      .map((char) => (WINANSI_SAFE.test(char) ? char : "?"))
+      .join("")
+      .replace(/[ \t]{2,}/g, " ")
+      // The replacements above pad symbols with spaces so `A→B` reads as
+      // `A -> B`, which leaves a gap when the symbol sat against a bracket:
+      // `(≈ 80 mmHg)` became `( ~ 80 mmHg)`.
+      .replace(/([([{])[ \t]+/g, "$1")
+      .replace(/[ \t]+([)\]}])/g, "$1")
+  );
 }
 
 /**
@@ -224,7 +231,18 @@ export function parseNotesMarkdown(markdown: string): Block[] {
     const quote = trimmed.match(/^>\s?(.*)$/);
     if (quote) {
       flushParagraph();
-      const text = stripInline(quote[1]!);
+      // Consecutive `>` lines are ONE quotation. Parsing them line by line gave
+      // each line its own leading gap and its own accent bar, so a wrapped
+      // two-line quote came out looking like two broken half-quotes.
+      const parts = [quote[1]!];
+      while (i + 1 < lines.length) {
+        const next = lines[i + 1]!.trim().match(/^>\s?(.*)$/);
+        // A bare `>` is a paragraph break inside the quotation: end the block.
+        if (!next || !next[1]!.trim()) break;
+        parts.push(next[1]!);
+        i += 1;
+      }
+      const text = stripInline(parts.join(" "));
       if (text) blocks.push({ kind: "quote", text });
       continue;
     }
@@ -519,8 +537,9 @@ function drawBlocks(layout: Layout, blocks: Block[]): void {
         break;
       }
       case "rule": {
-        ensureSpace(layout, 16);
-        layout.y -= 10;
+        ensureSpace(layout, 22);
+        // A section break needs air above it, not just below.
+        layout.y -= 16;
         layout.page.drawLine({
           start: { x: MARGIN_X, y: layout.y },
           end: { x: MARGIN_X + CONTENT_WIDTH, y: layout.y },

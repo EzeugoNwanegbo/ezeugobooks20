@@ -380,6 +380,180 @@ html {
   --luxury-selection: rgba(126, 93, 38, 0.2);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   BRUTALISM — the third theme (.brutal on <html>, cycled by ThemeToggle)
+   Not a light/dark variant: a complete skin with its own palette, so it
+   REPLACES .dark/.light rather than stacking on it.
+
+   The idea: strip the plate of every soft signal — no radius, no blur, no
+   gradient, no diffuse shadow — and rebuild it out of the two things
+   brutalism actually has, a hard black outline and a solid offset shadow.
+   Colour still arrives only when we know who you are (see the discipline
+   blocks below), because an accent that means nothing is decoration.
+
+   Two rules the structural section at the bottom of this file obeys:
+   1. --pop must survive as TEXT on paper — `text-pop` is everywhere — so the
+      loud flat fills live in --brutal-hi, which only ever carries ink.
+   2. The reading surface (.medai-prose) keeps its metrics and sentence case.
+      Brutalism is the frame; the answer is still the product.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.brutal {
+  /* Structure tokens the brutal rules below are built from. */
+  --brutal-ink: #0d0d0d;
+  --brutal-hi: #ffe23d;
+  --brutal-shadow: 5px 5px 0 0 var(--brutal-ink);
+  --brutal-shadow-sm: 3px 3px 0 0 var(--brutal-ink);
+  --brutal-shadow-xs: 2px 2px 0 0 var(--brutal-ink);
+
+  --background: #f4f1e8;
+  --foreground: #0d0d0d;
+
+  --surface: #fffdf7;
+  --surface-elevated: #ffffff;
+
+  --card: #fffdf7;
+  --card-foreground: #0d0d0d;
+
+  --popover: #ffffff;
+  --popover-foreground: #0d0d0d;
+
+  --primary: #0d0d0d;
+  --primary-foreground: #fffdf7;
+  --primary-glow: #0d0d0d;
+
+  --secondary: #e7e2d2;
+  --secondary-foreground: #0d0d0d;
+
+  --muted: #e7e2d2;
+  --muted-foreground: #4a4740;
+
+  --accent: #0d0d0d;
+  --accent-foreground: #fffdf7;
+
+  /* Warnings get the one genuinely loud hue in the theme. */
+  --coral: #e2452a;
+  --coral-foreground: #fffdf7;
+
+  --destructive: #d92d20;
+  --destructive-foreground: #fffdf7;
+
+  /* Rules are ink. There are no hairlines here. */
+  --border: #0d0d0d;
+  --input: #0d0d0d;
+  --ring: #0d0d0d;
+
+  --source-library: #0d0d0d;
+  --source-general: #4a4740;
+  --source-web: #6b675e;
+
+  --luxury-soft: rgba(13, 13, 13, 0.04);
+  --luxury-soft-strong: rgba(13, 13, 13, 0.09);
+  --luxury-border-soft: #0d0d0d;
+  --luxury-border-strong: #0d0d0d;
+  --luxury-muted: #4a4740;
+  --luxury-subtle: #6b675e;
+  --luxury-faint: #8b8679;
+  --luxury-ai-bg: #fffdf7;
+  /* Selecting text should look like a marker pen, not a tint. */
+  --luxury-selection: #ffe23d;
+  --luxury-button-sheen: transparent;
+  --luxury-code-bg: #e7e2d2;
+  --luxury-pulse: rgba(13, 13, 13, 0.16);
+
+  /* Guest / pre-onboarding: pure structure, so the accent is simply ink. */
+  --pop: #0d0d0d;
+  --pop-2: #0d0d0d;
+  --pop-foreground: #fffdf7;
+  --gradient-pop: none;
+  --shadow-pop: var(--brutal-shadow-sm);
+
+  --leaf: #b58900;
+
+  /* Soft light is the whole thing brutalism refuses. */
+  --gradient-primary: none;
+  --gradient-surface: none;
+  --gradient-glow: none;
+  --shadow-elegant: var(--brutal-shadow);
+  --shadow-glow: none;
+
+  --radius: 0px;
+
+  /* Motion is short and linear — nothing eases into place. */
+  --transition-base: 90ms linear;
+  --motion-emphasis: 120ms;
+  --motion-ease: linear;
+}
+
+/* ── MEDICINE (brutal) ── petrol reads on paper; the loud fill is pale teal ── */
+.brutal[data-discipline="medicine"] {
+  --brutal-hi: #74efdd;
+  --pop: #0b7568;
+  --pop-2: #0b7568;
+  --pop-foreground: #ffffff;
+  --gradient-pop: none;
+  --shadow-pop: var(--brutal-shadow-sm);
+
+  --primary: #0d0d0d;
+  --primary-glow: #0d0d0d;
+  --primary-foreground: #fffdf7;
+  --accent: #0b7568;
+  --accent-foreground: #ffffff;
+  --ring: #0d0d0d;
+  --coral: #e2452a;
+  --coral-foreground: #fffdf7;
+
+  --surface: #fffdf7;
+  --surface-elevated: #ffffff;
+  --border: #0d0d0d;
+  --input: #0d0d0d;
+
+  --source-library: #0b7568;
+  --source-general: #4a4740;
+  --source-web: #6b675e;
+  --leaf: #b58900;
+
+  --luxury-selection: #74efdd;
+
+  --radius: 0px;
+  --motion-emphasis: 120ms;
+  --motion-ease: linear;
+}
+
+/* ── LAW (brutal) ── bronze reads on paper; the loud fill is pale gold ── */
+.brutal[data-discipline="law"] {
+  --brutal-hi: #f5d98a;
+  --pop: #7e5d26;
+  --pop-2: #7e5d26;
+  --pop-foreground: #ffffff;
+  --gradient-pop: none;
+  --shadow-pop: var(--brutal-shadow-sm);
+
+  --primary: #0d0d0d;
+  --primary-glow: #0d0d0d;
+  --primary-foreground: #fffdf7;
+  --accent: #7e5d26;
+  --accent-foreground: #ffffff;
+  --ring: #0d0d0d;
+  --coral: #e2452a;
+  --coral-foreground: #fffdf7;
+
+  --surface: #fffdf7;
+  --surface-elevated: #ffffff;
+  --border: #0d0d0d;
+  --input: #0d0d0d;
+
+  --source-library: #7e5d26;
+  --source-general: #4a4740;
+  --source-web: #6b675e;
+  --leaf: #b58900;
+
+  --luxury-selection: #f5d98a;
+
+  --radius: 0px;
+  --motion-emphasis: 120ms;
+  --motion-ease: linear;
+}
+
 @layer base {
   * {
     border-color: var(--color-border);
@@ -2345,4 +2519,398 @@ html.gd-low-power [style*="gd-dot-wave"] {
 .gd-plate-key,
 .medai-prose table {
   font-variant-numeric: tabular-nums;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BRUTALISM — structure
+   The palette lives in the `.brutal` token block near the top of this file;
+   this section is the SHAPE of the theme, and it applies to every page at once
+   rather than being re-implemented screen by screen.
+
+   Why it can be this blunt: Tailwind's utilities sit in `@layer utilities`, and
+   an UNLAYERED rule beats any layered one regardless of specificity. Every rule
+   below is unlayered, so `.brutal <thing>` wins over `rounded-xl`,
+   `border-pop/25` or `shadow-sm` without a single !important — except where it
+   has to out-shout this file's own unlayered component rules, which is called
+   out at each of the three places it happens.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Nothing is rounded ──
+   !important because this must beat higher-specificity component rules in this
+   same file (.medai-prose pre, .gd-plate-key, …), not just utilities. */
+.brutal *,
+.brutal *::before,
+.brutal *::after {
+  border-radius: 0 !important;
+}
+
+/* ── 2. No soft light ──
+   Blur, glow, ambient blobs and sheens are the exact vocabulary brutalism
+   rejects, so they are removed rather than restyled. */
+.brutal *,
+.brutal *::before,
+.brutal *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  text-shadow: none !important;
+}
+.brutal .symbiote-blob,
+.brutal .blob-one,
+.brutal .blob-two,
+.brutal .blob-three,
+.brutal .app-blob-one,
+.brutal .app-blob-two,
+.brutal .auth-blob-one,
+.brutal .auth-blob-two,
+.brutal .gd-chat-glow,
+.brutal .gd-mark-halo::before,
+.brutal .luxury-primary::before,
+.brutal .luxury-card::before,
+.brutal .gd-side-nav-item::after {
+  display: none !important;
+}
+/* The shimmer sweep across loading skeletons is soft light too — a brutal
+   skeleton is just a solid block. */
+.brutal .gd-skeleton-line::after,
+.brutal .gd-loading-bar::after {
+  animation: none;
+  background: var(--luxury-soft-strong);
+}
+
+/* ── 3. Every outline is ink, and thicker ──
+   `[class~="border"]` matches Tailwind's bare all-sides border and nothing
+   else, so directional utilities (border-b, border-t-0) keep their geometry. */
+.brutal [class~="border"] {
+  border-width: 2px;
+}
+.brutal [class*="border-"]:not([class*="border-transparent"]) {
+  border-color: var(--brutal-ink);
+}
+
+/* ── 4. A bordered box is a card: hard outline, solid offset shadow ──
+   Requiring BOTH a rounded-* and a border-* utility is what keeps this off the
+   app's small fry — status dots, avatars and pills carry a background but no
+   border, so they stay flat instead of sprouting a drop shadow. */
+.brutal [class*="rounded-"][class*="border"]:not([class*="border-transparent"]) {
+  box-shadow: var(--brutal-shadow-xs);
+}
+
+/* ── 5. Controls press into the page ──
+   The classic neo-brutalist mechanic: the control moves onto its own shadow.
+   This deliberately replaces .gd-press's scale(0.93) — it sits later in the
+   file and carries an extra element selector, so it wins on both counts. */
+.brutal button,
+.brutal [role="button"] {
+  font-weight: 700;
+}
+.brutal button:active:not(:disabled),
+.brutal [role="button"]:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+.brutal :focus-visible {
+  outline: 3px solid var(--brutal-ink);
+  outline-offset: 2px;
+}
+
+/* The hero send button — the app's one full-colour control. */
+.brutal .btn-pop {
+  background: var(--pop);
+  color: var(--pop-foreground);
+  border: 2px solid var(--brutal-ink);
+  box-shadow: var(--brutal-shadow-sm);
+  transition: none;
+}
+.brutal .btn-pop:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 0 var(--brutal-ink);
+  filter: none;
+}
+.brutal .btn-pop:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+.brutal .btn-pop:disabled {
+  background: var(--muted);
+  border-color: var(--brutal-ink);
+  box-shadow: none;
+  opacity: 1;
+}
+
+/* ── 6. Type: interface headings shout, the answer does not ── */
+.brutal h1,
+.brutal h2,
+.brutal h3,
+.brutal .luxury-card h2,
+.brutal .gd-page-kicker,
+.brutal .gd-nav-label {
+  text-transform: uppercase;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+}
+.brutal .font-medium,
+.brutal .font-semibold,
+.brutal .font-bold {
+  font-weight: 700;
+}
+/* The reading surface is exempt. A clinical heading set in caps across four
+   lines is a worse answer, and the answer is the product. */
+.brutal .medai-prose h1,
+.brutal .medai-prose h2,
+.brutal .medai-prose h3 {
+  text-transform: none;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+/* The wordmark keeps its own protected face and casing. */
+.brutal .luxury-brand-text,
+.brutal .gd-sidebar-brand,
+.brutal .luxury-logo {
+  letter-spacing: normal;
+}
+
+/* ── 7. The answer plate ── */
+.brutal .ai-response-document {
+  background: var(--luxury-ai-bg);
+}
+/* The short accent bar under each section heading becomes a solid ink rule —
+   the gradient it normally uses is `none` in this theme. */
+.brutal .medai-prose h2::after,
+.brutal .medai-prose h3::after {
+  background: var(--brutal-ink);
+  height: 4px;
+}
+.brutal .medai-prose h2:not(:first-child),
+.brutal .medai-prose h3:not(:first-child) {
+  border-top: 2px solid var(--brutal-ink);
+}
+.brutal .medai-prose pre {
+  border: 2px solid var(--brutal-ink);
+  background: var(--luxury-code-bg);
+}
+.brutal .medai-prose code {
+  border: 1px solid var(--brutal-ink);
+  background: var(--luxury-code-bg);
+  color: var(--foreground);
+}
+.brutal .medai-prose blockquote {
+  border-left: 6px solid var(--brutal-ink);
+  padding-left: 14px;
+}
+.brutal .medai-prose table,
+.brutal .medai-prose th,
+.brutal .medai-prose td {
+  border: 2px solid var(--brutal-ink);
+}
+.brutal .medai-prose th {
+  background: var(--brutal-hi);
+  color: var(--brutal-ink);
+  text-transform: uppercase;
+  font-weight: 800;
+}
+.brutal .medai-prose hr {
+  border-top: 3px solid var(--brutal-ink);
+}
+.brutal .medai-prose .gd-mermaid {
+  border: 2px solid var(--brutal-ink);
+  background: var(--surface-elevated);
+}
+/* Key terms read as marker-pen underlines rather than a soft tint. */
+.brutal .ai-term-trigger {
+  border-bottom: 2px solid var(--brutal-ink);
+  background: transparent;
+}
+.brutal .ai-term-trigger:hover,
+.brutal .ai-term-trigger:focus-visible {
+  background: var(--brutal-hi);
+  color: var(--brutal-ink);
+}
+.brutal .ai-term-popover,
+.brutal .luxury-panel {
+  border: 2px solid var(--brutal-ink);
+  background: var(--popover);
+  box-shadow: var(--brutal-shadow);
+}
+
+/* ── 8. App shell ── */
+.brutal .gd-app-sidebar,
+.brutal .gd-mobile-menu {
+  background: var(--surface);
+  border-right: 3px solid var(--brutal-ink);
+}
+.brutal .gd-app-sidebar::before {
+  display: none;
+}
+.brutal .gd-side-nav-item {
+  border: 2px solid transparent;
+  font-weight: 700;
+}
+/* !important: the base rule this replaces is itself !important. */
+.brutal .gd-side-nav-item:hover {
+  background: var(--luxury-soft-strong) !important;
+  border-color: var(--brutal-ink);
+}
+.brutal .gd-side-nav-item.gd-side-nav-active {
+  background: var(--brutal-hi) !important;
+  border-color: var(--brutal-ink);
+  color: var(--brutal-ink);
+  box-shadow: var(--brutal-shadow-xs);
+}
+/* The per-item nav accents are a colour system this theme does not have. */
+.brutal .gd-side-nav-item svg,
+.brutal .gd-side-nav-item.gd-side-nav-active svg {
+  color: currentColor;
+}
+.brutal .gd-profile-mark {
+  background: var(--brutal-hi);
+  color: var(--brutal-ink);
+  border: 2px solid var(--brutal-ink);
+}
+.brutal .gd-sidebar-profile {
+  border-top: 3px solid var(--brutal-ink);
+}
+.brutal .gd-library-header,
+.brutal .gd-coach-header,
+.brutal .gd-last-minute-header {
+  border-bottom: 3px solid var(--brutal-ink);
+  background: var(--surface);
+}
+.brutal .gd-library-dropzone {
+  border: 3px dashed var(--brutal-ink);
+  background: var(--surface);
+}
+.brutal .gd-plate-key {
+  border: 2px solid var(--brutal-ink);
+  background: var(--brutal-hi);
+  color: var(--brutal-ink);
+}
+.brutal .gd-plate-key-label {
+  color: var(--brutal-ink);
+}
+.brutal .segmented-thumb {
+  border: 2px solid var(--brutal-ink);
+  background: var(--brutal-hi);
+  box-shadow: none;
+}
+.brutal .ai-inline-composer,
+.brutal .ai-inline-thread,
+.brutal .ai-inline-quote {
+  border: 2px solid var(--brutal-ink);
+  background: var(--surface);
+}
+.brutal .gd-eyebrow::before {
+  background: var(--brutal-ink);
+}
+/* The student's name in the greeting, marked up like a highlighter pass. */
+.brutal .gd-name-accent {
+  background: var(--brutal-hi);
+  color: var(--brutal-ink);
+  box-shadow: 0 0 0 4px var(--brutal-hi);
+}
+
+/* ── 9. Landing, auth and onboarding ──
+   The public pages get the same treatment; a theme that stops at the app door
+   is not a theme. */
+.brutal .luxury-nav {
+  border-bottom: 3px solid var(--brutal-ink);
+}
+.brutal .luxury-nav-links a {
+  color: var(--foreground);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.brutal .luxury-nav-links a:hover {
+  background: var(--brutal-hi);
+  box-shadow: 0 0 0 4px var(--brutal-hi);
+}
+.brutal .luxury-eyebrow {
+  display: inline-block;
+  border: 2px solid var(--brutal-ink);
+  background: var(--brutal-hi);
+  color: var(--brutal-ink);
+  padding: 4px 10px;
+  font-weight: 800;
+}
+.brutal .luxury-hero h1 {
+  text-transform: uppercase;
+  font-weight: 800;
+  line-height: 0.95;
+}
+.brutal .luxury-hero h1 em {
+  font-style: normal;
+  background: var(--brutal-hi);
+  color: var(--brutal-ink);
+  box-shadow: 0 0 0 6px var(--brutal-hi);
+}
+.brutal .luxury-primary,
+.brutal .luxury-ghost {
+  border: 3px solid var(--brutal-ink);
+  box-shadow: var(--brutal-shadow);
+  font-weight: 800;
+  text-transform: uppercase;
+  transition: none;
+}
+.brutal .luxury-primary {
+  background: var(--pop);
+  color: var(--pop-foreground);
+}
+.brutal .luxury-ghost {
+  background: var(--surface);
+  color: var(--foreground);
+  padding: 0 24px;
+}
+.brutal .luxury-primary:hover,
+.brutal .luxury-ghost:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 7px 7px 0 0 var(--brutal-ink);
+}
+.brutal .luxury-primary:active,
+.brutal .luxury-ghost:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+.brutal .luxury-card {
+  border: 3px solid var(--brutal-ink);
+  background: var(--surface);
+  box-shadow: var(--brutal-shadow);
+  transition: none;
+}
+.brutal .luxury-card:hover {
+  transform: translate(-3px, -3px);
+  box-shadow: 8px 8px 0 0 var(--brutal-ink);
+}
+.brutal .luxury-card p {
+  color: var(--brutal-ink);
+  font-weight: 700;
+}
+.brutal .luxury-footer {
+  border-top: 3px solid var(--brutal-ink);
+  color: var(--foreground);
+}
+.brutal .luxury-ticker {
+  border-top: 3px solid var(--brutal-ink);
+  border-bottom: 3px solid var(--brutal-ink);
+  background: var(--brutal-ink);
+  color: var(--background);
+}
+.brutal .availability-dot {
+  border: 2px solid var(--brutal-ink);
+  box-shadow: none;
+}
+/* A previewed PDF page is a sheet of paper on the desk: hard outline, hard
+   shadow, no soft lift (src/components/pdf-preview.tsx). */
+.brutal .gd-pdf-page {
+  border: 2px solid var(--brutal-ink);
+  box-shadow: var(--brutal-shadow-sm);
+  --tw-ring-shadow: 0 0 #0000;
+}
+
+.brutal .google-g-mark,
+.brutal .ai-symbiote-mark {
+  border: 2px solid var(--brutal-ink);
+}
+.brutal .ai-symbiote-mark::before,
+.brutal .ai-symbiote-mark::after {
+  display: none;
 }

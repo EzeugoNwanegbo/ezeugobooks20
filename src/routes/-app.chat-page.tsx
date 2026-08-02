@@ -3,6 +3,8 @@ import {
   Children,
   cloneElement,
   isValidElement,
+  lazy,
+  Suspense,
   useEffect,
   useMemo,
   useRef,
@@ -29,6 +31,7 @@ import { isNativeApp } from "@/lib/native";
 import { lookupTerm, isTermLookupComplete, type TermLookupState } from "@/lib/term-lookup";
 import { embedQuery } from "@/lib/embeddings";
 import { getCached, setCached } from "@/lib/data-cache";
+import { importChunk } from "@/lib/lazy-import";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -68,8 +71,13 @@ import {
   Scissors,
   Pencil,
   Check,
+  Loader2,
 } from "lucide-react";
 import { LoadingDots } from "@/components/loading-dots";
+
+// The notes-PDF viewer drags in pdfjs, so it loads only when a student actually
+// asks to see a PDF — not on every chat page view.
+const PdfPreview = lazy(() => importChunk(() => import("@/components/pdf-preview")));
 
 // GitHub-flavoured markdown (tables, ~~strikethrough~~, task lists, `---` rules).
 // Hoisted to a module constant so every <ReactMarkdown> shares one stable array
@@ -3972,12 +3980,13 @@ function MermaidDiagram({ code, streaming }: { code: string; streaming?: boolean
     (async () => {
       try {
         const mermaid = (await import("mermaid")).default;
-        const isLight = document.documentElement.classList.contains("light");
+        // Light and brutal both run on paper; only the dark theme is dark.
+        const isDark = document.documentElement.classList.contains("dark");
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: "strict",
           suppressErrorRendering: true,
-          theme: isLight ? "neutral" : "dark",
+          theme: isDark ? "dark" : "neutral",
           fontFamily: "inherit",
         });
 
@@ -4238,9 +4247,18 @@ function Message({
   const [speaking, setSpeaking] = useState(false);
   // Per-answer "Copy" — flips to a checkmark for a beat after a successful copy.
   const [answerCopied, setAnswerCopied] = useState(false);
-  // Detailed+ answers offer a PDF once they finish: ask -> build -> saved, or
-  // dismissed if the student says not now.
-  const [pdfState, setPdfState] = useState<"ask" | "building" | "saved" | "dismissed">("ask");
+  // Detailed+ answers offer a PDF once they finish: ask -> build -> ready, or
+  // dismissed if the student says not now. "ready" shows the real pages inline;
+  // downloading is a separate, deliberate step after seeing them.
+  const [pdfState, setPdfState] = useState<"ask" | "building" | "ready" | "dismissed">("ask");
+  // The built file, kept in memory so the preview and the download are the same
+  // bytes — the PDF is never rebuilt just to save it.
+  const [pdfFile, setPdfFile] = useState<{
+    bytes: Uint8Array;
+    filename: string;
+    title: string;
+  } | null>(null);
+  const [pdfSaved, setPdfSaved] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(msg.content);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -4291,22 +4309,45 @@ function Message({
   // Study-notes answers are the ones worth exporting, so only they get the offer.
   const isNotesAnswer = msg.role === "assistant" && msg.mode === "Detailed+";
 
-  // Builds the PDF in the browser (pdf-lib, loaded on demand) and hands it
-  // straight to the download — nothing is uploaded and no server is involved.
-  const saveNotesPdf = async () => {
+  // A regenerated answer — or flipping to another version of it — makes any PDF
+  // already built from the old text wrong, so the offer starts over.
+  useEffect(() => {
+    setPdfFile(null);
+    setPdfSaved(false);
+    setPdfState("ask");
+  }, [cleanedContent]);
+
+  // Builds the PDF in the browser (pdf-lib, loaded on demand) and shows it —
+  // nothing is uploaded and no server is involved. The file only reaches the
+  // downloads folder if the student asks for it after seeing the preview.
+  const buildNotesPreview = async () => {
     setPdfState("building");
     try {
-      const { buildNotesPdf, downloadPdfBytes } = await import("@/lib/notes-pdf");
-      const { bytes, filename } = await buildNotesPdf(cleanedContent, {
+      const { buildNotesPdf } = await importChunk(() => import("@/lib/notes-pdf"));
+      const { bytes, filename, title } = await buildNotesPdf(cleanedContent, {
         fallbackTitle: question?.trim().replace(/\s+/g, " ").slice(0, 90),
         studentName: profile.name || undefined,
       });
-      downloadPdfBytes(bytes, filename);
-      setPdfState("saved");
+      setPdfFile({ bytes, filename, title });
+      setPdfSaved(false);
+      setPdfState("ready");
     } catch (error) {
       console.error("notes pdf", error);
       toast.error("Couldn't build the PDF — try again.");
       setPdfState("ask");
+    }
+  };
+
+  // Hands the already-built bytes to the browser's download.
+  const saveNotesPdf = async () => {
+    if (!pdfFile) return;
+    try {
+      const { downloadPdfBytes } = await importChunk(() => import("@/lib/notes-pdf"));
+      downloadPdfBytes(pdfFile.bytes, pdfFile.filename);
+      setPdfSaved(true);
+    } catch (error) {
+      console.error("notes pdf download", error);
+      toast.error("Couldn't save the PDF — try again.");
     }
   };
 
@@ -5139,18 +5180,24 @@ function Message({
         )}
         {isNotesAnswer && displayContent && !streaming && pdfState !== "dismissed" && (
           <div className="mt-3 rounded-xl border border-pop/25 bg-pop/[0.05] px-3 py-2.5">
-            {pdfState === "saved" ? (
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
-                <Check className="h-3.5 w-3.5 shrink-0 text-pop" />
-                <span className="font-medium text-foreground">Saved to your downloads.</span>
-                <button
-                  type="button"
-                  onClick={saveNotesPdf}
-                  className="text-[12px] font-medium text-pop underline-offset-2 hover:underline"
-                >
-                  Save again
-                </button>
-              </div>
+            {pdfState === "ready" && pdfFile ? (
+              <Suspense
+                fallback={
+                  <div className="flex items-center gap-2 py-6 text-[12px] text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Opening preview…
+                  </div>
+                }
+              >
+                <PdfPreview
+                  bytes={pdfFile.bytes}
+                  filename={pdfFile.filename}
+                  title={pdfFile.title}
+                  saved={pdfSaved}
+                  onDownload={saveNotesPdf}
+                  onDismiss={() => setPdfState("dismissed")}
+                />
+              </Suspense>
             ) : (
               <>
                 <div className="flex items-start gap-2">
@@ -5162,12 +5209,12 @@ function Message({
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={saveNotesPdf}
+                    onClick={buildNotesPreview}
                     disabled={pdfState === "building"}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-pop px-2.5 py-1 text-[12px] font-medium text-pop-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
                   >
                     <FileDown className="h-3.5 w-3.5" />
-                    {pdfState === "building" ? "Building PDF…" : "Yes, make the PDF"}
+                    {pdfState === "building" ? "Building PDF…" : "Yes, show me the PDF"}
                   </button>
                   <button
                     type="button"
