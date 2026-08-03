@@ -30,7 +30,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { ThemePicker, ThemeToggle } from "@/components/theme-toggle";
 import { AppShellSkeleton } from "@/components/app-skeletons";
 import { FeatureTour } from "@/components/feature-tour";
 import { hasSeenTour } from "@/lib/feature-tour";
@@ -504,11 +504,15 @@ function AppLayout() {
             isSidebarCollapsed ? "flex flex-col items-center gap-3 p-4" : "p-4"
           }`}
         >
+          {/* max-h is the collapse animation's travel, but it also clips. This
+              block stacks a name, a points/level/streak line and a
+              year/university line, which overrun 56px and were cut off at the
+              bottom. 96px leaves headroom without changing the motion. */}
           <div
             className={`gd-sidebar-profile overflow-hidden px-2 transition-all duration-300 ${
               isSidebarCollapsed
                 ? "mb-0 max-h-0 -translate-y-1 opacity-0"
-                : "mb-3 max-h-14 translate-y-0 opacity-100"
+                : "mb-3 max-h-24 translate-y-0 opacity-100"
             }`}
             aria-hidden={isSidebarCollapsed}
           >
@@ -550,9 +554,9 @@ function AppLayout() {
               Guide
             </span>
           </button>
-          <div className={isSidebarCollapsed ? "" : "mb-2 px-3"}>
-            <ThemeToggle showLabel={!isSidebarCollapsed} />
-          </div>
+          {/* Expanded, the side menu has room to show all four themes at once;
+              collapsed it does not, so it falls back to the cycling button. */}
+          {isSidebarCollapsed ? <ThemeToggle /> : <ThemePicker className="mb-2 px-3" />}
           <button
             onClick={async () => {
               if (await confirmAndSignOut()) navigate({ to: "/" });
@@ -787,17 +791,18 @@ function AppLayout() {
             className="shrink-0 border-t border-border/50 px-3 py-3"
             style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
           >
-            <div className="mb-2 flex items-center justify-between px-1">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold leading-tight">
-                  {profile.name || "Student"}
-                </div>
-                <div className="truncate text-[11px] text-muted-foreground">
-                  {[profile.year, profile.university].filter(Boolean).join(" · ")}
-                </div>
+            {/* The name had to share this row with the theme button, which
+                truncated it early on narrow phones. It gets the full width now,
+                and the theme control moves to its own row below. */}
+            <div className="mb-2 min-w-0 px-1">
+              <div className="truncate text-sm font-semibold leading-tight">
+                {profile.name || "Student"}
               </div>
-              <ThemeToggle />
+              <div className="truncate text-[11px] text-muted-foreground">
+                {[profile.year, profile.university].filter(Boolean).join(" · ")}
+              </div>
             </div>
+            <ThemePicker className="mb-3 px-1" />
             <div className="flex gap-1">
               <button
                 type="button"
