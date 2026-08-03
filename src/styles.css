@@ -124,8 +124,12 @@ html {
   --destructive: #b66b5f;
   --destructive-foreground: #1b1d0e;
 
-  --border: rgba(228, 228, 204, 0.1);
-  --input: rgba(228, 228, 204, 0.12);
+  --border: rgba(228, 228, 204, 0.14);
+  /* Fields carry a stronger edge than plain borders. Minimalism removed the
+     shadows that used to hint where a control was, so the one remaining cue —
+     the outline — has to actually be visible. At 0.12 a textarea on
+     bg-background was indistinguishable from the page. */
+  --input: rgba(228, 228, 204, 0.26);
   --ring: #c8c8b0;
 
   /* Source badges */
@@ -294,8 +298,8 @@ html {
 
   --surface: #0d1214;
   --surface-elevated: #151c1e;
-  --border: rgba(216, 230, 226, 0.1);
-  --input: rgba(216, 230, 226, 0.12);
+  --border: rgba(216, 230, 226, 0.14);
+  --input: rgba(216, 230, 226, 0.26);
 
   --source-library: #3fdac8;
   --source-general: #8fb8b2;
@@ -330,8 +334,8 @@ html {
 
   --surface: #12100c;
   --surface-elevated: #1c1812;
-  --border: rgba(226, 208, 177, 0.11);
-  --input: rgba(226, 208, 177, 0.13);
+  --border: rgba(226, 208, 177, 0.15);
+  --input: rgba(226, 208, 177, 0.27);
 
   --source-library: #cba35c;
   --source-general: #a99878;
@@ -3099,6 +3103,17 @@ html.gd-low-power [style*="gd-dot-wave"] {
    every message in the thread. (Same trap as the brutal rule above.) */
 .dark .gd-chat-glow {
   background: none;
+}
+
+/* Fields read as wells, not as holes.
+   Many inputs are written as `bg-background`, which in dark is the SAME colour
+   as the page — so with the ambient shadows gone a textarea had no fill and a
+   near-invisible edge. Lifting them onto --surface restores the one cue
+   minimalism is allowed: a change of plane. */
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.dark textarea,
+.dark select {
+  background-color: var(--surface);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

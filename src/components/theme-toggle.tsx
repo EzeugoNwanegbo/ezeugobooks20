@@ -75,6 +75,10 @@ export function ThemeToggle({
           ? Square
           : Circle;
 
+  // Dark is the default now, and its accent treatment is far quieter than
+  // brutal's hard ink outline — at border-pop/35 + bg-pop/10 the control was
+  // easy to miss entirely. Stronger edge and fill so it reads as a button in
+  // every skin; brutal overrides the border to ink regardless.
   return (
     <button
       type="button"
@@ -85,7 +89,7 @@ export function ThemeToggle({
         applyTheme(nextTheme);
         window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
       }}
-      className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-pop/35 bg-pop/10 text-pop shadow-sm transition-colors hover:bg-pop/20 hover:text-pop ${
+      className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-pop/60 bg-pop/15 text-pop shadow-sm transition-colors hover:bg-pop/25 hover:text-pop ${
         showLabel ? "w-full px-3 text-sm font-medium" : "w-9"
       } ${className}`}
     >
