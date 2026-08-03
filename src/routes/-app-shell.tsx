@@ -34,6 +34,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { AppShellSkeleton } from "@/components/app-skeletons";
 import { FeatureTour } from "@/components/feature-tour";
 import { hasSeenTour } from "@/lib/feature-tour";
+import { LibraryAnnouncement } from "@/components/library-announcement";
+import { hasSeenAnnouncement } from "@/lib/announcement";
 import { useAuth } from "@/lib/auth-context";
 import { isGuestUser } from "@/lib/guest-session";
 import { rememberRoute } from "@/lib/last-route";
@@ -69,8 +71,8 @@ function AppLayout() {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [hideMobileTopbar, setHideMobileTopbar] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
-  const [gamification, setGamification] =
-    useState<GamificationStats>(emptyGamificationStats);
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const [gamification, setGamification] = useState<GamificationStats>(emptyGamificationStats);
 
   useEffect(() => {
     const handleChatScroll = (e: Event) => {
@@ -96,6 +98,22 @@ function AppLayout() {
     const timer = window.setTimeout(() => setTourOpen(true), 900);
     return () => window.clearTimeout(timer);
   }, [loading, profile]);
+
+  // "Textbooks are built in now" — shown once, to returning students only.
+  // Three gates, each for a reason:
+  //   hasSeenTour()  - a brand-new user gets the guided tour instead; stacking a
+  //                    what's-new dialog on a first run is just noise.
+  //   discipline     - the first shelf is medicine-only, and the library is
+  //                    discipline-scoped, so a law student would be told about
+  //                    books they cannot see.
+  //   !tourOpen      - never two dialogs at once.
+  useEffect(() => {
+    if (loading || !profile || tourOpen) return;
+    if (!hasSeenTour() || hasSeenAnnouncement()) return;
+    if (profile.discipline !== "medicine") return;
+    const timer = window.setTimeout(() => setAnnouncementOpen(true), 900);
+    return () => window.clearTimeout(timer);
+  }, [loading, profile, tourOpen]);
 
   // Theme the whole app to the student's discipline (medicine/law) via a
   // root attribute, parallel to the .dark/.light theme classes. Guests and
@@ -402,7 +420,6 @@ function AppLayout() {
         </AlertDialogContent>
       </AlertDialog>
 
-
       <aside
         className={`gd-app-sidebar hidden md:flex flex-col overflow-hidden border-r border-border/70 bg-background/95 transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] md:shrink-0 ${isSidebarCollapsed ? "md:w-16 xl:w-16" : "md:w-60 xl:w-64"}`}
       >
@@ -470,7 +487,12 @@ function AppLayout() {
               "slate",
               "nav-history",
             )}
-            {navItem("/app/leaderboard", <Trophy className="h-4 w-4 shrink-0" />, "Leaderboard", "amber")}
+            {navItem(
+              "/app/leaderboard",
+              <Trophy className="h-4 w-4 shrink-0" />,
+              "Leaderboard",
+              "amber",
+            )}
             {navItem("/app/feedback", <Heart className="h-4 w-4 shrink-0" />, "Feedback")}
             {navItem("/app/settings", <Settings className="h-4 w-4 shrink-0" />, "Settings")}
             {profile?.is_admin &&
@@ -491,7 +513,9 @@ function AppLayout() {
             aria-hidden={isSidebarCollapsed}
           >
             <div className="flex items-center gap-2">
-              <span className="gd-profile-mark">{(profile.name || "S").slice(0, 1).toUpperCase()}</span>
+              <span className="gd-profile-mark">
+                {(profile.name || "S").slice(0, 1).toUpperCase()}
+              </span>
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
                 <div className="truncate text-[11px] text-muted-foreground">
@@ -802,7 +826,6 @@ function AppLayout() {
           </div>
         </aside>
 
-
         <main
           onTouchStart={onContentTouchStart}
           onTouchEnd={onContentTouchEnd}
@@ -821,6 +844,8 @@ function AppLayout() {
           <Outlet />
         </main>
       </div>
+
+      <LibraryAnnouncement open={announcementOpen} onClose={() => setAnnouncementOpen(false)} />
 
       <FeatureTour
         open={tourOpen}

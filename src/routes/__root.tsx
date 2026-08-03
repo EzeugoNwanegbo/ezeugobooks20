@@ -8,8 +8,8 @@ const themeInitScript = `
 (function () {
   try {
     var stored = window.localStorage.getItem("gd-theme");
-    // Brutal is the default; an explicit stored choice always wins.
-    var theme = stored === "light" || stored === "dark" ? stored : "brutal";
+    // Dark is the default; an explicit stored choice always wins.
+    var theme = stored === "light" || stored === "brutal" || stored === "neo" ? stored : "dark";
     var root = document.documentElement;
     var nav = window.navigator || {};
     var memory = Number(nav.deviceMemory || 0);
@@ -22,9 +22,11 @@ const themeInitScript = `
     root.classList.toggle("light", theme === "light");
     root.classList.toggle("dark", theme === "dark");
     root.classList.toggle("brutal", theme === "brutal");
+    root.classList.toggle("neo", theme === "neo");
     root.classList.toggle("gd-low-power", lowPower);
-    // Brutalism is a paper theme, so it takes the light color-scheme.
-    root.style.colorScheme = theme === "dark" ? "dark" : "light";
+    // Brutalism is a paper theme, so it takes the light color-scheme; neo is
+    // charcoal and takes the dark one.
+    root.style.colorScheme = theme === "light" || theme === "brutal" ? "light" : "dark";
   } catch (_) {}
 })();
 `;
@@ -85,7 +87,7 @@ export const Route = createRootRoute({
 
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="brutal" suppressHydrationWarning>
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <HeadContent />

@@ -93,6 +93,10 @@ export function LibraryPage() {
   const [folders, setFolders] = useState<FolderRow[]>([]);
   const [docs, setDocs] = useState<DocRow[]>([]);
   const [libraryBooks, setLibraryBooks] = useState<{ id: string; title: string }[]>([]);
+  // Which of this user's documents have already been offered to the shared
+  // library, keyed by source document id -> submission status. Drives the card
+  // affordance so "Share" never invites a second, duplicate submission.
+  const [sharedStatus, setSharedStatus] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<string>("");
@@ -708,6 +712,17 @@ export function LibraryPage() {
         backfillMissingEmbeddings(user.id).catch((err) =>
           console.warn("post-save embedding backfill skipped", err),
         );
+        // Point at the sharing option while the upload is still the thing the
+        // user is looking at. The button lives on each card; this is the nudge
+        // that tells them it exists at all.
+        setTimeout(() => {
+          toast("Want other students to have this?", {
+            description:
+              savedCount === 1
+                ? 'Tap "Share with everyone" on the file to offer it to the shared library — you earn points if it\'s approved.'
+                : 'Tap "Share with everyone" on any file to offer it to the shared library — you earn points if it\'s approved.',
+          });
+        }, 1200);
       }
       if (chunkSaveFailed) {
         toast.warning("Saved, but searchable chunks need the database migration.");
@@ -775,10 +790,34 @@ export function LibraryPage() {
     };
   }, [profile?.discipline]);
 
+  // This user's own submissions. RLS already scopes library_documents to
+  // "approved OR submitted_by = me", so filtering by the current user is what
+  // separates my pending books from the world's approved ones.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from("library_documents")
+        .select("source_document_id, status")
+        .eq("submitted_by", user.id);
+      if (cancelled || !data) return;
+      const next: Record<string, string> = {};
+      for (const row of data) {
+        if (row.source_document_id) next[row.source_document_id] = row.status;
+      }
+      setSharedStatus(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   // Offer an uploaded doc to the shared library. It lands as a pending
   // submission the admin reviews; the student earns points if it's approved.
   const shareToLibrary = async (doc: DocRow) => {
     if (!user) return;
+    if (sharedStatus[doc.id]) return;
     if (
       !confirm(
         `Share "${doc.file_name}" with other students?\n\nIt will be reviewed before it appears in the shared library. You earn points if it's approved.`,
@@ -799,6 +838,7 @@ export function LibraryPage() {
         status: "pending",
       });
       if (error) throw error;
+      setSharedStatus((prev) => ({ ...prev, [doc.id]: "pending" }));
       toast.success("Sent for review — you'll earn points if it's approved for the library.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not share this document");
@@ -1223,6 +1263,7 @@ export function LibraryPage() {
                     onDelete={onDelete}
                     onMove={moveDoc}
                     onShare={shareToLibrary}
+                    shareStatus={sharedStatus[d.id]}
                   />
                 ))}
               </div>
@@ -1354,6 +1395,7 @@ function DocumentCard({
   onDelete,
   onMove,
   onShare,
+  shareStatus,
 }: {
   doc: DocRow;
   folderName: string;
@@ -1362,6 +1404,8 @@ function DocumentCard({
   onDelete: (doc: DocRow) => void;
   onMove: (docId: string, folderId: string | null) => void;
   onShare: (doc: DocRow) => void;
+  /** Submission status if this doc was already offered to the library. */
+  shareStatus?: string;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const meta = [folderName, doc.page_count ? `${doc.page_count} pages` : null]
@@ -1413,18 +1457,6 @@ function DocumentCard({
                       {f.name}
                     </button>
                   ))}
-                {!isProcessing && (
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onShare(doc);
-                    }}
-                    className="flex w-full items-center gap-2 border-t border-border px-3 py-2 text-left text-sm hover:bg-surface-elevated"
-                  >
-                    <BookUp className="h-3.5 w-3.5 text-pop" />
-                    Share to library
-                  </button>
-                )}
                 <button
                   onClick={() => {
                     setMenuOpen(false);
@@ -1448,13 +1480,48 @@ function DocumentCard({
         <div className="mt-1 truncate text-xs text-muted-foreground">{meta}</div>
       </div>
 
-      <span
-        className={`inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-          isProcessing ? "bg-pop/12 text-pop" : "bg-leaf/12 text-leaf"
-        }`}
-      >
-        {isProcessing ? "Processing" : "Indexed"}
-      </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={`inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+            isProcessing ? "bg-pop/12 text-pop" : "bg-leaf/12 text-leaf"
+          }`}
+        >
+          {isProcessing ? "Processing" : "Indexed"}
+        </span>
+
+        {/* Sharing used to be buried in the "..." menu, where nobody found it.
+            It sits on the face of the card now: one tap, states its reward, and
+            turns into a status pill once submitted. */}
+        {!isProcessing &&
+          (shareStatus ? (
+            <span
+              className="inline-flex w-fit items-center gap-1 rounded-full bg-surface-elevated px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+              title={
+                shareStatus === "approved"
+                  ? "This book is in the shared library"
+                  : shareStatus === "rejected"
+                    ? "Not accepted for the shared library"
+                    : "Waiting for review"
+              }
+            >
+              <BookUp className="h-3 w-3" />
+              {shareStatus === "approved"
+                ? "In shared library"
+                : shareStatus === "rejected"
+                  ? "Not accepted"
+                  : "Pending review"}
+            </span>
+          ) : (
+            <button
+              onClick={() => onShare(doc)}
+              className="inline-flex items-center gap-1 rounded-full border border-pop/40 bg-pop/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-pop transition-colors hover:bg-pop/20"
+              title="Offer this to every student on G&D. You earn points if it's approved."
+            >
+              <BookUp className="h-3 w-3" />
+              Share with everyone
+            </button>
+          ))}
+      </div>
     </div>
   );
 }

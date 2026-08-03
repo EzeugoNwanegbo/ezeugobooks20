@@ -395,7 +395,7 @@ export function SettingsPage() {
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-wider text-pop">Appearance</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Cycle through dark, light and brutal.
+              Cycle through dark, light, brutal and soft.
             </p>
           </div>
           <ThemeToggle />

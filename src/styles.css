@@ -155,18 +155,24 @@ html {
   --pop-2: #d8d3c6;
   --pop-foreground: #12161c;
   --gradient-pop: none;
-  --shadow-pop: 0 8px 22px -10px rgba(0, 0, 0, 0.55);
+  --shadow-pop: none;
 
   /* One warm supporting tone (brass/gold) - used ONLY to signal "answered from
      your own files", like a highlight on your own material. */
   --leaf: #e6c15a;
 
-  /* Shadows */
+  /* Shadows — MINIMALISM.
+     Dark is the default skin now, and its brief is restraint: depth comes from
+     the surface ramp (background -> surface -> surface-elevated), not from a
+     cast shadow or a glow. What is left is a single hairline lift, enough to
+     separate a card from the page and nothing more. The old deep drop shadow
+     and accent halo are kept as tokens set to `none` rather than deleted, so
+     every consumer of --shadow-glow / --shadow-pop keeps working. */
   --gradient-primary: none;
   --gradient-surface: none;
   --gradient-glow: none;
-  --shadow-elegant: 0 18px 70px -38px rgba(0, 0, 0, 0.86);
-  --shadow-glow: 0 0 34px rgba(228, 228, 204, 0.1);
+  --shadow-elegant: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-glow: none;
 
   --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
 
@@ -565,6 +571,139 @@ html {
   --radius: 0px;
   --motion-emphasis: 120ms;
   --motion-ease: linear;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEOMORPHISM — the fourth theme (.neo on <html>, cycled by ThemeToggle)
+   Like brutalism it is a complete skin, not a light/dark variant, so it
+   REPLACES .dark/.light rather than stacking on it.
+
+   The idea is the opposite of brutalism: instead of an outline and a hard
+   offset, every surface is the SAME colour as the page and is separated only
+   by light — a pale highlight up-left, a deep shadow down-right, as if the
+   control were pressed out of a single sheet. So: no borders, big radii, and
+   two shadows doing all the structural work.
+
+   Two things this theme has to get right, because they are where neomorphism
+   usually fails:
+   1. Contrast. Classic neomorphism tints text toward the background and lands
+      around 2:1, which is unreadable. Here the plate is charcoal and the ink
+      stays near-white (#e9eaec on #272a30 ≈ 11.5:1) — the softness lives in
+      the SHADOWS, never in the text.
+   2. Affordance. If everything is extruded, nothing reads as interactive. So
+      raised = actionable, inset = accepting input (fields, wells, pressed
+      states). That split is what keeps the interface legible.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.neo {
+  /* The single sheet everything is pressed out of, plus the two lights. */
+  --neo-plate: #272a30;
+  --neo-dark: #1d1f24;
+  --neo-light: #31353c;
+  --neo-out: 6px 6px 12px var(--neo-dark), -6px -6px 12px var(--neo-light);
+  --neo-out-sm: 3px 3px 7px var(--neo-dark), -3px -3px 7px var(--neo-light);
+  --neo-in: inset 4px 4px 8px var(--neo-dark), inset -4px -4px 8px var(--neo-light);
+
+  /* Page and every surface share one colour — that is the whole conceit. */
+  --background: #272a30;
+  --foreground: #e9eaec;
+
+  --surface: #272a30;
+  --surface-elevated: #2b2e35;
+
+  --card: #272a30;
+  --card-foreground: #e9eaec;
+
+  --popover: #2b2e35;
+  --popover-foreground: #e9eaec;
+
+  --primary: #e9eaec;
+  --primary-foreground: #23262b;
+  --primary-glow: #c9ccd2;
+
+  --secondary: #2b2e35;
+  --secondary-foreground: #e9eaec;
+
+  --muted: #2b2e35;
+  /* 6.1:1 on the plate — muted must stay readable, not disappear into it. */
+  --muted-foreground: #a7abb3;
+
+  --accent: #c9ccd2;
+  --accent-foreground: #23262b;
+
+  --coral: #d98a6a;
+  --coral-foreground: #23262b;
+
+  --destructive: #d2685c;
+  --destructive-foreground: #1a1c20;
+
+  /* Borders are the thing neomorphism replaces with light. They stay defined
+     but nearly invisible, so any component that leans on a border for layout
+     keeps its geometry without drawing a visible line. */
+  --border: rgba(233, 234, 236, 0.06);
+  --input: rgba(233, 234, 236, 0.06);
+  --ring: #c9ccd2;
+
+  --source-library: #e9eaec;
+  --source-general: #a7abb3;
+  --source-web: #868b93;
+
+  --luxury-soft: rgba(233, 234, 236, 0.03);
+  --luxury-soft-strong: rgba(233, 234, 236, 0.07);
+  --luxury-border-soft: rgba(233, 234, 236, 0.06);
+  --luxury-border-strong: rgba(233, 234, 236, 0.12);
+  --luxury-muted: #a7abb3;
+  --luxury-subtle: #868b93;
+  --luxury-faint: #626771;
+  --luxury-ai-bg: #23262b;
+  --luxury-selection: rgba(201, 204, 210, 0.22);
+  --luxury-button-sheen: transparent;
+  --luxury-code-bg: #22252a;
+  --luxury-pulse: rgba(233, 234, 236, 0.14);
+
+  /* Guest / pre-onboarding: pure structure, so the accent is simply the ink. */
+  --pop: #e9eaec;
+  --pop-2: #c9ccd2;
+  --pop-foreground: #23262b;
+  --gradient-pop: none;
+  --shadow-pop: var(--neo-out-sm);
+
+  --leaf: #d9b45f;
+
+  --gradient-primary: none;
+  --gradient-surface: none;
+  --gradient-glow: none;
+  --shadow-elegant: var(--neo-out);
+  --shadow-glow: none;
+
+  /* Soft UI is round UI. */
+  --radius: 1.25rem;
+
+  /* Motion eases like something physical settling back into the sheet. */
+  --transition-base: 240ms cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-emphasis: 320ms;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── MEDICINE (neo) ── the teal is lifted so it reads on charcoal ── */
+.neo[data-discipline="medicine"] {
+  --pop: #5fc9c0;
+  --pop-2: #47a9a1;
+  --pop-foreground: #10201f;
+  --ring: #5fc9c0;
+  --accent: #5fc9c0;
+  --accent-foreground: #10201f;
+  --source-library: #5fc9c0;
+}
+
+/* ── LAW (neo) ── gold, warmed enough to separate from the grey plate ── */
+.neo[data-discipline="law"] {
+  --pop: #d9b45f;
+  --pop-2: #b8954a;
+  --pop-foreground: #201a10;
+  --ring: #d9b45f;
+  --accent: #d9b45f;
+  --accent-foreground: #201a10;
+  --source-library: #d9b45f;
 }
 
 @layer base {
@@ -2934,4 +3073,88 @@ html.gd-low-power [style*="gd-dot-wave"] {
 .brutal .ai-symbiote-mark::before,
 .brutal .ai-symbiote-mark::after {
   display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MINIMALISM — structural pass for the default (dark) theme
+   Same unlayered technique as the brutalism section above: these rules are
+   outside @layer, so they beat Tailwind utilities without !important.
+
+   Dark is what every new student now lands on, so the ambient decoration that
+   used to sell the landing page is removed from the APP surfaces: the drifting
+   blobs, the halo behind the welcome mark, the radial wash down the chat. The
+   marketing/landing blobs (.blob-one/.symbiote-blob) are deliberately left
+   alone — that page is doing a different job.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.dark .app-blob-one,
+.dark .app-blob-two,
+.dark .auth-blob-one,
+.dark .auth-blob-two,
+.dark .gd-mark-halo::before {
+  display: none;
+}
+
+/* .gd-chat-glow is the chat SCROLL CONTAINER, not a decorative layer — it just
+   carries a radial wash. Only the wash goes; hiding the element would blank
+   every message in the thread. (Same trap as the brutal rule above.) */
+.dark .gd-chat-glow {
+  background: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEOMORPHISM — structural section (.neo)
+   Short by design. Brutalism needed 100+ rules because it inverts everything;
+   neomorphism only has to do three things — delete the outlines, extrude the
+   boxes, and inset the inputs — because its palette block already made every
+   surface the same colour as the page.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. No outlines. Light does the separating ──
+   Neutralised rather than removed: components that use a border for layout
+   keep their box metrics, they just stop drawing a visible line. */
+.neo [class*="border-"]:not([class*="border-transparent"]) {
+  border-color: var(--border);
+}
+
+/* ── 2. A bordered, rounded box is extruded from the sheet ──
+   Same "rounded AND border" test brutalism uses, and for the same reason: it
+   keeps pills, dots and avatars flat instead of sprouting a shadow each. */
+.neo [class*="rounded-"][class*="border"]:not([class*="border-transparent"]) {
+  box-shadow: var(--neo-out-sm);
+  background-color: var(--surface);
+}
+
+/* ── 3. Anything that takes input is pressed IN, not out ──
+   This is the affordance split the theme rests on: raised means "act on me",
+   inset means "type into me". Without it a soft UI reads as uniformly dead. */
+.neo input:not([type="checkbox"]):not([type="radio"]),
+.neo textarea,
+.neo select {
+  box-shadow: var(--neo-in);
+  border-color: transparent;
+  background-color: var(--background);
+}
+.neo input:focus-visible,
+.neo textarea:focus-visible,
+.neo select:focus-visible {
+  box-shadow: var(--neo-in), 0 0 0 2px var(--ring);
+  outline: none;
+}
+
+/* ── 4. Buttons rise, and settle when pressed ── */
+.neo button:not(:disabled):active {
+  box-shadow: var(--neo-in);
+}
+
+/* ── 5. Soft UI has no hard glow ──
+   The ambient blobs fight the single-sheet illusion, so they go here too. */
+.neo .app-blob-one,
+.neo .app-blob-two,
+.neo .auth-blob-one,
+.neo .auth-blob-two,
+.neo .gd-mark-halo::before {
+  display: none;
+}
+.neo .gd-chat-glow {
+  background: none;
 }

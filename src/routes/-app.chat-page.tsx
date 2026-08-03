@@ -3980,8 +3980,9 @@ function MermaidDiagram({ code, streaming }: { code: string; streaming?: boolean
     (async () => {
       try {
         const mermaid = (await import("mermaid")).default;
-        // Light and brutal both run on paper; only the dark theme is dark.
-        const isDark = document.documentElement.classList.contains("dark");
+        // Light and brutal run on paper; dark and neo are both dark plates.
+        const root = document.documentElement.classList;
+        const isDark = root.contains("dark") || root.contains("neo");
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: "strict",

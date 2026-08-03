@@ -43,15 +43,18 @@ export function initNativeShell(): void {
       try {
         // Keep the WebView below the status bar instead of behind it, and match
         // the active theme's background so there's no mismatched strip on cold
-        // start. This has to follow the theme: brutal (the default) and light
-        // both run on paper, and a black bar above them reads as a bug.
+        // start. This has to follow the theme: brutal and light both run on
+        // paper, and a black bar above them reads as a bug.
         // Capacitor's Style.Dark means light CONTENT, i.e. for a dark bar.
         const stored = window.localStorage.getItem("gd-theme");
-        const theme = stored === "light" || stored === "dark" ? stored : "brutal";
+        const theme =
+          stored === "light" || stored === "brutal" || stored === "neo" ? stored : "dark";
         const bar = {
           dark: { style: Style.Dark, color: "#060606" },
           light: { style: Style.Light, color: "#e3d6bf" },
           brutal: { style: Style.Light, color: "#f4f1e8" },
+          // Matches --neo-plate, so the bar disappears into the sheet.
+          neo: { style: Style.Dark, color: "#272a30" },
         }[theme];
 
         await StatusBar.setOverlaysWebView({ overlay: false });

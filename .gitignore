@@ -49,3 +49,6 @@ supabase/.temp/
 *.pem
 keystore.properties
 credentials.json
+
+# Bulk library ingest resume state (scripts/ingest-library.mjs)
+.library-ingest-state.json

@@ -17,7 +17,8 @@
     "android:build:debug": "npm run android:sync && cd android && .\\gradlew.bat assembleDebug",
     "android:build:release": "npm run android:sync && cd android && .\\gradlew.bat bundleRelease",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "ingest:library": "node --experimental-strip-types --max-old-space-size=4096 scripts/ingest-library.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",
