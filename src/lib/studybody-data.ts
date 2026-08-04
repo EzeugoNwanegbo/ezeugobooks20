@@ -226,12 +226,14 @@ export async function loadStudyDocuments(
     if (chunks.length) {
       const grouped = new Map<string, StudyDocument>();
       for (const chunk of chunks) {
+        // Pages only — a chunk index is an internal splitting artefact and is
+        // useless for finding the passage in the actual book.
         const label =
           chunk.page_start || chunk.page_end
             ? `[Page ${chunk.page_start ?? "?"}${chunk.page_end && chunk.page_end !== chunk.page_start ? `-${chunk.page_end}` : ""}]`
-            : `[Chunk ${chunk.chunk_index + 1}]`;
+            : "";
         const existing = grouped.get(chunk.document_id);
-        const text = `${label}\n${chunk.content}`;
+        const text = label ? `${label}\n${chunk.content}` : chunk.content;
         if (existing) {
           existing.excerpt = `${existing.excerpt}\n\n${text}`.slice(0, 24000);
         } else {
@@ -296,11 +298,12 @@ export async function loadStudyDocumentsSpanning(
   const result: StudyDocument[] = [];
   for (const [docId, chunks] of byDoc) {
     const labelled = chunks.map((chunk) => {
+      // Pages only, same reasoning as above.
       const label =
         chunk.page_start || chunk.page_end
           ? `[Page ${chunk.page_start ?? "?"}${chunk.page_end && chunk.page_end !== chunk.page_start ? `-${chunk.page_end}` : ""}]`
-          : `[Chunk ${chunk.chunk_index + 1}]`;
-      return `${label}\n${chunk.content}`;
+          : "";
+      return label ? `${label}\n${chunk.content}` : chunk.content;
     });
     const meta = docMeta.get(docId);
     result.push({

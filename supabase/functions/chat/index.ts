@@ -482,10 +482,10 @@ The student wants connections drawn ACROSS subjects/folders.
   // are wanted either way. Only the output contract changes.
   const outputTask = opts.finalAnswer
     ? `3. Then write the student's final answer yourself, following the STYLE INSTRUCTIONS that appear below this section. Nothing runs after you - do not produce a draft, a summary for another step, or any "Exact answer:" / "Where found:" / "Evidence:" scaffolding.
-4. Put the source on the very first line as "Source: <document name>, <Page N or chunk label>", copied verbatim from the excerpts, above everything else.
+4. Put the source on the very first line as "Source: <document name>, Page N", copied verbatim from the excerpts, above everything else. If an excerpt carries no page number, cite the document name alone - never invent a page, and never cite an internal chunk or excerpt index.
 5. Only after genuinely checking every excerpt, if the relevant info is truly not in the files, say so plainly in the answer before adding anything from general knowledge. Do not give up early.`
     : `3. Start with "Exact answer:" and give the answer in one or two clear sentences.
-4. Then write "Where found:" and list document names plus page/chunk labels wherever available. If there is no page label, keep the document name and chunk/source excerpt label.
+4. Then write "Where found:" and list document names plus page numbers wherever available. If an excerpt has no page number, give the document name alone - never cite an internal chunk or excerpt index.
 5. Then write "Evidence:" and include the relevant facts. Keep quotes short; prefer paraphrase with source labels.
 6. Only after genuinely checking every excerpt, if the relevant info is truly not in the files, clearly say "I could not find an exact hit in your files" before adding any "[General knowledge]". Do not give up early.
 7. Do not apply Simplified, Detailed, Detailed+, or Storytelling style. A later step will do the final explanation.`;
@@ -506,10 +506,10 @@ ${docContent}
 ${interlinkBlock}
 
 YOUR TASK:
-1. SEARCH THOROUGHLY before answering. Read EVERY excerpt and chunk provided above from start to finish - do not stop at the first chunk that looks relevant. The exact answer is often in a later chunk than the first keyword match. Scan all of them, then decide.
-2. Cross-check related chunks. If several chunks touch the topic, combine them and resolve any apparent conflicts using the most specific/complete passage.
+1. SEARCH THOROUGHLY before answering. Read EVERY excerpt provided above from start to finish - do not stop at the first passage that looks relevant. The exact answer is often in a later excerpt than the first keyword match. Scan all of them, then decide.
+2. Cross-check related excerpts. If several touch the topic, combine them and resolve any apparent conflicts using the most specific/complete passage.
 ${outputTask}
-8. Keep document names and page/chunk labels visible. Never invent citations or page numbers.
+8. Keep document names and page numbers visible. Never invent citations or page numbers, and never surface internal chunk or excerpt indexes - they mean nothing to a student.
 9. If you are uncertain about anything, say so explicitly.`;
 }
 
@@ -561,7 +561,7 @@ INTERLINK STYLE:
     ? `
 GROUNDING (mandatory):
 - Build the notes from the document content supplied below. Do not add facts that are not in it.
-- Reproduce the source as a "Source: <document name>, <Page N or chunk label>" line as the very first line, above the title. Copy the page/chunk label verbatim; never invent one.
+- Reproduce the source as a "Source: <document name>, Page N" line as the very first line, above the title. Copy the page number verbatim; never invent one. If the draft gives no page, cite the document name alone.
 - If the material does not cover part of the question, say so plainly in the notes rather than filling the gap from general knowledge.`
     : `
 GROUNDING:
@@ -621,8 +621,8 @@ RULES:
 - Use only the research draft plus any supplied web-curriculum guidance. Do not invent new facts.
 - Preserve every fact from the research summary; do not drop important evidence.
 - Lead with the direct answer, then the source evidence, then the explanation.
-- CITATION (mandatory, overrides every mode length/format limit): whenever the research draft contains a "Where found:" section or any document name with a page/chunk label, you MUST reproduce it as a short "Source:" line near the top of the answer, formatted exactly as "Source: <document name>, <Page N or chunk label>". This line is required even in Simplified mode and never counts against the paragraph limit. Never drop, summarise away, or bury the source in prose.
-- Copy the page/chunk label verbatim from the research draft. If the draft gives a page number, cite the page; if it only gives a chunk/excerpt label, cite that label. Never omit the source because no page number was available, and never invent a page number the draft did not provide.
+- CITATION (mandatory, overrides every mode length/format limit): whenever the research draft contains a "Where found:" section or any document name with a page number, you MUST reproduce it as a short "Source:" line near the top of the answer, formatted exactly as "Source: <document name>, Page N". This line is required even in Simplified mode and never counts against the paragraph limit. Never drop, summarise away, or bury the source in prose.
+- Copy the page number verbatim from the research draft. If the draft gives no page number, cite the document name alone - never fall back to an internal chunk or excerpt index, and never invent a page the draft did not provide.
 - The "never mention internal steps" identity rule does NOT apply to source citations: document names and page labels are the student's own uploaded material and must always be shown.
 - If the summary says "[General knowledge]", keep that label so the student knows.
 - Write as if you are talking directly to ${p.name || "the student"} - warm, clear, encouraging.

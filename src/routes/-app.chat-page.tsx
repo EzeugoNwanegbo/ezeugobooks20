@@ -554,13 +554,19 @@ function docsFromChunkRows(rows: ChunkSearchRow[]): DocumentCtx[] {
     excerpt: group.rows
       .sort((a, b) => a.chunk_index - b.chunk_index)
       .map((row) => {
+        // Page numbers only. "Chunk 7" is an artefact of how we split the file
+        // and means nothing to a student trying to find the passage in a book,
+        // so when there is no page we label nothing rather than leaking it.
         const pageLabel =
           row.page_start && row.page_end
             ? row.page_start === row.page_end
               ? `Page ${row.page_start}`
               : `Pages ${row.page_start}-${row.page_end}`
-            : `Chunk ${row.chunk_index + 1}`;
-        return `[${pageLabel} | relevance ${row.rank}]\n${row.content}`;
+            : null;
+        const header = pageLabel
+          ? `[${pageLabel} | relevance ${row.rank}]`
+          : `[relevance ${row.rank}]`;
+        return `${header}\n${row.content}`;
       })
       .join("\n\n---\n\n"),
   }));

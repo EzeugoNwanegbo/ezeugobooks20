@@ -204,7 +204,7 @@ Return JSON with this shape:
       "title": "topic name",
       "summary": "what the student must master",
       "objectives": ["objective 1", "objective 2"],
-      "source_refs": [{"file":"name", "page":"Page or chunk label", "note":"why this source matters"}],
+      "source_refs": [{"file":"name", "page":"Page N, or omit if the excerpt has no page", "note":"why this source matters"}],
       "estimated_minutes": 25
     }
   ]
@@ -274,7 +274,7 @@ Return JSON:
       "explanation": "explanation that quotes/points to the source excerpt",
       "rubric": ["point 1", "point 2"],
       "difficulty": "easy" | "medium" | "hard",
-      "source_refs": [{"file":"name", "page":"Page or chunk label"}]
+      "source_refs": [{"file":"name", "page":"Page N, or omit if the excerpt has no page"}]
     }
   ]
 }
@@ -391,7 +391,7 @@ Return JSON:
     {
       "front": "a question or prompt grounded in the excerpts",
       "back": "the concise answer from the excerpts",
-      "source_refs": [{"file":"name", "page":"Page or chunk label"}]
+      "source_refs": [{"file":"name", "page":"Page N, or omit if the excerpt has no page"}]
     }
   ]
 }`,

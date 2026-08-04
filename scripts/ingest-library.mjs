@@ -18,7 +18,9 @@
 //   --status <status>     approved | pending        (default: approved)
 //   --dry-run             scan, dedupe and report; touch nothing remote
 //   --limit <n>           stop after n books (handy for a first trial run)
-//   --only <substring>    only files whose path contains this (case-insensitive)
+//   --only <a,b,c>        only files whose path contains one of these terms
+//                         (case-insensitive; repeatable, comma-separated) —
+//                         how you cherry-pick from a mixed folder
 //   --keep-near-dupes     ingest same-title/same-page-count books instead of skipping
 //   --force               re-ingest even if the hash is already in the library
 //
@@ -58,8 +60,14 @@ const STATE_FILE = join(PROJECT_ROOT, ".library-ingest-state.json");
 // maps to one OpenAI call.
 const EMBED_BATCH = 96;
 // PostgREST starts to struggle with very large bodies once each row carries a
-// 1536-float vector. 200 matches the app's own chunk insert batch.
-const INSERT_BATCH = 200;
+// 1536-float vector. The app inserts 200 at a time, but the app is writing one
+// student's file; a 1,964-page textbook made 200-row statements big enough to
+// trip Postgres's statement timeout ("canceling statement due to statement
+// timeout") partway through. 50 keeps each statement comfortably inside it.
+const INSERT_BATCH = 50;
+// A timeout is about the size of THIS statement, not the data, so halving the
+// batch and retrying clears it where a blind retry would just fail again.
+const INSERT_RETRIES = 3;
 // Below this many characters per page the text layer is too sparse to be worth
 // indexing - the book needs OCR, which this script does not do (see README note
 // at the bottom of the run summary).
@@ -73,7 +81,10 @@ function parseArgs(argv) {
     status: "approved",
     dryRun: false,
     limit: Infinity,
-    only: null,
+    // Repeatable, and comma-separated within one flag. A mixed folder often
+    // holds a handful of wanted books among many unwanted ones, and re-scanning
+    // (and re-hashing) gigabytes once per title is wasteful.
+    only: [],
     keepNearDupes: false,
     force: false,
   };
@@ -87,8 +98,12 @@ function parseArgs(argv) {
     else if (a === "--track") opts.track = argv[++i];
     else if (a === "--status") opts.status = argv[++i];
     else if (a === "--limit") opts.limit = Number(argv[++i]);
-    else if (a === "--only") opts.only = argv[++i].toLowerCase();
-    else if (a.startsWith("--")) throw new Error(`Unknown flag: ${a}`);
+    else if (a === "--only") {
+      for (const part of argv[++i].split(",")) {
+        const term = part.trim().toLowerCase();
+        if (term) opts.only.push(term);
+      }
+    } else if (a.startsWith("--")) throw new Error(`Unknown flag: ${a}`);
     else positional.push(a);
   }
   opts.folder = positional[0];
@@ -332,6 +347,30 @@ async function embedTexts(env, texts) {
   return json.embeddings;
 }
 
+// ── chunk insert ────────────────────────────────────────────────────────────
+/**
+ * Insert a batch of chunks, halving and recursing on a statement timeout.
+ *
+ * The failure mode this exists for is size-dependent, not transient: a big
+ * enough book makes each INSERT slow enough that Postgres cancels it, and the
+ * same batch would fail again however many times it is retried. Splitting is
+ * what actually fixes it, so a timeout halves the batch instead of sleeping.
+ */
+async function insertChunksWithRetry(supabase, rows, attempt = 0) {
+  if (rows.length === 0) return;
+  const { error } = await supabase.from("library_document_chunks").insert(rows);
+  if (!error) return;
+
+  const timedOut = /statement timeout|canceling statement/i.test(error.message);
+  if (timedOut && rows.length > 1 && attempt < INSERT_RETRIES) {
+    const mid = Math.ceil(rows.length / 2);
+    await insertChunksWithRetry(supabase, rows.slice(0, mid), attempt + 1);
+    await insertChunksWithRetry(supabase, rows.slice(mid), attempt + 1);
+    return;
+  }
+  throw new Error(`insert chunks: ${error.message}`);
+}
+
 // ── state ───────────────────────────────────────────────────────────────────
 function loadState() {
   if (!existsSync(STATE_FILE)) return { books: {} };
@@ -376,7 +415,12 @@ async function main() {
 
   // ── scan ──
   let files = walk(opts.folder).sort();
-  if (opts.only) files = files.filter((f) => f.toLowerCase().includes(opts.only));
+  if (opts.only.length) {
+    files = files.filter((f) => {
+      const lower = f.toLowerCase();
+      return opts.only.some((term) => lower.includes(term));
+    });
+  }
   console.log(`\nScanning ${opts.folder}`);
   console.log(`Found ${files.length} PDFs\n`);
 
@@ -597,10 +641,7 @@ async function main() {
           embedding: vectors[j],
         }));
         for (let k = 0; k < rows.length; k += INSERT_BATCH) {
-          const { error: chunkErr } = await supabase
-            .from("library_document_chunks")
-            .insert(rows.slice(k, k + INSERT_BATCH));
-          if (chunkErr) throw new Error(`insert chunks: ${chunkErr.message}`);
+          await insertChunksWithRetry(supabase, rows.slice(k, k + INSERT_BATCH));
         }
         inserted += rows.length;
         process.stdout.write(`\r      embedded ${inserted}/${chunks.length} chunks`);
