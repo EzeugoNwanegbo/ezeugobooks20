@@ -756,13 +756,31 @@ function callDeepSeekStream(
 }
 
 /**
+ * `reasoning_effort` is NOT uniform across the GPT-5 family, and the mismatch is
+ * a hard 400 rather than a silently ignored field:
+ *
+ *   gpt-5-nano      accepts "minimal"
+ *   gpt-5.6-luna    rejects it - "does not support 'minimal' with this model.
+ *                   Supported values are: 'none', 'low', 'medium', 'high', 'xhigh'"
+ *
+ * That is why Detailed (the only mode on the deep tier that streams through
+ * callGPTStream) failed with "OpenAI final explanation failed" while Simplified
+ * and Storytelling were fine. Both of these stages only restyle a research draft
+ * that DeepSeek has already reasoned out, so we ask each model for the least
+ * deliberation it will actually accept.
+ */
+function reasoningEffortFor(model: string): string {
+  return model === OPENAI_MODEL_FAST ? "minimal" : "none";
+}
+
+/**
  * The streamed answer the student actually watches appear.
  *
  * No `temperature`: the GPT-5 family rejects it (400) rather than ignoring it.
- * `reasoning_effort: "minimal"` keeps first-token latency close to the old 4o
- * behaviour - this stage is rewriting a finished research draft into the chosen
- * style, so paying for deliberation here would be latency and billed reasoning
- * tokens spent on nothing.
+ * Low reasoning keeps first-token latency close to the old 4o behaviour - this
+ * stage is rewriting a finished research draft into the chosen style, so paying
+ * for deliberation here would be latency and billed reasoning tokens spent on
+ * nothing.
  */
 async function callGPTStream(
   apiKey: string,
@@ -781,7 +799,7 @@ async function callGPTStream(
       body: JSON.stringify({
         model,
         stream: true,
-        reasoning_effort: "minimal",
+        reasoning_effort: reasoningEffortFor(model),
         messages: [{ role: "system", content: systemPrompt }, ...messages],
       }),
     },
@@ -817,7 +835,7 @@ async function callOpenAISync({
         stream: false,
         // GPT-5 renamed this; `max_tokens` is rejected outright.
         max_completion_tokens: maxTokens,
-        reasoning_effort: "minimal",
+        reasoning_effort: reasoningEffortFor(model),
         messages: [{ role: "system", content: systemPrompt }, ...messages],
       }),
     },
