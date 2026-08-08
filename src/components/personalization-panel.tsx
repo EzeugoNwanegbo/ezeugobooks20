@@ -73,26 +73,41 @@ export function PersonalizationPanel({
           : "text-left"
       }
     >
+      {/* A full 44x44 target (the mobile Capacitor build is a real target), with
+          its own outline and fill so it reads as a control rather than as
+          decoration - the 28px muted glyph it replaces was hard to find and
+          harder to hit. The glyph is --foreground at 80%, not --muted-foreground:
+          a dismiss control is not a hint. Tokens only (--border, --background,
+          --foreground, --pop).
+          The header below reserves room for it so nothing runs underneath
+          at narrow widths. Focus is an `outline`, not a ring: rings are
+          box-shadows, and the .neo skin overwrites box-shadow on every bordered
+          rounded box, which would swallow it. */}
       {variant === "card" && onDismiss && (
         <button
           type="button"
           onClick={onDismiss}
           aria-label="Dismiss"
-          className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+          title="Dismiss"
+          className="absolute right-2 top-2 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-background/80 text-foreground/80 transition-colors hover:border-pop/50 hover:bg-pop/10 hover:text-pop focus-visible:text-pop focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pop sm:right-3 sm:top-3"
         >
-          <X className="h-4 w-4" />
+          <X className="h-5 w-5" strokeWidth={2.25} />
         </button>
       )}
 
       {variant === "card" && (
         <>
-          <div className="flex items-center gap-1.5 text-pop">
+          <div
+            className={`flex items-center gap-1.5 text-pop ${onDismiss ? "pr-12 sm:pr-14" : ""}`}
+          >
             <Sparkles className="h-4 w-4" />
             <span className="text-[11px] font-semibold uppercase tracking-[0.14em]">
               Personalize G&amp;D
             </span>
           </div>
-          <h3 className="mt-2 text-lg font-semibold tracking-[-0.01em] text-foreground">
+          <h3
+            className={`mt-2 text-lg font-semibold tracking-[-0.01em] text-foreground ${onDismiss ? "pr-12 sm:pr-14" : ""}`}
+          >
             {hasSaved
               ? "Your background — edit it any time"
               : "Make G&D understand you from day one"}

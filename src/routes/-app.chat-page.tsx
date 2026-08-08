@@ -25,7 +25,11 @@ import {
 } from "@/lib/chat-client";
 import { takePendingChatDoc } from "@/lib/chat-handoff";
 import { buildContinuationPrompt, buildExplainLastAnswerPrompt } from "@/lib/chat-portability";
-import { savePersonalizationBackground as writePersonalizationBackground } from "@/lib/personalization";
+import {
+  savePersonalizationBackground as writePersonalizationBackground,
+  isPersonalizationNudgeSnoozed,
+  snoozePersonalizationNudge,
+} from "@/lib/personalization";
 import { PersonalizationPanel } from "@/components/personalization-panel";
 import { isNativeApp } from "@/lib/native";
 import { lookupTerm, isTermLookupComplete, type TermLookupState } from "@/lib/term-lookup";
@@ -858,7 +862,11 @@ export function ChatPage() {
   const [fileSearch, setFileSearch] = useState("");
   const [libraryNotice, setLibraryNotice] = useState<LibraryNotice>(null);
   const [flashPillDismissed, setFlashPillDismissed] = useState(false);
-  const [personalizationDismissed, setPersonalizationDismissed] = useState(false);
+  // Starts hidden and is un-hidden after mount, for the same reason the tour
+  // and the announcement read their storage in an effect: localStorage does not
+  // exist during the server render, so deciding this at first render would
+  // either throw or hydrate to a different answer than the server gave.
+  const [personalizationDismissed, setPersonalizationDismissed] = useState(true);
   const [sessionReady, setSessionReady] = useState(false);
   // The composer is absolutely positioned and its height varies (mode tabs,
   // library row, multi-line input). Track it so the message list can reserve
@@ -911,6 +919,17 @@ export function ChatPage() {
     }
     await refreshProfile();
     toast.success("Saved — G&D now studies with you in mind.");
+  };
+
+  // The nudge is throttled to once a week per device (see
+  // isPersonalizationNudgeSnoozed). Runs once on mount, after hydration.
+  useEffect(() => {
+    setPersonalizationDismissed(isPersonalizationNudgeSnoozed());
+  }, []);
+
+  const dismissPersonalizationNudge = () => {
+    snoozePersonalizationNudge();
+    setPersonalizationDismissed(true);
   };
 
   useEffect(() => {
@@ -2159,7 +2178,7 @@ export function ChatPage() {
                 <PersonalizationPanel
                   initialBackground={savedProfile?.personalization_background ?? ""}
                   onSave={savePersonalizationBackground}
-                  onDismiss={() => setPersonalizationDismissed(true)}
+                  onDismiss={dismissPersonalizationNudge}
                 />
               )
             ) : (
@@ -4281,7 +4300,10 @@ function Message({
             value={inlineInput}
             onChange={(event) => setInlineInput(event.target.value)}
             placeholder="Ask about this..."
-            className="min-w-0 flex-1 bg-transparent px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            // gd-composer-field: this input IS the bar, so it must not take the
+            // skins' "inputs are wells" fill (see styles.css) - without it the
+            // dark theme painted it --surface inside a --background bar.
+            className="gd-composer-field min-w-0 flex-1 bg-transparent px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
           <button
             type="submit"

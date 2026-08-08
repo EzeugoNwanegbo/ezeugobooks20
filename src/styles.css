@@ -1446,26 +1446,8 @@ textarea::placeholder {
   color: var(--luxury-subtle);
 }
 
-/* The composer is ONE surface.
-   A field written as `bg-transparent` is not actually transparent here: the
-   skins lift every input onto its own plane (`.dark textarea { background:
-   var(--surface) }`, and `.neo textarea` adds an inset well), which is right
-   for a form field sitting on a page but wrong for a field that IS the bar it
-   sits in - it split the chat composer into a black bar with a lighter box
-   inside it. The bar draws the fill, the border and the focus ring
-   (focus-within on .gd-composer); the field draws nothing.
-   Element+class so this ties `.dark textarea` on specificity and wins on
-   order, without an !important. */
-textarea.gd-composer-field,
-input.gd-composer-field:not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
-  background-color: transparent;
-  box-shadow: none;
-}
-/* .neo puts its inset well back on focus, at a specificity this has to clear. */
-.neo textarea.gd-composer-field:focus-visible,
-.neo input.gd-composer-field:focus-visible {
-  box-shadow: none;
-}
+/* The composer is ONE surface - see the .gd-composer-field section at the very
+   END of this file. It has to live after the skin sections, not here. */
 
 button,
 a {
@@ -3240,4 +3222,45 @@ html.gd-low-power [style*="gd-dot-wave"] {
 }
 .neo .gd-chat-glow {
   background: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE COMPOSER IS ONE SURFACE — and this must be the cascade's last word
+   ═══════════════════════════════════════════════════════════════════════════
+   A field written as `bg-transparent` is not actually transparent here. Every
+   skin lifts inputs onto their own plane, because a form field on a page should
+   read as a well:
+
+     .dark input/textarea/select  → background-color: var(--surface)
+     .neo  input/textarea/select  → background-color: var(--background) + an
+                                    inset box-shadow (--neo-in)
+
+   That is wrong for a field that IS the bar it sits in. The bar (the composer
+   <form>) draws the single fill, the border and the focus ring via
+   focus-within; the field must draw nothing at all. In dark that is the whole
+   visible bug: the bar is --background #070707 and the textarea was painting
+   --surface #131211 inside it — two colours, one control.
+
+   Why it is HERE and at THIS specificity, and why the previous attempt did not
+   land: it was written as `textarea.gd-composer-field` (0,1,1) up at line ~1459,
+   which only TIES `.dark textarea` (0,1,1). `.dark textarea` is further down the
+   same unlayered stylesheet, so it won on source order and the field kept its
+   second colour. Two fixes, both applied:
+     1. `:root` prefix — a pseudo-class, so this is (0,2,1) and outranks every
+        skin's (0,1,1) input rule no matter where they sit.
+     2. Placed after the brutal/dark/neo sections, so order can never bite again.
+   Neither needs !important.
+
+   Not styled here (deliberately): the placeholder keeps --luxury-subtle from
+   the `input::placeholder` rule above, which is the value the palette work
+   picked to clear AA on these surfaces. */
+:root textarea.gd-composer-field,
+:root input.gd-composer-field:not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
+  background-color: transparent;
+  box-shadow: none;
+}
+/* .neo puts its inset well back on :focus-visible, at (0,2,1); this clears it. */
+:root .neo textarea.gd-composer-field:focus-visible,
+:root .neo input.gd-composer-field:focus-visible {
+  box-shadow: none;
 }
