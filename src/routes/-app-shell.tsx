@@ -3,7 +3,6 @@ import {
   BookOpen,
   BrainCircuit,
   ChevronLeft,
-  ChevronRight,
   Clock,
   Heart,
   LogOut,
@@ -13,12 +12,13 @@ import {
   Plus,
   Settings,
   ShieldCheck,
+  Sparkles,
   TimerReset,
   Trophy,
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   AlertDialog,
@@ -30,6 +30,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { toast } from "sonner";
+import { PersonalizationPanel } from "@/components/personalization-panel";
+import { savePersonalizationBackground } from "@/lib/personalization";
 import { ThemePicker, ThemeToggle } from "@/components/theme-toggle";
 import { AppShellSkeleton } from "@/components/app-skeletons";
 import { FeatureTour } from "@/components/feature-tour";
@@ -46,6 +56,7 @@ import {
   recordGamificationEvent,
   type GamificationStats,
 } from "@/lib/gamification";
+import { getCached, setCached } from "@/lib/data-cache";
 import { supabase } from "@/integrations/supabase/client";
 
 type ConversationRow = {
@@ -53,6 +64,35 @@ type ConversationRow = {
   title: string | null;
   updated_at: string | null;
 };
+
+// The signed-in shell opens on a narrow icon rail (Gemini-style): the logo mark
+// expands it, the chevron in the expanded header collapses it again, and the
+// student's explicit choice is remembered across reloads.
+const SIDEBAR_STORAGE_KEY = "gd-sidebar-collapsed";
+
+/** Read on mount (lazy useState initialiser) so the rail paints once, no flash. */
+function readStoredSidebarCollapsed(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const stored = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
+    if (stored === "0") return false;
+    if (stored === "1") return true;
+  } catch {
+    // Private mode / blocked storage - fall through to the collapsed default.
+  }
+  return true;
+}
+
+/** How many past chats are fetched for the sidebar. Matches what the chat page
+ *  used to load for its own (now removed) sidebar - this is the app's single
+ *  chat history, so it is the full list, scrolled rather than capped. */
+const SIDEBAR_CONVO_LIMIT = 100;
+
+/** The chat page fires this after it creates, retitles or touches a
+ *  conversation. Pathname alone cannot catch it: starting a new chat only
+ *  changes the `?c=` search param, so without the event a brand-new
+ *  conversation would not appear in the sidebar until the next navigation. */
+const CONVOS_CHANGED_EVENT = "gd:conversations-changed";
 
 export function AppShell() {
   return <AppLayout />;
@@ -64,13 +104,19 @@ function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const search = useSearch({ strict: false }) as { c?: string };
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(readStoredSidebarCollapsed);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [mobileConvos, setMobileConvos] = useState<ConversationRow[]>([]);
+  // Feeds both the mobile drawer's grouped history and the "Recent" list in the
+  // expanded desktop sidebar - one query, two surfaces.
+  const [recentConvos, setRecentConvos] = useState<ConversationRow[]>([]);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [hideMobileTopbar, setHideMobileTopbar] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
+  // The "who I am" import lives here rather than only inside a chat: it is
+  // profile-shaped, so it must stay reachable from every page and after it has
+  // already been filled in (the in-chat card disappears once it is set).
+  const [personalizeOpen, setPersonalizeOpen] = useState(false);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [gamification, setGamification] = useState<GamificationStats>(emptyGamificationStats);
 
@@ -161,32 +207,41 @@ function AppLayout() {
     return () => window.removeEventListener("gd:gamification", onGamification);
   }, [user, location.pathname]);
 
-  useEffect(() => {
+  // The one conversation query in the app. It feeds the desktop sidebar's
+  // grouped history and the mobile drawer's; the chat page no longer keeps a
+  // list of its own. Stale-while-revalidate off the shared `convos:<user>` key
+  // so the list paints instantly when moving between pages.
+  const loadConvos = useCallback(async () => {
     if (!user) {
-      setMobileConvos([]);
+      setRecentConvos([]);
       return;
     }
-
-    let active = true;
-    supabase
+    const cached = getCached<ConversationRow[]>(`convos:${user.id}`);
+    if (cached) setRecentConvos(cached);
+    const { data, error } = await supabase
       .from("conversations")
       .select("id, title, updated_at")
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false })
-      .limit(50)
-      .then(({ data, error }) => {
-        if (!active) return;
-        if (error) {
-          console.warn("load mobile conversations", error);
-          return;
-        }
-        setMobileConvos((data as ConversationRow[]) ?? []);
-      });
+      .limit(SIDEBAR_CONVO_LIMIT);
+    if (error) {
+      console.warn("load recent conversations", error);
+      return;
+    }
+    const rows = (data as ConversationRow[]) ?? [];
+    setRecentConvos(rows);
+    setCached(`convos:${user.id}`, rows);
+  }, [user]);
 
-    return () => {
-      active = false;
-    };
-  }, [location.pathname, user]);
+  useEffect(() => {
+    void loadConvos();
+  }, [loadConvos, location.pathname]);
+
+  useEffect(() => {
+    const onChanged = () => void loadConvos();
+    window.addEventListener(CONVOS_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(CONVOS_CHANGED_EVENT, onChanged);
+  }, [loadConvos]);
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -198,7 +253,9 @@ function AppLayout() {
   }, [location.pathname]);
 
   // My Coach and Practice are content-heavy - collapse the sidebar on entry so
-  // they get the full width. The user can still expand it with the toggle.
+  // they get the full width. The user can still expand it with the logo.
+  // Deliberately *not* persisted: this is the app's doing, not the student's
+  // choice, so it must not overwrite the remembered preference below.
   useEffect(() => {
     if (
       location.pathname.startsWith("/app/studybody") ||
@@ -208,7 +265,7 @@ function AppLayout() {
     }
   }, [location.pathname]);
 
-  const groupedMobileConvos = useMemo(() => {
+  const groupedRecentConvos = useMemo(() => {
     const today: ConversationRow[] = [];
     const yesterday: ConversationRow[] = [];
     const thisWeek: ConversationRow[] = [];
@@ -216,7 +273,7 @@ function AppLayout() {
     const older: ConversationRow[] = [];
     const now = Date.now();
 
-    for (const convo of mobileConvos) {
+    for (const convo of recentConvos) {
       const ts = convo.updated_at ? new Date(convo.updated_at).getTime() : 0;
       const ageDays = (now - ts) / (1000 * 60 * 60 * 24);
       if (ageDays < 1) today.push(convo);
@@ -227,7 +284,7 @@ function AppLayout() {
     }
 
     return { today, yesterday, thisWeek, thisMonth, older };
-  }, [mobileConvos]);
+  }, [recentConvos]);
 
   if (loading || !user) {
     return <AppShellSkeleton />;
@@ -272,10 +329,38 @@ function AppLayout() {
     );
   }
 
+  // Only an explicit click on the logo / collapse chevron is remembered - the
+  // route-driven auto-collapse above calls setIsSidebarCollapsed directly.
+  const chooseSidebarCollapsed = (collapsed: boolean) => {
+    setIsSidebarCollapsed(collapsed);
+    try {
+      window.localStorage.setItem(SIDEBAR_STORAGE_KEY, collapsed ? "1" : "0");
+    } catch {
+      // Blocked storage - the choice just won't survive the reload.
+    }
+  };
+
   const openNewChat = () => {
     setMobileMenuOpen(false);
     navigate({ to: "/app/chat", search: {} });
     window.setTimeout(() => window.dispatchEvent(new Event("gd:new-chat")), 0);
+  };
+
+  // Ported wholesale from the chat page's old sidebar, behaviour unchanged:
+  // it confirms first, deletes the messages itself (the schema has no FK
+  // cascade, so removing only the conversation orphans its rows), and drops
+  // you on a new chat if you just deleted the one you were reading.
+  const deleteConversation = async (id: string) => {
+    if (!user) return;
+    if (!window.confirm("Delete this chat?")) return;
+    await supabase.from("messages").delete().eq("conversation_id", id);
+    const { error } = await supabase.from("conversations").delete().eq("id", id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    if (location.pathname.startsWith("/app/chat") && search.c === id) openNewChat();
+    void loadConvos();
   };
 
   const goToMobileRoute = (
@@ -293,6 +378,8 @@ function AppLayout() {
   };
 
   const onChat = location.pathname.startsWith("/app/chat");
+  // Only highlight a conversation while the chat screen is actually showing it.
+  const activeConvoId = onChat ? search.c : undefined;
 
   // Content edge-swipe: a right-swipe starting at the very left edge returns to
   // Chat from any other screen (and opens the menu when already on Chat) - the
@@ -360,11 +447,70 @@ function AppLayout() {
               ? "max-w-0 -translate-x-2 opacity-0"
               : "max-w-32 translate-x-0 opacity-100"
           }`}
+          // Collapsed, the aria-label above is the accessible name - keep the
+          // clipped text out of the tree so it is not announced twice.
+          aria-hidden={isSidebarCollapsed}
         >
           {label}
         </span>
       </Link>
     );
+  };
+
+  // Same row as navItem, but for entries that open something in place instead
+  // of routing (currently just Personalize). `dot` is the quiet unset marker -
+  // no badge, no count, just a small accent pip.
+  const navAction = (
+    icon: ReactNode,
+    label: string,
+    onPick: () => void,
+    accent: "blue" | "violet" | "coral" | "amber" | "slate" = "slate",
+    dot = false,
+  ) => (
+    <button
+      type="button"
+      onClick={onPick}
+      className={`gd-side-nav-item gd-side-nav-${accent} group/nav relative flex w-full items-center overflow-hidden rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors duration-200 hover:bg-foreground/[0.045] hover:text-foreground ${
+        isSidebarCollapsed ? "justify-center gap-0" : "gap-3"
+      }`}
+      title={isSidebarCollapsed ? label : undefined}
+      aria-label={label}
+    >
+      <span className="relative flex shrink-0 items-center">
+        {icon}
+        {dot && (
+          <span
+            aria-hidden="true"
+            className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-pop"
+          />
+        )}
+      </span>
+      <span
+        className={`whitespace-nowrap transition-all duration-300 ${
+          isSidebarCollapsed
+            ? "max-w-0 -translate-x-2 opacity-0"
+            : "max-w-32 translate-x-0 opacity-100"
+        }`}
+        // Collapsed, the aria-label above is the accessible name - keep the
+        // clipped text out of the tree so it is not announced twice.
+        aria-hidden={isSidebarCollapsed}
+      >
+        {label}
+      </span>
+    </button>
+  );
+
+  // One write path, shared with the in-chat card (src/lib/personalization.ts).
+  const persistPersonalization = async (text: string) => {
+    if (!user) return;
+    const error = await savePersonalizationBackground(user.id, text);
+    if (error) {
+      toast.error("Couldn't save your background - try again.");
+      return;
+    }
+    await refreshProfile();
+    toast.success(text ? "Saved - G&D now studies with you in mind." : "Personalization removed");
+    setPersonalizeOpen(false);
   };
 
   // Guests have no way back into an anonymous session once it's gone, so warn
@@ -424,119 +570,260 @@ function AppLayout() {
         className={`gd-app-sidebar hidden md:flex flex-col overflow-hidden border-r border-border/70 bg-background/95 transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] md:shrink-0 ${isSidebarCollapsed ? "md:w-16 xl:w-16" : "md:w-60 xl:w-64"}`}
       >
         <div
-          className={`flex items-center transition-[padding] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-            isSidebarCollapsed ? "justify-center px-4 py-5" : "justify-between px-5 py-5"
+          className={`flex shrink-0 items-center transition-[padding] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+            isSidebarCollapsed ? "justify-center px-2 py-4" : "justify-between px-5 py-5"
           }`}
         >
-          <Link
-            to="/app/chat"
-            className={`gd-sidebar-brand luxury-brand-text overflow-hidden whitespace-nowrap transition-all duration-300 ${
-              isSidebarCollapsed
-                ? "max-w-0 -translate-x-2 opacity-0"
-                : "max-w-24 translate-x-0 opacity-100"
-            }`}
-            aria-hidden={isSidebarCollapsed}
-            tabIndex={isSidebarCollapsed ? -1 : undefined}
-          >
-            G&D
-          </Link>
+          {isSidebarCollapsed ? (
+            // Collapsed, the logo mark *is* the menu button (Gemini's rail).
+            // A button, not a Link - it opens the menu, it does not navigate.
+            <button
+              type="button"
+              onClick={() => chooseSidebarCollapsed(false)}
+              className="gd-rail-mark grid h-10 w-10 place-items-center rounded-xl border border-border/70 transition-colors hover:bg-foreground/[0.06]"
+              title="Open menu"
+              aria-label="Open menu"
+              aria-expanded={false}
+            >
+              G&D
+            </button>
+          ) : (
+            <>
+              <Link to="/app/chat" className="gd-sidebar-brand luxury-brand-text whitespace-nowrap">
+                G&D
+              </Link>
+              <button
+                type="button"
+                onClick={() => chooseSidebarCollapsed(true)}
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+                title="Collapse menu"
+                aria-label="Collapse menu"
+                aria-expanded
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            </>
+          )}
+        </div>
+        {/* New chat - ported from the chat page's own sidebar, which is gone.
+            The mobile drawer and top bar already had one; the desktop sidebar
+            did not, so starting a fresh chat meant going through the rail. */}
+        <div className={`shrink-0 ${isSidebarCollapsed ? "px-2 pb-1" : "px-3 pb-1"}`}>
           <button
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-            title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            type="button"
+            onClick={openNewChat}
+            title="New chat"
+            aria-label="New chat"
+            className={`flex items-center overflow-hidden rounded-lg border border-border/70 text-foreground transition-colors hover:border-pop/40 hover:bg-foreground/[0.05] ${
+              isSidebarCollapsed
+                ? "mx-auto h-10 w-10 justify-center"
+                : "w-full gap-2 px-3 py-2.5 text-sm font-medium"
+            }`}
           >
-            {isSidebarCollapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
+            <Plus className="h-4 w-4 shrink-0" />
+            <span
+              className={`whitespace-nowrap transition-all duration-300 ${
+                isSidebarCollapsed
+                  ? "max-w-0 -translate-x-2 opacity-0"
+                  : "max-w-24 translate-x-0 opacity-100"
+              }`}
+              aria-hidden={isSidebarCollapsed}
+            >
+              New chat
+            </span>
           </button>
         </div>
-        <nav className="flex-1 space-y-6 px-3 py-2">
-          {!isSidebarCollapsed && <p className="gd-nav-label px-3">Study space</p>}
-          <div className="space-y-1">
-            {navItem("/app/chat", <MessageSquare className="h-4 w-4 shrink-0" />, "Chat", "blue")}
-            {navItem(
-              "/app/library",
-              <BookOpen className="h-4 w-4 shrink-0" />,
-              "Library",
-              "blue",
-              "nav-library",
-            )}
-            {navItem(
-              "/app/studybody",
-              <BrainCircuit className="h-4 w-4 shrink-0" />,
-              "My Coach",
-              "violet",
-              "nav-studybody",
-            )}
-            {navItem(
-              "/app/last-minute",
-              <TimerReset className="h-4 w-4 shrink-0" />,
-              "Last Minute",
-              "coral",
-              "nav-last-minute",
-            )}
-          </div>
-          <div className="space-y-1 border-t border-border/60 pt-5">
-            {!isSidebarCollapsed && <p className="gd-nav-label px-3">Your work</p>}
-            {navItem(
-              "/app/history",
-              <Clock className="h-4 w-4 shrink-0" />,
-              "History",
-              "slate",
-              "nav-history",
-            )}
-            {navItem(
-              "/app/leaderboard",
-              <Trophy className="h-4 w-4 shrink-0" />,
-              "Leaderboard",
-              "amber",
-            )}
-            {navItem("/app/feedback", <Heart className="h-4 w-4 shrink-0" />, "Feedback")}
-            {navItem("/app/settings", <Settings className="h-4 w-4 shrink-0" />, "Settings")}
-            {profile?.is_admin &&
-              navItem("/app/admin", <ShieldCheck className="h-4 w-4 shrink-0" />, "Admin", "amber")}
-          </div>
-        </nav>
+
+        {/* ONE scroll region for the nav AND the chat history.
+            The nav used to be a fixed-height block with the history below it,
+            which meant a tall nav (ten rows, and every row 4px taller in the
+            .brutal skin) pushed the footer past the sidebar's bottom edge -
+            the sidebar is overflow-hidden, so the Appearance picker at the
+            bottom of that footer was simply cut off, and in brutal it vanished
+            entirely. Everything above the footer scrolls now, so the footer is
+            always reachable no matter how short the viewport or how tall the
+            skin makes the rows. */}
+        <div className="gd-no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain">
+          <nav className="shrink-0 space-y-6 px-3 py-2">
+            {!isSidebarCollapsed && <p className="gd-nav-label px-3">Study space</p>}
+            <div className="space-y-1">
+              {navItem("/app/chat", <MessageSquare className="h-4 w-4 shrink-0" />, "Chat", "blue")}
+              {navItem(
+                "/app/library",
+                <BookOpen className="h-4 w-4 shrink-0" />,
+                "Library",
+                "blue",
+                "nav-library",
+              )}
+              {navItem(
+                "/app/studybody",
+                <BrainCircuit className="h-4 w-4 shrink-0" />,
+                "My Coach",
+                "violet",
+                "nav-studybody",
+              )}
+              {navItem(
+                "/app/last-minute",
+                <TimerReset className="h-4 w-4 shrink-0" />,
+                "Last Minute",
+                "coral",
+                "nav-last-minute",
+              )}
+            </div>
+            <div className="space-y-1 border-t border-border/60 pt-5">
+              {!isSidebarCollapsed && <p className="gd-nav-label px-3">Your work</p>}
+              {navItem(
+                "/app/history",
+                <Clock className="h-4 w-4 shrink-0" />,
+                "History",
+                "slate",
+                "nav-history",
+              )}
+              {navItem(
+                "/app/leaderboard",
+                <Trophy className="h-4 w-4 shrink-0" />,
+                "Leaderboard",
+                "amber",
+              )}
+              {navAction(
+                <Sparkles className="h-4 w-4 shrink-0" />,
+                "Personalize",
+                () => setPersonalizeOpen(true),
+                "violet",
+                !profile?.personalization_background,
+              )}
+              {navItem("/app/feedback", <Heart className="h-4 w-4 shrink-0" />, "Feedback")}
+              {/* Settings is not in this list any more - it lives with the account,
+                as the gear in the footer user row (and at the foot of the
+                collapsed rail). Same /app/settings route, one entry point. */}
+              {profile?.is_admin &&
+                navItem(
+                  "/app/admin",
+                  <ShieldCheck className="h-4 w-4 shrink-0" />,
+                  "Admin",
+                  "amber",
+                )}
+            </div>
+          </nav>
+
+          {/* "Recent" - the app's only chat history now that the chat page's
+              own sidebar is gone, so it carries that sidebar's date grouping
+              (Today / Yesterday / … / Older), its delete control and its
+              empty + guest states rather than a flat capped list. */}
+          {!isSidebarCollapsed && (
+            <div className="px-3 pb-2 pt-5">
+              <p className="gd-nav-label px-3 pb-2">Recent</p>
+              {recentConvos.length === 0 ? (
+                <p className="px-3 text-xs text-muted-foreground">
+                  {isGuest ? "Guest chats are not saved." : "No chats yet."}
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  <SidebarConvoGroup
+                    title="Today"
+                    items={groupedRecentConvos.today}
+                    activeId={activeConvoId}
+                    onDelete={deleteConversation}
+                  />
+                  <SidebarConvoGroup
+                    title="Yesterday"
+                    items={groupedRecentConvos.yesterday}
+                    activeId={activeConvoId}
+                    onDelete={deleteConversation}
+                  />
+                  <SidebarConvoGroup
+                    title="This week"
+                    items={groupedRecentConvos.thisWeek}
+                    activeId={activeConvoId}
+                    onDelete={deleteConversation}
+                  />
+                  <SidebarConvoGroup
+                    title="This month"
+                    items={groupedRecentConvos.thisMonth}
+                    activeId={activeConvoId}
+                    onDelete={deleteConversation}
+                  />
+                  <SidebarConvoGroup
+                    title="Older"
+                    items={groupedRecentConvos.older}
+                    activeId={activeConvoId}
+                    onDelete={deleteConversation}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        {/* The footer is pinned and never shrinks, so everything in it - the
+            Appearance picker included - stays on screen. The max-height is the
+            belt-and-braces case: on a viewport too short for even the footer
+            (and the .brutal skin makes every row taller), it scrolls itself
+            rather than letting its lower half be clipped away by the aside's
+            overflow-hidden, which is how the theme picker went missing. */}
         <div
-          className={`border-t border-border/70 ${
-            isSidebarCollapsed ? "flex flex-col items-center gap-3 p-4" : "p-4"
+          className={`gd-no-scrollbar max-h-[55%] shrink-0 overflow-y-auto overscroll-contain border-t border-border/70 ${
+            isSidebarCollapsed ? "flex flex-col items-center gap-3 p-3" : "p-4"
           }`}
         >
-          {/* max-h is the collapse animation's travel, but it also clips. This
-              block stacks a name, a points/level/streak line and a
-              year/university line, which overrun 56px and were cut off at the
-              bottom. 96px leaves headroom without changing the motion. */}
-          <div
-            className={`gd-sidebar-profile overflow-hidden px-2 transition-all duration-300 ${
-              isSidebarCollapsed
-                ? "mb-0 max-h-0 -translate-y-1 opacity-0"
-                : "mb-3 max-h-24 translate-y-0 opacity-100"
-            }`}
-            aria-hidden={isSidebarCollapsed}
-          >
-            <div className="flex items-center gap-2">
-              <span className="gd-profile-mark">
-                {(profile.name || "S").slice(0, 1).toUpperCase()}
-              </span>
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
-                <div className="truncate text-[11px] text-muted-foreground">
-                  {gamification.points} pts - L{levelFromPoints(gamification.points)} -{" "}
-                  {gamification.currentStreak}d
+          {/* The account block. Collapsed it is the foot of the rail - settings
+              gear above the avatar (screenshot A), pushed last by order-last so
+              the guide/theme/sign-out icons stack above it. Expanded it is the
+              pinned user row: avatar + name on the left, gear on the right. */}
+          {isSidebarCollapsed ? (
+            <div className="order-last flex flex-col items-center gap-3">
+              <Link
+                to="/app/settings"
+                title="Settings"
+                aria-label="Settings"
+                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+              >
+                <Settings className="h-4 w-4" />
+              </Link>
+              <button
+                type="button"
+                onClick={() => chooseSidebarCollapsed(false)}
+                title={`${profile.name || "Student"} - open menu`}
+                aria-label={`${profile.name || "Student"} - open menu`}
+                className="rounded-[0.45rem] transition-opacity hover:opacity-80"
+              >
+                <span className="gd-profile-mark">
+                  {(profile.name || "S").slice(0, 1).toUpperCase()}
+                </span>
+              </button>
+            </div>
+          ) : (
+            <div className="gd-sidebar-profile mb-3 px-2">
+              <div className="flex items-center gap-2">
+                <span className="gd-profile-mark shrink-0">
+                  {(profile.name || "S").slice(0, 1).toUpperCase()}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
+                  <div className="truncate text-[11px] text-muted-foreground">
+                    {gamification.points} pts - L{levelFromPoints(gamification.points)} -{" "}
+                    {gamification.currentStreak}d
+                  </div>
                 </div>
+                <Link
+                  to="/app/settings"
+                  title="Settings"
+                  aria-label="Settings"
+                  className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+                >
+                  <Settings className="h-4 w-4" />
+                </Link>
+              </div>
+              <div className="truncate text-xs text-muted-foreground">
+                {[profile.year, profile.university].filter(Boolean).join(" - ")}
               </div>
             </div>
-            <div className="truncate text-xs text-muted-foreground">
-              {[profile.year, profile.university].filter(Boolean).join(" - ")}
-            </div>
-          </div>
+          )}
           <button
             type="button"
             data-tour="tour-launcher"
             onClick={() => setTourOpen(true)}
             title={isSidebarCollapsed ? "Guide" : "Replay the app guide"}
+            aria-label="Replay the app guide"
             className={`mb-1 flex items-center text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground ${
               isSidebarCollapsed
                 ? "justify-center rounded-lg p-2"
@@ -550,6 +837,7 @@ function AppLayout() {
                   ? "max-w-0 -translate-x-2 opacity-0"
                   : "max-w-24 translate-x-0 opacity-100"
               }`}
+              aria-hidden={isSidebarCollapsed}
             >
               Guide
             </span>
@@ -567,6 +855,7 @@ function AppLayout() {
                 : "w-full gap-3 rounded-lg px-3 py-2 text-sm font-medium"
             }`}
             title={isSidebarCollapsed ? "Sign out" : undefined}
+            aria-label="Sign out"
           >
             <LogOut className="h-4 w-4 shrink-0" />
             <span
@@ -575,6 +864,7 @@ function AppLayout() {
                   ? "max-w-0 -translate-x-2 opacity-0"
                   : "max-w-24 translate-x-0 opacity-100"
               }`}
+              aria-hidden={isSidebarCollapsed}
             >
               Sign out
             </span>
@@ -701,6 +991,15 @@ function AppLayout() {
                 }}
               />
               <MobileDrawerNavItem
+                active={false}
+                icon={<Sparkles className="h-4 w-4" />}
+                label="Personalize"
+                onPick={() => {
+                  setMobileMenuOpen(false);
+                  setPersonalizeOpen(true);
+                }}
+              />
+              <MobileDrawerNavItem
                 active={location.pathname.includes("feedback")}
                 icon={<Heart className="h-4 w-4" />}
                 label="Feedback"
@@ -730,7 +1029,7 @@ function AppLayout() {
             <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               Recent chats
             </p>
-            {mobileConvos.length === 0 ? (
+            {recentConvos.length === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center">
                 <MessageSquare className="h-8 w-8 text-muted-foreground/30" />
                 <p className="text-xs text-muted-foreground">No chats yet. Start one above!</p>
@@ -739,7 +1038,7 @@ function AppLayout() {
               <div className="space-y-3">
                 <MobileConvoGroup
                   title="Today"
-                  items={groupedMobileConvos.today}
+                  items={groupedRecentConvos.today}
                   activeId={search.c}
                   onPick={(id) => {
                     navigate({ to: "/app/chat", search: { c: id } });
@@ -748,7 +1047,7 @@ function AppLayout() {
                 />
                 <MobileConvoGroup
                   title="Yesterday"
-                  items={groupedMobileConvos.yesterday}
+                  items={groupedRecentConvos.yesterday}
                   activeId={search.c}
                   onPick={(id) => {
                     navigate({ to: "/app/chat", search: { c: id } });
@@ -757,7 +1056,7 @@ function AppLayout() {
                 />
                 <MobileConvoGroup
                   title="This week"
-                  items={groupedMobileConvos.thisWeek}
+                  items={groupedRecentConvos.thisWeek}
                   activeId={search.c}
                   onPick={(id) => {
                     navigate({ to: "/app/chat", search: { c: id } });
@@ -766,7 +1065,7 @@ function AppLayout() {
                 />
                 <MobileConvoGroup
                   title="This month"
-                  items={groupedMobileConvos.thisMonth}
+                  items={groupedRecentConvos.thisMonth}
                   activeId={search.c}
                   onPick={(id) => {
                     navigate({ to: "/app/chat", search: { c: id } });
@@ -775,7 +1074,7 @@ function AppLayout() {
                 />
                 <MobileConvoGroup
                   title="Older"
-                  items={groupedMobileConvos.older}
+                  items={groupedRecentConvos.older}
                   activeId={search.c}
                   onPick={(id) => {
                     navigate({ to: "/app/chat", search: { c: id } });
@@ -850,6 +1149,41 @@ function AppLayout() {
         </main>
       </div>
 
+      {/* Personalize: the sidebar's permanent door into the "who I am" import.
+          Unlike the in-chat card it stays available after the background is
+          saved, and opens with the saved text loaded so it can be revised. */}
+      <Dialog open={personalizeOpen} onOpenChange={setPersonalizeOpen}>
+        <DialogContent className="luxury-panel max-h-[88dvh] max-w-[calc(100vw-1.5rem)] overflow-y-auto sm:max-h-[85vh] sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-pop" />
+              Personalize G&amp;D
+            </DialogTitle>
+            <DialogDescription>
+              {profile?.personalization_background
+                ? "This is what G&D knows about you. Edit it any time - saving an empty box clears it."
+                : "Bring what another AI already knows about you into G&D."}
+            </DialogDescription>
+          </DialogHeader>
+          <PersonalizationPanel
+            variant="plain"
+            initialBackground={profile?.personalization_background ?? ""}
+            onSave={persistPersonalization}
+            note={
+              isGuest ? (
+                <>
+                  You're in a guest session - this saves, but it's lost if you sign out.{" "}
+                  <Link to="/auth" search={{ mode: "upgrade" }} className="underline">
+                    Create a free account
+                  </Link>{" "}
+                  to keep it.
+                </>
+              ) : undefined
+            }
+          />
+        </DialogContent>
+      </Dialog>
+
       <LibraryAnnouncement open={announcementOpen} onClose={() => setAnnouncementOpen(false)} />
 
       <FeatureTour
@@ -891,6 +1225,65 @@ function MobileDrawerNavItem({
       {icon}
       {label}
     </button>
+  );
+}
+
+// One dated block of the desktop sidebar's chat history. Ported from the chat
+// page's ConvoGroup, with two deliberate changes: the row is a <Link> (so the
+// browser's open-in-new-tab / middle-click still work, which the old <div
+// onClick> broke), and the delete button is a SIBLING of that link rather than
+// nested inside it - a button inside an anchor is invalid HTML and swallows
+// keyboard activation.
+function SidebarConvoGroup({
+  title,
+  items,
+  activeId,
+  onDelete,
+}: {
+  title: string;
+  items: ConversationRow[];
+  activeId?: string;
+  onDelete: (id: string) => void;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <section>
+      <p className="gd-nav-label px-3 pb-1">{title}</p>
+      <ul className="space-y-0.5">
+        {items.map((convo) => {
+          const label = convo.title || "New conversation";
+          const active = activeId === convo.id;
+          return (
+            <li key={convo.id} className="group/convo relative">
+              <Link
+                to="/app/chat"
+                search={{ c: convo.id }}
+                title={label}
+                className={`block truncate rounded-lg py-1.5 pl-3 pr-8 text-[13px] transition-colors ${
+                  active
+                    ? "bg-foreground/[0.07] text-foreground"
+                    : "text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground"
+                }`}
+              >
+                {label}
+              </Link>
+              <button
+                type="button"
+                onClick={() => onDelete(convo.id)}
+                title="Delete chat"
+                aria-label={`Delete chat: ${label}`}
+                // Hidden until the row is hovered, but always reachable by
+                // keyboard - focus-visible brings it back.
+                className="absolute right-1 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/[0.06] hover:text-destructive focus-visible:opacity-100 group-hover/convo:opacity-100"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

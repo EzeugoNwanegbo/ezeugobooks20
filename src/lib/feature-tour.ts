@@ -32,18 +32,22 @@ export const TOUR_STEPS: TourStep[] = [
     anchor: "composer",
     route: "/app/chat",
   },
+  // Both of these used to point at their own segmented control in the chat
+  // header. That header is gone and the "+" on the composer is the single door
+  // to all of it, so they spotlight the same button twice - once for each
+  // setting behind it.
   {
     id: "style",
     title: "Pick how the answer comes out",
-    body: "Simple is plain English with an analogy. Detailed adds the reasoning and exceptions. Detailed+ writes full study notes - and offers to save them as a PDF.",
-    anchor: "answer-style",
+    body: "Tap + and choose Answer style. Simple is plain English with an analogy. Detailed adds the reasoning and exceptions. Detailed+ writes full study notes - and offers to save them as a PDF.",
+    anchor: "composer-plus",
     route: "/app/chat",
   },
   {
     id: "sources",
     title: "Tell it what to read",
-    body: "My files only keeps every answer inside your uploads. Files + general fills the gaps. General knowledge ignores your library entirely.",
-    anchor: "answer-sources",
+    body: "The same + menu holds Answer sources, and Add file. My files only keeps every answer inside your uploads. Files + general fills the gaps. General knowledge ignores your library entirely.",
+    anchor: "composer-plus",
     route: "/app/chat",
   },
   {

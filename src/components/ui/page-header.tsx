@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-// The shared top-of-page header used across the app: a small teal eyebrow, a
+// The shared top-of-page header used across the app: a small accent eyebrow, a
 // light display title, an optional subtitle, and an optional actions slot
 // (search, primary button). Keeps every screen's header rhythm identical.
 export function PageHeader({

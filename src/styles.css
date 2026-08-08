@@ -89,81 +89,107 @@ html {
 :root {
   --radius: 0.875rem;
 
-  /* Dark Symbiote Organicism palette (matches the landing) */
-  --background: #060606;
-  --foreground: #e9e7e3;
+  /* ── THE FIVE ──────────────────────────────────────────────────────────────
+     Black       #070707  page ground
+     Graphite    #2D2D2D  elevated surfaces, plates, the side menu
+     Bone        #E9E0D1  primary ink            (18:1 on Black)
+     Pale Oak    #D5C9AE  muted / secondary ink  (14:1 on Black)
+     Faded Copper #A58763 THE accent             (6.5:1 on Black)
 
-  --surface: #111110;
-  --surface-elevated: #1b1b19;
+     Depth is a ramp between the first two, not a single flat value: the page is
+     Black, surfaces are mixes toward Graphite, and the side menu is Graphite
+     itself. Borders stay ALPHA Bone rather than a flat Graphite line, so one
+     token reads correctly on the page and on a raised plate alike. */
+  --background: #070707;
+  --foreground: #e9e0d1;
 
-  --card: rgba(228, 228, 204, 0.04);
-  --card-foreground: #e9e7e3;
+  /* Black → Graphite ramp: ~25%, ~45%, ~55%. */
+  --surface: #131211;
+  --surface-elevated: #1e1d1b;
 
-  --popover: #111110;
-  --popover-foreground: #e9e7e3;
+  --card: rgba(233, 224, 209, 0.04);
+  --card-foreground: #e9e0d1;
 
-  /* Warm beige primary */
-  --primary: #e4e4cc;
-  --primary-foreground: #1b1d0e;
-  --primary-glow: #c8c8b0;
+  --popover: #1a1918;
+  --popover-foreground: #e9e0d1;
+
+  /* Faded Copper is the primary action. Ink on it is near-Black at 6.0:1. */
+  --primary: #a58763;
+  --primary-foreground: #0e0b08;
+  --primary-glow: #c2a17a;
 
   /* Quiet secondary surface */
-  --secondary: #15150f;
-  --secondary-foreground: #e9e7e3;
+  --secondary: #1a1918;
+  --secondary-foreground: #e9e0d1;
 
-  --muted: #15150f;
-  --muted-foreground: #b6b4ab;
+  --muted: #1a1918;
+  /* Pale Oak dimmed onto the ground. Full Pale Oak (14:1) sits so close to Bone
+     (18:1) that secondary text stopped reading as secondary; at 76% it is
+     unmistakably quieter and still 7.3:1. */
+  --muted-foreground: #a79c88;
 
-  --accent: #c8c8b0;
-  --accent-foreground: #1b1d0e;
+  --accent: #a58763;
+  --accent-foreground: #0e0b08;
 
-  /* Reserved warm warning tone */
-  --coral: #c8c8b0;
-  --coral-foreground: #1b1d0e;
+  /* Reserved warm warning tone. Kept inside the family but pushed amber so a
+     "hurry" surface still reads as urgency next to a copper action. 7.2:1. */
+  --coral: #c4915e;
+  --coral-foreground: #14100a;
 
-  --destructive: #b66b5f;
-  --destructive-foreground: #1b1d0e;
+  /* The ONE colour outside the palette. Irreversible actions (Delete Account)
+     must not look like a primary action, and copper and red are both warm — so
+     this sits at hue ~6° against copper's ~33° and carries roughly twice the
+     saturation. 5.6:1 on Black, 4.6:1 on --surface-elevated. */
+  --destructive: #d0685b;
+  --destructive-foreground: #150c09;
 
-  --border: rgba(228, 228, 204, 0.14);
+  --border: rgba(233, 224, 209, 0.14);
   /* Fields carry a stronger edge than plain borders. Minimalism removed the
      shadows that used to hint where a control was, so the one remaining cue —
      the outline — has to actually be visible. At 0.12 a textarea on
      bg-background was indistinguishable from the page. */
-  --input: rgba(228, 228, 204, 0.26);
-  --ring: #c8c8b0;
+  --input: rgba(233, 224, 209, 0.26);
+  --ring: #a58763;
 
-  /* Source badges */
-  --source-library: #e4e4cc;
-  --source-general: #c8c8b0;
-  --source-web: #9e9a93;
+  /* Source badges — copper for "your own material", then two steps of oak. */
+  --source-library: #c2a17a;
+  --source-general: #d5c9ae;
+  --source-web: #8e8574;
 
-  --luxury-soft: rgba(228, 228, 204, 0.04);
-  --luxury-soft-strong: rgba(228, 228, 204, 0.08);
-  --luxury-border-soft: rgba(228, 228, 204, 0.1);
-  --luxury-border-strong: rgba(228, 228, 204, 0.18);
-  --luxury-muted: #8a8680;
-  --luxury-subtle: #6b6760;
-  --luxury-faint: #4a4845;
-  --luxury-ai-bg: #030303;
-  --luxury-selection: rgba(228, 228, 204, 0.18);
-  --luxury-button-sheen: rgba(14, 13, 11, 0.16);
-  --luxury-code-bg: #100f0d;
-  --luxury-pulse: rgba(228, 228, 204, 0.18);
+  --luxury-soft: rgba(233, 224, 209, 0.04);
+  --luxury-soft-strong: rgba(233, 224, 209, 0.08);
+  --luxury-border-soft: rgba(233, 224, 209, 0.1);
+  --luxury-border-strong: rgba(233, 224, 209, 0.18);
+  --luxury-muted: #a79c88;
+  /* Placeholder text lives on this token, so it has to clear AA on every
+     dark surface, not just the page: 5.7:1 on Black, 4.8:1 on --surface-elevated. */
+  --luxury-subtle: #918876;
+  --luxury-faint: #867d6c;
+  --luxury-ai-bg: #050505;
+  /* Selection is a copper role. Bone on the selected ground is still 10.3:1. */
+  --luxury-selection: rgba(165, 135, 99, 0.3);
+  --luxury-button-sheen: rgba(14, 11, 8, 0.16);
+  --luxury-code-bg: #131211;
+  --luxury-pulse: rgba(233, 224, 209, 0.18);
 
-  /* THE KEYED PLATE accent rule: colour arrives when we know who you are.
-     Before a discipline is set - a guest, or anyone pre-onboarding - the accent
-     is simply the plate's own ink and paper, so the interface is pure structure.
-     The medicine and law blocks below then introduce the one colour that means
-     something. This replaced a stray blue that belonged to no theme. */
-  --pop: #ece8de;
-  --pop-2: #d8d3c6;
-  --pop-foreground: #12161c;
-  --gradient-pop: none;
-  --shadow-pop: none;
+  /* --pop is the app-wide accent slot (text-pop, border-pop, bg-pop/…). It used
+     to stay neutral until a discipline was known; discipline colour is retired,
+     so there is one accent for everyone and it is Faded Copper. */
+  --pop: #a58763;
+  --pop-2: #957a5b;
+  --pop-foreground: #0e0b08;
+  --gradient-pop: linear-gradient(145deg, #c2a17a 0%, #957a5b 100%);
+  --shadow-pop: 0 10px 26px -10px rgba(165, 135, 99, 0.35);
 
-  /* One warm supporting tone (brass/gold) - used ONLY to signal "answered from
-     your own files", like a highlight on your own material. */
-  --leaf: #e6c15a;
+  /* Was a brass/gold outside the palette; now the lifted copper. Signals
+     "answered from your own files". */
+  --leaf: #c6a97f;
+
+  /* Chat background aura (see .gd-chat-aura). Raw channels, not a colour, so
+     the gradients can take an alpha without color-mix — see the note there.
+     Faded Copper blooming, settling into Graphite at the edge. */
+  --aura-rgb: 165 135 99;
+  --aura-edge-rgb: 45 45 45;
 
   /* Shadows — MINIMALISM.
      Dark is the default skin now, and its brief is restraint: depth comes from
@@ -190,204 +216,120 @@ html {
   /* App is dark by default. */
 }
 
-/* Light theme: warm beige (#c6ac8f) ground, charcoal (#353535) ink, with a
-   little near-black (#0a0908) for the deepest accents. */
+/* Light theme: the same five, inverted. Bone (#E9E0D1) is the desk, Black and
+   Graphite are the ink, Faded Copper is still the one accent.
+   One deliberate adjustment: raw #A58763 on a Bone ground is 2.6:1 — it fails
+   as text and it fails as a button fill under light ink. So light uses the SAME
+   copper hue (33°) taken down to #6F5637: 5.2:1 as text on the Bone ground,
+   6.4:1 on the lifted stock, 4.6:1 on a --secondary chip, and 6.4:1 for the ink
+   sitting on it. It is the palette accent on paper, not a second accent. */
 .light {
-  /* Beige is the desk; the plate lifts off it.
-     The brand beige stays as the ground. What made the old light theme muddy
-     was not the beige - it was that ground, surface and card were all the same
-     mid-tone tan, so a card never separated from the page behind it. Here the
-     ground keeps its colour and everything you read on sits on warm near-white
-     stock above it, which is how a plate actually meets a desk. */
-  --background: #e3d6bf;
-  --foreground: #12161c;
+  /* Bone is the desk; the plate lifts off it.
+     Ground, surface and card must not be the same tone or a card never
+     separates from the page behind it — so the ground stays Bone and
+     everything you read on sits on lifted Bone stock above it. */
+  --background: #e9e0d1;
+  --foreground: #131211;
 
-  --surface: #fbf8f1;
-  --surface-elevated: #fffdf8;
+  --surface: #f4eee3;
+  --surface-elevated: #fbf7ef;
 
-  --card: #fbf8f1;
-  --card-foreground: #12161c;
+  --card: #f4eee3;
+  --card-foreground: #131211;
 
-  --popover: #fffdf8;
-  --popover-foreground: #12161c;
+  --popover: #fbf7ef;
+  --popover-foreground: #131211;
 
-  --primary: #12161c;
-  --primary-foreground: #fbf8f1;
-  --primary-glow: #3a4250;
+  --primary: #6f5637;
+  --primary-foreground: #fbf7ef;
+  --primary-glow: #856843;
 
-  --secondary: #ede2cd;
-  --secondary-foreground: #12161c;
+  --secondary: #ded3c0;
+  --secondary-foreground: #131211;
 
-  --muted: #ede2cd;
-  --muted-foreground: #5a5648;
+  --muted: #ded3c0;
+  /* Warm graphite, lifted off pure #2D2D2D so it reads as secondary. 5.5:1. */
+  --muted-foreground: #5d564b;
 
-  --accent: #12161c;
-  --accent-foreground: #fbf8f1;
+  --accent: #6f5637;
+  --accent-foreground: #fbf7ef;
 
-  --coral: #b06a4e;
-  --coral-foreground: #ffffff;
+  --coral: #874920;
+  --coral-foreground: #fbf7ef;
 
-  --destructive: #a24f45;
-  --destructive-foreground: #fff8f4;
+  /* Red stays red on paper too. Hue ~6° against the copper's ~33°. 5.2:1. */
+  --destructive: #9e3a2f;
+  --destructive-foreground: #fbf7ef;
 
-  /* Plate rules: hairlines, not grey slabs. */
-  --border: rgba(18, 22, 28, 0.14);
-  --input: rgba(18, 22, 28, 0.2);
-  --ring: #12161c;
+  /* Plate rules: hairlines, not grey slabs. Alpha Black, so the one token works
+     on the Bone ground and on the lifted stock alike. */
+  --border: rgba(19, 18, 17, 0.14);
+  --input: rgba(19, 18, 17, 0.22);
+  --ring: #6f5637;
 
-  --source-library: #12161c;
-  --source-general: #5a5648;
-  --source-web: #7b7563;
+  --source-library: #6f5637;
+  --source-general: #5d564b;
+  --source-web: #665f51;
 
-  --luxury-soft: rgba(18, 22, 28, 0.04);
-  --luxury-soft-strong: rgba(18, 22, 28, 0.08);
-  --luxury-border-soft: rgba(18, 22, 28, 0.12);
-  --luxury-border-strong: rgba(18, 22, 28, 0.22);
-  --luxury-muted: #5a5648;
-  --luxury-subtle: #7b7563;
-  --luxury-faint: #a09880;
-  /* Answers read on the lifted stock, not on the beige ground. */
-  --luxury-ai-bg: #fbf8f1;
-  --luxury-selection: rgba(18, 22, 28, 0.14);
+  --luxury-soft: rgba(19, 18, 17, 0.04);
+  --luxury-soft-strong: rgba(19, 18, 17, 0.08);
+  --luxury-border-soft: rgba(19, 18, 17, 0.12);
+  --luxury-border-strong: rgba(19, 18, 17, 0.22);
+  --luxury-muted: #5d564b;
+  /* Same job as in dark — placeholders and .luxury-card body copy. 4.8:1 on
+     the Bone ground, 5.9:1 on the lifted stock. */
+  --luxury-subtle: #665f51;
+  --luxury-faint: #6b6455;
+  /* Answers read on the lifted stock, not on the Bone ground. */
+  --luxury-ai-bg: #f4eee3;
+  --luxury-selection: rgba(165, 135, 99, 0.3);
   --luxury-button-sheen: rgba(255, 255, 255, 0.3);
-  --luxury-code-bg: #ede2cd;
-  --luxury-pulse: rgba(18, 22, 28, 0.14);
-  --shadow-elegant: 0 18px 48px -32px rgba(18, 22, 28, 0.3);
+  --luxury-code-bg: #ded3c0;
+  --luxury-pulse: rgba(19, 18, 17, 0.14);
+  --shadow-elegant: 0 18px 48px -32px rgba(19, 18, 17, 0.3);
   --shadow-glow: none;
 
-  /* Plate ink is the accent on paper; the discipline blocks below override it
-     with the one colour that carries meaning. */
-  --pop: #12161c;
-  --pop-2: #000000;
-  --pop-foreground: #fbf8f1;
-  --gradient-pop: none;
-  --shadow-pop: 0 8px 20px -10px rgba(18, 22, 28, 0.35);
+  --pop: #6f5637;
+  --pop-2: #5e4830;
+  --pop-foreground: #fbf7ef;
+  --gradient-pop: linear-gradient(145deg, #856843 0%, #5e4830 100%);
+  --shadow-pop: 0 8px 20px -10px rgba(19, 18, 17, 0.35);
 
-  --leaf: #8a6a2a;
+  --leaf: #6f5637;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   DISCIPLINE THEMING
-   The app carries identity in its "jewelry, not its walls": the reading surface
-   (--background/--foreground, prose metrics, Nunito body) never changes, so a
-   paragraph of answer text is identical in both. Only the accent system, chrome,
-   focus, chips, headings, radius, fonts and motion diverge. Applied via
-   `data-discipline` on <html> (parallel to the .dark/.light class toggle).
-   Guests / no-discipline users get no attribute → today's neutral theme.
+   DISCIPLINE THEMING — COLOUR RETIRED
+   Medicine's teal (#3fdac8) and Law's gold (#cba35c) are gone. There is now ONE
+   palette for everyone, so these blocks no longer touch a single colour token;
+   they survive as NON-COLOUR hooks only, because a fair amount still hangs off
+   the attribute (see DISCIPLINE CHROME further down: motion timing, the law
+   small-caps kicker, the sidebar hairline) and `-app-shell.tsx` still sets
+   `root.dataset.discipline` for the prompt/framework layer.
 
-   Specificity note: :root[data-discipline] and .light[data-discipline] are equal
-   (0,2,0); the .light[...] blocks come AFTER so they win in light mode.
+   Deleting the blocks outright would also have silently changed --radius for
+   every existing medicine (1rem) and law (0.25rem) student, which is geometry,
+   not palette — so the radius and motion character stay.
+
+   Anything colour-shaped that used to live here (--pop, --accent, --ring,
+   --primary, --coral, --surface*, --border, --input, --source-*, --leaf,
+   --luxury-selection) is now inherited from :root / .light unchanged. The
+   .light[data-discipline], .brutal[data-discipline] and .neo[data-discipline]
+   blocks were pure colour and have been removed entirely.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── MEDICINE — "monitor glow" (dark) ── */
+/* ── MEDICINE — snap ── */
 :root[data-discipline="medicine"] {
-  --pop: #3fdac8;
-  --pop-2: #2bb8a8;
-  --pop-foreground: #04211d;
-  --gradient-pop: linear-gradient(145deg, #55e2d2 0%, #2bb8a8 100%);
-  --shadow-pop: 0 10px 28px -8px rgba(63, 218, 200, 0.38);
-
-  --primary: #d8e6e2;
-  --primary-glow: #9cc9c0;
-  --primary-foreground: #0b1d19;
-  --accent: #3fdac8;
-  --accent-foreground: #04211d;
-  --ring: #3fdac8;
-  --coral: #ff7a70;
-  --coral-foreground: #21100d;
-
-  --surface: #0d1214;
-  --surface-elevated: #151c1e;
-  --border: rgba(216, 230, 226, 0.14);
-  --input: rgba(216, 230, 226, 0.26);
-
-  --source-library: #3fdac8;
-  --source-general: #8fb8b2;
-  --source-web: #7e8b93;
-  --leaf: #e6c15a;
-
-  --luxury-selection: rgba(63, 218, 200, 0.22);
-
   --radius: 1rem;
-  /* Discipline theming stays in colour, radius and motion - not in a third
-     and fourth type family. */
   --motion-emphasis: 340ms;
   --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* ── LAW — "chambers at lamplight" (dark) ── */
+/* ── LAW — settle ── */
 :root[data-discipline="law"] {
-  --pop: #cba35c;
-  --pop-2: #b98f49;
-  --pop-foreground: #241505;
-  --gradient-pop: linear-gradient(145deg, #d9b26b 0%, #b98f49 100%);
-  --shadow-pop: 0 10px 26px -10px rgba(203, 163, 92, 0.32);
-
-  --primary: #e7dac2;
-  --primary-glow: #cbb690;
-  --primary-foreground: #221807;
-  --accent: #cba35c;
-  --accent-foreground: #241505;
-  --ring: #cba35c;
-  --coral: #c97a6e;
-  --coral-foreground: #21100d;
-
-  --surface: #12100c;
-  --surface-elevated: #1c1812;
-  --border: rgba(226, 208, 177, 0.15);
-  --input: rgba(226, 208, 177, 0.27);
-
-  --source-library: #cba35c;
-  --source-general: #a99878;
-  --source-web: #8b8378;
-  --leaf: #e0b76a;
-
-  --luxury-selection: rgba(203, 163, 92, 0.22);
-
   --radius: 0.25rem;
-  /* See the medicine block: discipline character is colour, not type. */
   --motion-emphasis: 700ms;
   --motion-ease: cubic-bezier(0.32, 0, 0.12, 1);
-}
-
-/* ── MEDICINE (light) ── raw teal fails on cream; deepen to petrol ── */
-.light[data-discipline="medicine"] {
-  --pop: #0b7568;
-  --pop-2: #0f9d8c;
-  --pop-foreground: #ffffff;
-  --gradient-pop: linear-gradient(145deg, #0f9d8c 0%, #0b7568 100%);
-  --shadow-pop: 0 10px 26px -8px rgba(11, 117, 104, 0.34);
-  --accent: #0b7568;
-  --accent-foreground: #ffffff;
-  --ring: #0b7568;
-  /* Warm stock, petrol accent: the discipline is carried by the accent, not by
-     tinting every surface mint on a beige ground. */
-  --surface: #fbf8f1;
-  --surface-elevated: #fffdf8;
-  --luxury-ai-bg: #fbf8f1;
-  --source-library: #0b7568;
-  --source-general: #5a5648;
-  --source-web: #7b7563;
-  --luxury-selection: rgba(11, 117, 104, 0.2);
-}
-
-/* ── LAW (light) ── raw gold fails on cream; deepen to bronze ── */
-.light[data-discipline="law"] {
-  --pop: #7e5d26;
-  --pop-2: #94702f;
-  --pop-foreground: #ffffff;
-  --gradient-pop: linear-gradient(145deg, #94702f 0%, #7e5d26 100%);
-  --shadow-pop: 0 10px 26px -10px rgba(126, 93, 38, 0.32);
-  --accent: #7e5d26;
-  --accent-foreground: #ffffff;
-  --ring: #7e5d26;
-  --surface: #fbf8f1;
-  --surface-elevated: #fffdf8;
-  --luxury-ai-bg: #fbf8f1;
-  --source-library: #7e5d26;
-  --source-general: #7a6b4e;
-  --source-web: #837a6b;
-  --luxury-selection: rgba(126, 93, 38, 0.2);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -503,75 +445,13 @@ html {
   --motion-ease: linear;
 }
 
-/* ── MEDICINE (brutal) ── petrol reads on paper; the fill is deep teal ── */
-.brutal[data-discipline="medicine"] {
-  /* Paper on this teal is 4.8:1; black would be 4.3:1, so the fill flips. */
-  --brutal-hi: #0f7f70;
-  --brutal-hi-ink: #fffdf7;
-  --pop: #0b7568;
-  --pop-2: #0b7568;
-  --pop-foreground: #ffffff;
-  --gradient-pop: none;
-  --shadow-pop: var(--brutal-shadow-sm);
-
-  --primary: #0d0d0d;
-  --primary-glow: #0d0d0d;
-  --primary-foreground: #fffdf7;
-  --accent: #0b7568;
-  --accent-foreground: #ffffff;
-  --ring: #0d0d0d;
-  --coral: #e2452a;
-  --coral-foreground: #fffdf7;
-
-  --surface: #fffdf7;
-  --surface-elevated: #ffffff;
-  --border: #0d0d0d;
-  --input: #0d0d0d;
-
-  --source-library: #0b7568;
-  --source-general: #4a4740;
-  --source-web: #6b675e;
-  --leaf: #b58900;
-
-  --luxury-selection: color-mix(in srgb, var(--brutal-hi) 45%, #ffffff);
-
-  --radius: 0px;
-  --motion-emphasis: 120ms;
-  --motion-ease: linear;
-}
-
-/* ── LAW (brutal) ── bronze reads on paper; the fill is deep bronze ── */
+/* Brutalism's discipline blocks (teal / bronze fills) are retired with the rest
+   of discipline colour — the skin keeps its own single gold fill for everyone.
+   Note the radius/motion overrides in the :root[data-discipline] blocks above
+   are deliberately NOT re-applied here: brutalism forces 0px and linear on the
+   rules below regardless of discipline, as it always did. */
+.brutal[data-discipline="medicine"],
 .brutal[data-discipline="law"] {
-  /* Black on this bronze is 4.9:1, ahead of paper's 4.3:1. */
-  --brutal-hi: #9a7326;
-  --brutal-hi-ink: #0d0d0d;
-  --pop: #7e5d26;
-  --pop-2: #7e5d26;
-  --pop-foreground: #ffffff;
-  --gradient-pop: none;
-  --shadow-pop: var(--brutal-shadow-sm);
-
-  --primary: #0d0d0d;
-  --primary-glow: #0d0d0d;
-  --primary-foreground: #fffdf7;
-  --accent: #7e5d26;
-  --accent-foreground: #ffffff;
-  --ring: #0d0d0d;
-  --coral: #e2452a;
-  --coral-foreground: #fffdf7;
-
-  --surface: #fffdf7;
-  --surface-elevated: #ffffff;
-  --border: #0d0d0d;
-  --input: #0d0d0d;
-
-  --source-library: #7e5d26;
-  --source-general: #4a4740;
-  --source-web: #6b675e;
-  --leaf: #b58900;
-
-  --luxury-selection: color-mix(in srgb, var(--brutal-hi) 45%, #ffffff);
-
   --radius: 0px;
   --motion-emphasis: 120ms;
   --motion-ease: linear;
@@ -688,26 +568,15 @@ html {
   --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* ── MEDICINE (neo) ── the teal is lifted so it reads on charcoal ── */
-.neo[data-discipline="medicine"] {
-  --pop: #5fc9c0;
-  --pop-2: #47a9a1;
-  --pop-foreground: #10201f;
-  --ring: #5fc9c0;
-  --accent: #5fc9c0;
-  --accent-foreground: #10201f;
-  --source-library: #5fc9c0;
-}
-
-/* ── LAW (neo) ── gold, warmed enough to separate from the grey plate ── */
+/* Neomorphism's discipline blocks (lifted teal / gold) are retired with the
+   rest of discipline colour; the skin keeps its own neutral accent throughout.
+   Its radius and motion are part of the skin, so the :root[data-discipline]
+   overrides must not leak in here either. */
+.neo[data-discipline="medicine"],
 .neo[data-discipline="law"] {
-  --pop: #d9b45f;
-  --pop-2: #b8954a;
-  --pop-foreground: #201a10;
-  --ring: #d9b45f;
-  --accent: #d9b45f;
-  --accent-foreground: #201a10;
-  --source-library: #d9b45f;
+  --radius: 1.25rem;
+  --motion-emphasis: 320ms;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @layer base {
@@ -877,6 +746,112 @@ html {
     color-mix(in srgb, var(--pop) 6%, transparent),
     transparent 60%
   );
+}
+
+/* ── THE BACKGROUND AURA ────────────────────────────────────────────────────
+   A soft bloom behind the centred greeting + composer on a blank chat: light
+   welling up out of the page, settling through Graphite into Black at the
+   edges, with faint concentric ring banding inside it.
+
+   It is Faded Copper, not a cool glow — the whole app is warm and a blue bloom
+   would read as somebody else's product.
+
+   Built from stacked radial-gradients only: no image, no canvas, no JS loop.
+
+   Stacking: `z-index: -1` inside a parent that carries `isolate`. That puts it
+   above the parent's own background and below every in-flow sibling, so no
+   sibling needs a z-index of its own and nothing has to be re-layered. The
+   element also clips itself (`overflow: hidden`) and takes no pointer events,
+   so it can never produce a scrollbar or eat a tap.
+
+   Contrast: at its brightest the bloom is copper at 16% over Black, i.e.
+   #201C16. Bone body text on that is 13.1:1, --muted-foreground is 6.5:1 and
+   --pop itself is 5.1:1 — every one of them clears AA with room to spare, which
+   is what let the opacity stay this low and still be visible. */
+.gd-chat-aura {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The bloom. Sized in percentages of the chat column rather than viewport units
+   so it stays proportionate on a phone (this stylesheet ships in the Capacitor
+   build too) and never depends on 100vh.
+
+   Deliberately NOT color-mix(): the build emits a `var(--pop)` fallback for
+   browsers without it, which for a full-bleed layer means a solid copper slab
+   on any WebView older than Chrome 111 — exactly the devices the Android build
+   has to survive. `rgb(<channels> / <alpha>)` has been supported since
+   WebView 66 / iOS 12.1 and cannot degrade to an opaque colour. The channels
+   live in a token so the aura still follows the palette from one place. */
+.gd-chat-aura::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    82% 66% at 50% 44%,
+    rgb(var(--aura-rgb) / 16%) 0%,
+    rgb(var(--aura-rgb) / 11%) 24%,
+    rgb(var(--aura-rgb) / 5%) 46%,
+    rgb(var(--aura-edge-rgb) / 26%) 66%,
+    transparent 82%
+  );
+}
+
+/* The ring banding. A repeating radial on its own would band the entire
+   surface, so it is masked by the same shape as the bloom and dies out with it. */
+.gd-chat-aura::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-radial-gradient(
+    58% 46% at 50% 44%,
+    rgb(var(--aura-rgb) / 4%) 0%,
+    rgb(var(--aura-rgb) / 4%) 3.5%,
+    transparent 3.5%,
+    transparent 8%
+  );
+  -webkit-mask-image: radial-gradient(76% 60% at 50% 44%, #000 0%, transparent 74%);
+  mask-image: radial-gradient(76% 60% at 50% 44%, #000 0%, transparent 74%);
+}
+
+/* Once the conversation has messages the aura goes. It blooms from behind the
+   greeting, and the greeting is gone — leaving it lit would put a warm field
+   behind several screens of answer prose and behind the answer surfaces
+   (--luxury-ai-bg), which is noise rather than depth. It fades rather than cuts
+   so the first message does not feel like the lights went out. */
+.gd-chat-aura[data-active="false"] {
+  opacity: 0;
+}
+
+/* A glow is light in darkness. On the Bone ground of the light theme there is
+   no darkness for it to bloom out of and every version of it reads as a stain,
+   so light gets no aura at all — its depth already comes from lifted stock over
+   the ground. Brutalism refuses soft light by definition, and neomorphism
+   already strips every ambient wash (see its .app-blob rules), so both opt out
+   for the same reasons they opt out of the other glows in this file. */
+.light .gd-chat-aura,
+.brutal .gd-chat-aura,
+.neo .gd-chat-aura {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The aura is static by design; only its appearance/disappearance moves. */
+  .gd-chat-aura {
+    transition: none;
+  }
+}
+
+/* Old phones and the native shell keep the bloom but drop the ring layer — it
+   is the one part that costs a second large paint for a detail you have to look
+   for. Same bargain the rest of this file makes under .gd-low-power. */
+html.gd-low-power .gd-chat-aura::after {
+  display: none;
 }
 
 /* Messages rise and fade in as they appear. */
@@ -1432,34 +1407,6 @@ html.gd-low-power .gd-forming-orb::after {
   animation: aiInlineComposerIn 140ms ease-out;
 }
 
-/* Fluid "liquid" reveal for the mobile style/source selectors when a
-   collapsed bubble is tapped and its full segmented bar unfurls. */
-@keyframes selectorReveal {
-  0% {
-    opacity: 0;
-    transform: scaleX(0.55) translateY(3px);
-    filter: blur(5px);
-  }
-  55% {
-    opacity: 1;
-    filter: blur(0);
-  }
-  100% {
-    opacity: 1;
-    transform: scaleX(1) translateY(0);
-    filter: blur(0);
-  }
-}
-.selector-reveal {
-  transform-origin: left center;
-  animation: selectorReveal 0.34s cubic-bezier(0.22, 1, 0.36, 1);
-}
-@media (prefers-reduced-motion: reduce) {
-  .selector-reveal {
-    animation: none;
-  }
-}
-
 /* Animated segmented control — the coloured "thumb" slides between options
    (e.g. Simplified → Detailed) instead of hard-cutting. */
 .segmented-thumb {
@@ -1497,6 +1444,27 @@ select {
 input::placeholder,
 textarea::placeholder {
   color: var(--luxury-subtle);
+}
+
+/* The composer is ONE surface.
+   A field written as `bg-transparent` is not actually transparent here: the
+   skins lift every input onto its own plane (`.dark textarea { background:
+   var(--surface) }`, and `.neo textarea` adds an inset well), which is right
+   for a form field sitting on a page but wrong for a field that IS the bar it
+   sits in - it split the chat composer into a black bar with a lighter box
+   inside it. The bar draws the fill, the border and the focus ring
+   (focus-within on .gd-composer); the field draws nothing.
+   Element+class so this ties `.dark textarea` on specificity and wins on
+   order, without an !important. */
+textarea.gd-composer-field,
+input.gd-composer-field:not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
+  background-color: transparent;
+  box-shadow: none;
+}
+/* .neo puts its inset well back on focus, at a specificity this has to clear. */
+.neo textarea.gd-composer-field:focus-visible,
+.neo input.gd-composer-field:focus-visible {
+  box-shadow: none;
 }
 
 button,
@@ -2316,19 +2284,6 @@ html.gd-low-power .ai-symbiote-dot {
 
 /* ── Mobile chat / library / studybody fixes ── */
 @media (max-width: 640px) {
-  /* Ensure chat controls wrap nicely */
-  .chat-header-controls {
-    flex-wrap: wrap;
-    gap: 0.375rem;
-  }
-
-  /* Fix chat mode selector overflow */
-  .chat-mode-selector {
-    max-width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
   /* Ensure message bubbles fit */
   .chat-message-bubble {
     max-width: 95%;
@@ -2390,7 +2345,9 @@ html.gd-native-app .luxury-app-shell .animate-spin {
    wave. Dots ease up with a subtle grow + brighten, then settle back small and
    dim, so the crest travels smoothly across the row. */
 @keyframes gd-dot-wave {
-  0%, 60%, 100% {
+  0%,
+  60%,
+  100% {
     transform: translateY(0) scale(0.72);
     opacity: 0.28;
   }
@@ -2403,8 +2360,15 @@ html.gd-native-app .luxury-app-shell .animate-spin {
 @media (prefers-reduced-motion: reduce) {
   /* Keep a gentle brighten instead of the vertical hop. */
   @keyframes gd-dot-wave {
-    0%, 100% { transform: none; opacity: 0.4; }
-    50% { transform: none; opacity: 1; }
+    0%,
+    100% {
+      transform: none;
+      opacity: 0.4;
+    }
+    50% {
+      transform: none;
+      opacity: 1;
+    }
   }
 }
 
@@ -2413,27 +2377,55 @@ html.gd-low-power [style*="gd-dot-wave"] {
 }
 
 /* Product workspace refresh: a quiet shell with distinct study tools. */
-/* Side menu: a solid light lime (#d9ed92). Dark ink is scoped to its subtree so
-   the brand, nav labels and icons stay legible on the pale ground in either
-   theme. */
+/* Side menu: the palette's Graphite plate (#2D2D2D), in every theme — it is the
+   one surface that stays constant so the app always has the same spine. Its
+   inks are re-declared for the subtree because the page tokens around it flip
+   between Black and Bone.
+   --pop is lifted off Faded Copper here: raw #A58763 on Graphite is 4.1:1,
+   which is under AA for the small `text-pop` labels that live in this subtree
+   (theme picker, active nav). #C2A17A clears 5.7:1 on the plate. */
+/* The sidebar's scroll regions must not paint a scrollbar. Collapsed, the rail
+   is only 4rem wide, so a ~15px gutter both draws a bar over the icons and
+   shifts the centred icons left of the rail's true centre. The regions stay
+   scrollable (wheel, trackpad, keyboard, touch) - only the bar is hidden. */
+.gd-no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.gd-no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 .gd-app-sidebar,
 .gd-mobile-menu {
-  background: #353535;
-  --foreground: #f2efe9;
-  --muted-foreground: #a7a199;
-  --border: rgba(255, 255, 255, 0.12);
-  --primary: #f2efe9;
-  --primary-foreground: #353535;
-  color: #f2efe9;
+  background: #2d2d2d;
+  --foreground: #e9e0d1;
+  --muted-foreground: #b3aa98;
+  --border: rgba(233, 224, 209, 0.14);
+  --primary: #e9e0d1;
+  --primary-foreground: #2d2d2d;
+  --pop: #c2a17a;
+  --pop-2: #a58763;
+  --pop-foreground: #14100b;
+  --ring: #c2a17a;
+  --coral: #d9a86f;
+  /* Same reason as --pop: the sign-out / delete row turns text-destructive on
+     hover, and #D0685B on this plate is only 3.8:1. Lifted it is 5.1:1. */
+  --destructive: #e08579;
+  color: #e9e0d1;
 }
 .gd-app-sidebar::before {
   content: "";
   display: block;
   height: 3px;
   flex: 0 0 auto;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(233, 224, 209, 0.14);
 }
-.gd-sidebar-brand { color: var(--foreground); }
+.gd-sidebar-brand {
+  color: var(--foreground);
+}
 .gd-nav-label,
 .gd-page-kicker {
   display: flex;
@@ -2455,23 +2447,54 @@ html.gd-low-power [style*="gd-dot-wave"] {
   background: var(--gd-nav-accent, var(--primary));
   opacity: 0;
   transform: scaleY(0.45);
-  transition: opacity 180ms ease, transform 180ms ease;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
 }
-.gd-side-nav-item.gd-side-nav-active::after { opacity: 1; transform: scaleY(1); }
-.gd-side-nav-item:hover::after { opacity: 0.55; transform: scaleY(0.82); }
-.gd-side-nav-blue { --gd-nav-accent: #3b82f6; }
-.gd-side-nav-violet { --gd-nav-accent: #8b5cf6; }
-.gd-side-nav-coral { --gd-nav-accent: #f9735b; }
-.gd-side-nav-amber { --gd-nav-accent: #f59e0b; }
-.gd-side-nav-slate { --gd-nav-accent: #64748b; }
-.gd-side-nav-blue svg { color: #3b82f6; }
-.gd-side-nav-violet svg { color: #8b5cf6; }
-.gd-side-nav-coral svg { color: #f9735b; }
-.gd-side-nav-amber svg { color: #f59e0b; }
-.gd-side-nav-slate svg { color: #64748b; }
-.gd-side-nav-item:hover { background: color-mix(in srgb, var(--gd-nav-accent) 5%, transparent) !important; }
-.gd-side-nav-item:has(svg) { isolation: isolate; }
-.gd-sidebar-profile { border-top: 0; }
+.gd-side-nav-item.gd-side-nav-active::after {
+  opacity: 1;
+  transform: scaleY(1);
+}
+.gd-side-nav-item:hover::after {
+  opacity: 0.55;
+  transform: scaleY(0.82);
+}
+/* The nav used to carry a fixed blue/violet/coral/amber/slate rainbow, kept in
+   check only for medicine and law students by an override further down. With
+   one palette for everyone the rainbow has nothing to say, so the per-item
+   classes now all resolve to the accent and the icons go monochrome; the active
+   item is the only thing wearing copper. The class names stay so the .tsx call
+   sites (and the brutal overrides) keep working — they are position markers
+   now, not colours. "Last minute" keeps a distinct urgency tone. */
+.gd-side-nav-blue,
+.gd-side-nav-violet,
+.gd-side-nav-amber,
+.gd-side-nav-slate {
+  --gd-nav-accent: var(--pop);
+}
+.gd-side-nav-coral {
+  --gd-nav-accent: var(--coral);
+}
+.gd-side-nav-item svg {
+  color: var(--muted-foreground);
+}
+.gd-side-nav-item.gd-side-nav-active svg {
+  color: var(--gd-nav-accent, var(--pop));
+}
+/* "Last minute" wears its urgency whether or not it is the active item — that
+   was true under the old discipline chrome and it is the point of the row. */
+.gd-side-nav-coral svg {
+  color: var(--coral);
+}
+.gd-side-nav-item:hover {
+  background: color-mix(in srgb, var(--gd-nav-accent) 5%, transparent) !important;
+}
+.gd-side-nav-item:has(svg) {
+  isolation: isolate;
+}
+.gd-sidebar-profile {
+  border-top: 0;
+}
 .gd-profile-mark {
   display: inline-flex;
   width: 1.7rem;
@@ -2479,46 +2502,106 @@ html.gd-low-power [style*="gd-dot-wave"] {
   align-items: center;
   justify-content: center;
   border-radius: 0.45rem;
-  background: linear-gradient(135deg, #5ea8ff, #9b7bff);
-  color: white;
+  /* Was a blue→violet gradient from the old rainbow chrome. */
+  background: var(--gradient-pop, var(--pop));
+  color: var(--pop-foreground);
   font-size: 0.7rem;
   font-weight: 700;
 }
 
+/* Collapsed rail: the wordmark shrunk into a square button that opens the menu. */
+.gd-rail-mark {
+  color: var(--foreground);
+  font-family: var(--font-wordmark);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The rail's width/padding/label motion is decorative - land instantly. */
+  .gd-app-sidebar,
+  .gd-app-sidebar * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
 .gd-library-page,
 .gd-coach-page,
-.gd-last-minute-page { position: relative; }
-.gd-library-page { background: linear-gradient(145deg, rgba(59,130,246,0.06), transparent 25rem); }
-.gd-coach-page { background: linear-gradient(145deg, rgba(139,92,246,0.065), transparent 28rem); }
-.gd-last-minute-page { background: linear-gradient(145deg, rgba(249,115,91,0.07), transparent 28rem); }
+.gd-last-minute-page {
+  position: relative;
+}
+/* Page washes and headers. These carried the old blue (library) / violet
+   (coach) / coral+amber (last minute) chrome, which only ever went away for
+   medicine and law students. One palette now: everything is a --pop wash except
+   "last minute", which keeps --coral because the hurry is the point. */
+.gd-library-page,
+.gd-coach-page {
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--pop) 7%, transparent),
+    transparent 26rem
+  );
+}
+.gd-last-minute-page {
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--coral) 8%, transparent),
+    transparent 28rem
+  );
+}
 .gd-library-header,
 .gd-coach-header,
-.gd-last-minute-header { position: relative; overflow: hidden; }
-.gd-library-header {
+.gd-last-minute-header {
+  position: relative;
+  overflow: hidden;
+}
+.gd-library-header,
+.gd-coach-header {
   padding: 1.4rem;
-  border: 1px solid rgba(59,130,246,0.17);
+  border: 1px solid color-mix(in srgb, var(--pop) 22%, transparent);
   border-radius: 0.5rem;
-  background: linear-gradient(120deg, rgba(59,130,246,0.12), rgba(255,255,255,0) 56%);
+  background: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--pop) 13%, transparent),
+    transparent 56%
+  );
 }
-.dark .gd-library-header { background: linear-gradient(120deg, rgba(59,130,246,0.13), rgba(255,255,255,0) 56%); }
-.gd-library-header .gd-page-kicker { color: #367fd8; }
-.gd-library-dropzone {
-  border-color: rgba(59,130,246,0.42) !important;
-  background: linear-gradient(135deg, rgba(59,130,246,0.095), rgba(99,102,241,0.035)) !important;
-}
-.gd-library-dropzone:hover { box-shadow: 0 18px 42px rgba(59,130,246,0.1); }
 .gd-coach-header {
   padding: 1.35rem;
-  border: 1px solid rgba(139,92,246,0.17);
-  border-radius: 0.5rem;
-  background: linear-gradient(120deg, rgba(139,92,246,0.12), rgba(255,255,255,0) 57%);
 }
-.gd-coach-header > div:first-child { color: #7c4fd4; }
-.gd-coach-page .luxury-panel { border-color: rgba(139,92,246,0.16); }
-.gd-coach-page .luxury-panel:first-child { box-shadow: 0 18px 45px rgba(139,92,246,0.06); }
+.gd-library-header .gd-page-kicker,
+.gd-coach-header .gd-page-kicker {
+  color: var(--pop);
+}
+.gd-library-dropzone {
+  border-color: color-mix(in srgb, var(--pop) 42%, transparent) !important;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--pop) 9%, transparent),
+    transparent
+  ) !important;
+}
+.gd-library-dropzone:hover {
+  box-shadow: 0 18px 42px color-mix(in srgb, var(--pop) 10%, transparent);
+}
+.gd-coach-header > div:first-child {
+  color: var(--pop);
+}
+.gd-coach-page .luxury-panel {
+  border-color: color-mix(in srgb, var(--pop) 16%, transparent);
+}
+.gd-coach-page .luxury-panel:first-child {
+  box-shadow: 0 18px 45px color-mix(in srgb, var(--pop) 6%, transparent);
+}
 .gd-last-minute-header {
-  border-color: rgba(249,115,91,0.22) !important;
-  background: linear-gradient(120deg, rgba(249,115,91,0.13), rgba(251,191,36,0.07) 48%, transparent 72%) !important;
+  border-color: color-mix(in srgb, var(--coral) 22%, transparent) !important;
+  background: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--coral) 13%, transparent),
+    transparent 56%
+  ) !important;
 }
 .gd-last-minute-header::after {
   content: "";
@@ -2527,84 +2610,43 @@ html.gd-low-power [style*="gd-dot-wave"] {
   bottom: -4.5rem;
   width: 12rem;
   height: 12rem;
-  border: 1.5rem solid rgba(249,115,91,0.09);
+  border: 1.5rem solid color-mix(in srgb, var(--coral) 9%, transparent);
   border-radius: 50%;
   pointer-events: none;
 }
-.gd-last-minute-page .luxury-panel { border-color: rgba(249,115,91,0.15); }
-.gd-last-minute-page .luxury-panel:first-child { box-shadow: 0 18px 45px rgba(249,115,91,0.065); }
+.gd-last-minute-page .luxury-panel {
+  border-color: color-mix(in srgb, var(--coral) 15%, transparent);
+}
+.gd-last-minute-page .luxury-panel:first-child {
+  box-shadow: 0 18px 45px color-mix(in srgb, var(--coral) 7%, transparent);
+}
+/* Was a fixed amber; the leaderboard is a reward surface, so it takes the
+   accent like everything else. */
 .gd-leaderboard-header {
   background:
-    linear-gradient(120deg, rgba(245, 158, 11, 0.13), rgba(255, 255, 255, 0) 58%),
+    linear-gradient(120deg, color-mix(in srgb, var(--pop) 13%, transparent), transparent 58%),
     var(--card);
 }
 
 @media (max-width: 767px) {
-  .gd-library-header, .gd-coach-header { padding: 1.15rem; }
+  .gd-library-header,
+  .gd-coach-header {
+    padding: 1.15rem;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    DISCIPLINE CHROME (craft layer)
-   Scoped to [data-discipline]; neutral/guest users keep every default below.
+   What is LEFT here after discipline colour was retired: motion timing and one
+   editorial type detail. Every colour rule that used to live in this section —
+   the monochrome nav, the profile mark, the page washes, the header tints, the
+   dropzone — was doing nothing but undoing the old rainbow for medicine and law
+   students. Those treatments are now the unconditional defaults above, so
+   everyone gets them and there is nothing left to override.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Sidebar accent - replace the fixed blue→violet→coral rainbow with the
-   discipline jewel. Medicine: a teal strip fading out. Law: a gold hairline
-   over a neutral one (the editorial double rule). */
-:root[data-discipline="medicine"] .gd-app-sidebar::before {
-  height: 2px;
-  background: linear-gradient(90deg, var(--pop), transparent 72%);
-}
-:root[data-discipline="law"] .gd-app-sidebar::before {
-  height: 1px;
-  background: var(--pop);
-  box-shadow: 0 2px 0 0 var(--border);
-  margin-bottom: 2px;
-}
-
-/* Nav items go monochrome; the active jewel is the discipline accent. */
-:root[data-discipline] .gd-side-nav-item { --gd-nav-accent: var(--pop); }
-:root[data-discipline] .gd-side-nav-item svg { color: var(--muted-foreground); }
-:root[data-discipline] .gd-side-nav-item.gd-side-nav-active svg { color: var(--pop); }
-/* Last-minute keeps an urgency hue (themed coral), so it still reads as "hurry". */
-:root[data-discipline] .gd-side-nav-coral { --gd-nav-accent: var(--coral); }
-:root[data-discipline] .gd-side-nav-coral svg { color: var(--coral); }
-:root[data-discipline] .gd-profile-mark { background: var(--gradient-pop); }
-
-/* Page washes + headers retint to the jewel (last-minute stays urgent). */
-:root[data-discipline] .gd-library-page,
-:root[data-discipline] .gd-coach-page {
-  background: linear-gradient(145deg, color-mix(in srgb, var(--pop) 7%, transparent), transparent 26rem);
-}
-:root[data-discipline] .gd-last-minute-page {
-  background: linear-gradient(145deg, color-mix(in srgb, var(--coral) 8%, transparent), transparent 28rem);
-}
-:root[data-discipline] .gd-library-header,
-:root[data-discipline] .gd-coach-header,
-:root[data-discipline] .dark .gd-library-header {
-  border-color: color-mix(in srgb, var(--pop) 22%, transparent);
-  background: linear-gradient(120deg, color-mix(in srgb, var(--pop) 13%, transparent), transparent 56%);
-}
-:root[data-discipline] .gd-last-minute-header {
-  border-color: color-mix(in srgb, var(--coral) 22%, transparent);
-  background: linear-gradient(120deg, color-mix(in srgb, var(--coral) 13%, transparent), transparent 56%);
-}
-:root[data-discipline] .gd-library-header .gd-page-kicker,
-:root[data-discipline] .gd-coach-header .gd-page-kicker { color: var(--pop); }
-:root[data-discipline] .gd-library-dropzone {
-  border-color: color-mix(in srgb, var(--pop) 42%, transparent) !important;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--pop) 9%, transparent), transparent) !important;
-}
-
-/* Answer headings adopt the discipline display face (body prose stays Nunito).
-   This is the one identity touch inside answers, and it's headings only. */
-:root[data-discipline] .medai-prose h1,
-:root[data-discipline] .medai-prose h2,
-:root[data-discipline] .medai-prose h3 { font-family: var(--font-display); }
-
 /* Entrances take the discipline timing (medicine snaps, law settles). */
-:root[data-discipline] .gd-msg-in,
-:root[data-discipline] .selector-reveal {
+:root[data-discipline] .gd-msg-in {
   animation-duration: var(--motion-emphasis);
   animation-timing-function: var(--motion-ease);
 }
@@ -2618,7 +2660,9 @@ html.gd-low-power [style*="gd-dot-wave"] {
   letter-spacing: 0.06em;
   font-size: 0.72rem;
 }
-:root[data-discipline="law"] .luxury-brand-text { letter-spacing: 0.01em; }
+:root[data-discipline="law"] .luxury-brand-text {
+  letter-spacing: 0.01em;
+}
 
 /* ── THE KEYED PLATE: the source key ──────────────────────────────────────
    A grounded answer opens with the document and page it came from. On a
@@ -2893,11 +2937,33 @@ html.gd-low-power [style*="gd-dot-wave"] {
   box-shadow: var(--brutal-shadow);
 }
 
-/* ── 8. App shell ── */
+/* ── 8. App shell ──
+   The side menu is normally the palette's Graphite plate, and it hardcodes bone
+   inks for its own subtree to sit on that plate (see .gd-app-sidebar). This
+   skin repaints the plate paper-white - so those inks have to go with it.
+   Without this the whole side menu was bone-on-paper: the nav survived on its
+   gold active fill and hover boxes, but anything drawn only in
+   `text-muted-foreground` or `text-pop` - the Appearance picker's label and its
+   three inactive swatches, most visibly - washed out to nothing, which is why
+   the theme control looked like it had been removed in this theme.
+   `inherit` rather than a second copy of the hex: it takes each token straight
+   back off the .brutal palette above, so the two can never drift apart. */
 .brutal .gd-app-sidebar,
 .brutal .gd-mobile-menu {
   background: var(--surface);
   border-right: 3px solid var(--brutal-ink);
+  --foreground: inherit;
+  --muted-foreground: inherit;
+  --border: inherit;
+  --primary: inherit;
+  --primary-foreground: inherit;
+  --pop: inherit;
+  --pop-2: inherit;
+  --pop-foreground: inherit;
+  --ring: inherit;
+  --coral: inherit;
+  --destructive: inherit;
+  color: inherit;
 }
 .brutal .gd-app-sidebar::before {
   display: none;
@@ -3152,7 +3218,9 @@ html.gd-low-power [style*="gd-dot-wave"] {
 .neo input:focus-visible,
 .neo textarea:focus-visible,
 .neo select:focus-visible {
-  box-shadow: var(--neo-in), 0 0 0 2px var(--ring);
+  box-shadow:
+    var(--neo-in),
+    0 0 0 2px var(--ring);
   outline: none;
 }
 

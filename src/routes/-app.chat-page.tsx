@@ -9,7 +9,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type FormEvent,
   type ReactNode,
 } from "react";
@@ -26,11 +25,11 @@ import {
 } from "@/lib/chat-client";
 import { takePendingChatDoc } from "@/lib/chat-handoff";
 import { buildContinuationPrompt, buildExplainLastAnswerPrompt } from "@/lib/chat-portability";
-import { PERSONALIZATION_PROMPT } from "@/lib/personalization";
+import { savePersonalizationBackground as writePersonalizationBackground } from "@/lib/personalization";
+import { PersonalizationPanel } from "@/components/personalization-panel";
 import { isNativeApp } from "@/lib/native";
 import { lookupTerm, isTermLookupComplete, type TermLookupState } from "@/lib/term-lookup";
 import { embedQuery } from "@/lib/embeddings";
-import { getCached, setCached } from "@/lib/data-cache";
 import { importChunk } from "@/lib/lazy-import";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -41,15 +40,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuPortal,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import {
   Send,
   BookOpen,
   Plus,
   MessageSquare,
-  Trash2,
   Network,
-  BookText,
   NotebookPen,
   FileDown,
   FileText,
@@ -161,12 +170,6 @@ type InlineComposerState = {
   canCut: boolean;
 };
 
-type ConversationRow = {
-  id: string;
-  title: string | null;
-  updated_at: string | null;
-};
-
 type LibraryDocumentRow = {
   id: string;
   file_name: string;
@@ -214,20 +217,6 @@ type PersistedChatSession = {
   webSearch: boolean;
 };
 
-const SUGGESTIONS = [
-  "Find exactly where this topic appears",
-  "Answer using only my uploaded files",
-  "Compare what my PDFs say about this",
-  "Extract every relevant point with sources",
-];
-
-const VISUAL_SUGGESTIONS = [
-  "Visualize how this process works",
-  "Turn this topic into a simple animation",
-  "Make an animated diagram from my files",
-  "Create a visual explainer with scenes",
-];
-
 // "Visuals" (the old animated-video mode) is retired - answers now draw inline
 // diagrams automatically when a concept is visual, in every mode. The backend
 // Visuals pipeline stays dormant; users just can't pick it any more.
@@ -265,10 +254,10 @@ const SOURCE_SHORT: Record<SourceMode, string> = {
 // slider, wine for the general-context toggle. Each was declared inline so it
 // would beat the discipline theme on <html> - which is exactly why the app read
 // as busy: four controls shouting in four colours, none of them carrying
-// meaning. They are gone. The single accent is now the discipline accent
-// (petrol teal for medicine, brass for law), inherited from the root theme, so
-// colour finally says something true about the student instead of decorating a
-// toolbar. Structure is carried by hairline rules and keyed numerals, not hue.
+// meaning. They are gone. The single accent is Faded Copper (--pop), inherited
+// from the root theme — discipline colour was retired, so there is now one
+// accent for every student rather than a per-discipline jewel. Structure is
+// carried by hairline rules and keyed numerals, not hue.
 const ACCENT_INHERIT = undefined;
 
 const SMART_DOC_LIMIT = 5;
@@ -868,8 +857,6 @@ export function ChatPage() {
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const [fileSearch, setFileSearch] = useState("");
   const [libraryNotice, setLibraryNotice] = useState<LibraryNotice>(null);
-  const [convos, setConvos] = useState<ConversationRow[]>([]);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [flashPillDismissed, setFlashPillDismissed] = useState(false);
   const [personalizationDismissed, setPersonalizationDismissed] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
@@ -885,9 +872,6 @@ export function ChatPage() {
   const [notesUsedToday, setNotesUsedToday] = useState(0);
   // "Continue in another AI" — briefly flips to a checkmark after copying.
   const [handoffCopied, setHandoffCopied] = useState(false);
-  // On mobile the style/source selectors collapse to small pills and only
-  // expand into their full segmented bar while the user is choosing.
-  const [expandedSelector, setExpandedSelector] = useState<null | "style" | "source">(null);
   const lastScrollY = useRef(0);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
@@ -918,10 +902,9 @@ export function ChatPage() {
 
   const savePersonalizationBackground = async (text: string) => {
     if (!user || !savedProfile) return;
-    const { error } = await supabase
-      .from("user_profiles")
-      .update({ personalization_background: text || null })
-      .eq("id", savedProfile.id);
+    // Shared write path with the sidebar's Personalize panel (see
+    // src/lib/personalization.ts) so the two entry points can't drift.
+    const error = await writePersonalizationBackground(savedProfile.id, text);
     if (error) {
       toast.error("Couldn't save your background — try again.");
       return;
@@ -990,7 +973,7 @@ export function ChatPage() {
       setSessionReady(false);
       setUseLibrary(false);
       setDocs([]);
-      setConvos([]);
+      // The chat list is the shell sidebar's now - it clears its own on sign-out.
     }
   }, [user]);
 
@@ -1197,26 +1180,13 @@ export function ChatPage() {
     }
   };
 
-  // Load conversation list
-  const refreshConvos = async () => {
-    if (!user) return;
-    // Show the cached chat list instantly on revisit, then revalidate.
-    const cached = getCached<ConversationRow[]>(`convos:${user.id}`);
-    if (cached) setConvos(cached);
-    const { data } = await supabase
-      .from("conversations")
-      .select("id, title, updated_at")
-      .eq("user_id", user.id)
-      .order("updated_at", { ascending: false })
-      .limit(100);
-    const rows = (data as ConversationRow[]) ?? [];
-    setConvos(rows);
-    setCached(`convos:${user.id}`, rows);
+  // The chat list itself lives in the app shell's sidebar - the app has one
+  // chat history, in one place, loaded by one query (see -app-shell.tsx). This
+  // page only has to say "something changed", because creating or touching a
+  // conversation does not change the pathname the shell watches.
+  const notifyConversationsChanged = () => {
+    window.dispatchEvent(new Event("gd:conversations-changed"));
   };
-  useEffect(() => {
-    refreshConvos();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
 
   // Load active conversation messages
   useEffect(() => {
@@ -1378,6 +1348,12 @@ export function ChatPage() {
     (m) => m.role === "assistant" && m.content.trim().length > 0,
   );
 
+  // A blank chat: the greeting + composer become one vertically centred group
+  // instead of an empty scroller with the composer pinned to the bottom. While
+  // a conversation is still loading the normal layout stays put, so the
+  // composer doesn't jump up and back down.
+  const emptyChat = messages.length === 0 && !loadingConvo;
+
   // Build a self-contained prompt from this conversation and copy it, so the
   // student can paste it into any other AI and keep going without starting over.
   // "history" carries the whole thread; "explain" carries only the latest answer
@@ -1485,7 +1461,7 @@ export function ChatPage() {
       search: { c: data.id },
       replace: true,
     });
-    refreshConvos();
+    notifyConversationsChanged();
     return data.id;
   };
 
@@ -1781,7 +1757,12 @@ export function ChatPage() {
         priorVersions.length > 0
           ? [
               ...priorVersions,
-              { content: noMatchText, userContent: content, source: "library", model: "library-search" },
+              {
+                content: noMatchText,
+                userContent: content,
+                source: "library",
+                model: "library-search",
+              },
             ]
           : [];
       setMessages([
@@ -1819,7 +1800,7 @@ export function ChatPage() {
           .eq("id", cid)
           .then(({ error }) => {
             if (error) console.error("update conversation after miss", error);
-            else refreshConvos();
+            else notifyConversationsChanged();
           });
       }
       return;
@@ -1964,7 +1945,13 @@ export function ChatPage() {
             // entry, appended after the versions carried over from the edit.
             const finalVersions: AnswerVersion[] = [
               ...priorVersions,
-              { content: assistant, userContent: content, source: metaSource, model: metaModel, webSources },
+              {
+                content: assistant,
+                userContent: content,
+                source: metaSource,
+                model: metaModel,
+                webSources,
+              },
             ];
             setMessages((prev) => {
               const copy = [...prev];
@@ -2004,7 +1991,7 @@ export function ChatPage() {
               .from("conversations")
               .update({ updated_at: new Date().toISOString() })
               .eq("id", cid);
-            refreshConvos();
+            notifyConversationsChanged();
           }
           if (user && savedProfile && content.length < 300) {
             const recent = [content, ...(savedProfile.recent_topics || [])].slice(0, 20);
@@ -2128,242 +2115,53 @@ export function ChatPage() {
     });
   };
 
-  const deleteConversation = async (id: string) => {
-    if (!user) return;
-    if (!confirm("Delete this chat?")) return;
-    // Delete messages first (no FK cascade in schema)
-    await supabase.from("messages").delete().eq("conversation_id", id);
-    const { error } = await supabase.from("conversations").delete().eq("id", id);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    if (id === conversationId) {
-      newChat();
-    }
-    refreshConvos();
-  };
-
-  const groupedConvos = useMemo(() => {
-    const today: ConversationRow[] = [];
-    const week: ConversationRow[] = [];
-    const older: ConversationRow[] = [];
-    const now = Date.now();
-    for (const c of convos) {
-      const t = c.updated_at ? new Date(c.updated_at).getTime() : 0;
-      const ageDays = (now - t) / (1000 * 60 * 60 * 24);
-      if (ageDays < 1) today.push(c);
-      else if (ageDays < 7) week.push(c);
-      else older.push(c);
-    }
-    return { today, week, older };
-  }, [convos]);
-
   return (
     <div
       className="flex h-full min-h-0 flex-1 overflow-hidden bg-background min-w-0"
       style={ACCENT_INHERIT}
     >
-      {/* Conversations sidebar */}
-      <aside
-        className={`hidden lg:flex min-h-0 flex-col overflow-hidden border-r border-border/70 bg-background transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${sidebarOpen ? "w-72" : "w-16"}`}
-      >
+      {/* Main column.
+          `isolate` is load-bearing: it makes this column a stacking context so
+          the aura below can sit at z-index -1 — above this column's own
+          background, beneath every in-flow child — without a single sibling
+          needing a z-index. */}
+      <div className="relative isolate flex min-h-0 flex-1 flex-col min-w-0">
+        {/* The Gemini-style bloom behind the centred greeting + composer. Always
+            mounted so it can fade rather than cut when the first message lands;
+            see .gd-chat-aura in styles.css for the stacking and contrast notes.
+            Purely decorative, so it is hidden from assistive tech. */}
         <div
-          className={`flex justify-center py-4 transition-[padding] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${sidebarOpen ? "px-3" : "px-2"}`}
-        >
-          <button
-            onClick={newChat}
-            className={`flex items-center overflow-hidden rounded-xl border border-border/70 text-foreground transition-all duration-300 hover:border-primary/35 hover:bg-foreground/[0.04] ${
-              sidebarOpen
-                ? "w-full px-3 py-2.5 text-sm font-medium"
-                : "h-10 w-10 justify-center p-0"
-            }`}
-            title="New chat"
-          >
-            <Plus className="h-4 w-4" />
-            <span
-              className={`whitespace-nowrap transition-all duration-300 ${
-                sidebarOpen
-                  ? "ml-2 max-w-24 translate-x-0 opacity-100"
-                  : "ml-0 max-w-0 -translate-x-2 opacity-0"
-              }`}
-            >
-              New chat
-            </span>
-          </button>
-        </div>
-        <div
-          className={`min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden pb-4 pt-2 transition-[padding] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-            sidebarOpen ? "px-3" : "px-2"
-          }`}
-        >
-          {convos.length === 0 ? (
-            sidebarOpen && (
-              <div className="px-2 py-6 text-sm leading-relaxed text-muted-foreground">
-                {isGuest ? "Guest chats are not saved." : "Your past chats will appear here."}
-              </div>
-            )
-          ) : (
-            <>
-              <ConvoGroup
-                title="Today"
-                items={groupedConvos.today}
-                activeId={conversationId}
-                collapsed={!sidebarOpen}
-                onPick={(id) => navigate({ to: "/app/chat", search: { c: id } })}
-                onDelete={deleteConversation}
-              />
-              <ConvoGroup
-                title="Last 7 days"
-                items={groupedConvos.week}
-                activeId={conversationId}
-                collapsed={!sidebarOpen}
-                onPick={(id) => navigate({ to: "/app/chat", search: { c: id } })}
-                onDelete={deleteConversation}
-              />
-              <ConvoGroup
-                title="Older"
-                items={groupedConvos.older}
-                activeId={conversationId}
-                collapsed={!sidebarOpen}
-                onPick={(id) => navigate({ to: "/app/chat", search: { c: id } })}
-                onDelete={deleteConversation}
-              />
-            </>
-          )}
-        </div>
-      </aside>
-
-      {/* Main column */}
-      <div className="relative flex min-h-0 flex-1 flex-col min-w-0">
-        {/* Header */}
-        <div className="hidden shrink-0 border-b border-border/70 bg-background px-3 py-3 md:block sm:px-4 lg:px-6">
-          <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between xl:gap-4">
-            <div className="flex min-w-0 items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <button
-                  onClick={() => setSidebarOpen((v) => !v)}
-                  className="gd-press hidden rounded-lg p-1.5 text-muted-foreground/55 transition-colors hover:text-foreground lg:inline-flex"
-                  title={sidebarOpen ? "Hide chats" : "Show chats"}
-                >
-                  {sidebarOpen ? (
-                    <ChevronLeft className="h-[18px] w-[18px]" strokeWidth={2} />
-                  ) : (
-                    <ChevronRight className="h-[18px] w-[18px]" strokeWidth={2} />
-                  )}
-                </button>
-                <h1 className="truncate text-[15px] font-semibold tracking-[-0.01em] sm:text-base">
-                  {conversationId
-                    ? convos.find((c) => c.id === conversationId)?.title || "Chat"
-                    : "New chat"}
-                </h1>
-              </div>
-            </div>
-            <div className="chat-header-controls -mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] xl:mx-0 xl:overflow-visible xl:px-0 xl:pb-0 [&::-webkit-scrollbar]:hidden">
-              <>
-                <div className="hidden shrink-0 sm:block">
-                  <SegmentedControl
-                    style={ACCENT_INHERIT}
-                    tourAnchor="answer-sources"
-                    options={SOURCE_MODES}
-                    value={sourceMode}
-                    onChange={applySourceMode}
-                    getLabel={(item) => SOURCE_SHORT[item]}
-                    getTitle={(item) => item}
-                  />
-                </div>
-                <button
-                  onClick={() => {
-                    if (docs.length === 0) {
-                      toast("Your library is empty", {
-                        description:
-                          "Upload your PDFs or notes to the Library first to study them here.",
-                        action: {
-                          label: "Go to Library",
-                          onClick: () => navigate({ to: "/app/library" }),
-                        },
-                      });
-                      return;
-                    }
-                    setFilePickerOpen(true);
-                  }}
-                  disabled={!useLibrary}
-                  title="Choose files to search"
-                  className="hidden shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-pop/10 hover:text-pop disabled:opacity-40 sm:inline-flex"
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                  Files
-                </button>
-              </>
-              <SegmentedControl
-                style={ACCENT_INHERIT}
-                tourAnchor="answer-style"
-                className="chat-mode-selector shrink-0"
-                options={CHAT_MODES}
-                value={mode}
-                onChange={applyMode}
-                getIcon={(m) =>
-                  m === "Detailed+" ? (
-                    <NotebookPen className="h-3 w-3" />
-                  ) : m === "Storytelling" ? (
-                    <BookText className="h-3 w-3" />
-                  ) : m === "Visuals" ? (
-                    <Sparkles className="h-3 w-3" />
-                  ) : null
-                }
-                getTitle={(m) =>
-                  m === "Visuals"
-                    ? "Create an animated visual explanation"
-                    : m === "Storytelling"
-                      ? "Explain as a story"
-                      : m === "Detailed+"
-                        ? `Full study notes you can save as a PDF (${NOTES_DAILY_LIMIT}/day)`
-                        : m === "Detailed"
-                          ? "Concepts + deeper detail"
-                          : "Plain English with an analogy"
-                }
-              />
-              {mode === "Detailed+" && (
-                <span
-                  className="shrink-0 rounded-full border border-pop/25 bg-pop/[0.06] px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-                  title={`Detailed+ is limited to ${NOTES_DAILY_LIMIT} sets of notes a day`}
-                >
-                  {notesLeftToday} of {NOTES_DAILY_LIMIT} left today
-                </span>
-              )}
-              {messages.length > 0 && (
-                <ContinueElsewhereButton
-                  variant="toolbar"
-                  copied={handoffCopied}
-                  hasAnswer={hasAssistantAnswer && !streaming}
-                  onPick={copyHandoffPrompt}
-                />
-              )}
-            </div>
-          </div>
-        </div>
+          className="gd-chat-aura"
+          data-active={emptyChat ? "true" : "false"}
+          aria-hidden="true"
+        />
 
         {/* Messages */}
-        <div ref={scrollerRef} className="gd-chat-glow min-h-0 flex-1 overflow-y-auto">
+        {/* On a blank chat the scroller shrinks to its content (usually nothing)
+            so the composer block below can take the remaining height and centre
+            itself; with messages it is the usual flex-1 scroll area. */}
+        <div
+          ref={scrollerRef}
+          className={`gd-chat-glow min-h-0 overflow-y-auto ${emptyChat ? "shrink" : "flex-1"}`}
+        >
           <div
             className="mx-auto max-w-3xl px-3 pt-4 sm:px-4 md:px-8 md:pt-8"
-            style={{ paddingBottom: (composerHeight || 150) + 24 }}
+            style={{ paddingBottom: emptyChat ? 0 : (composerHeight || 150) + 24 }}
           >
             {loadingConvo && messages.length === 0 ? (
               <div className="flex justify-center py-12">
                 <LoadingDots size="md" className="text-primary" />
               </div>
             ) : messages.length === 0 ? (
-              <>
-                {user && !savedProfile?.personalization_background && !personalizationDismissed && (
-                  <PersonalizationCard
-                    initialBackground={savedProfile?.personalization_background ?? ""}
-                    onSave={savePersonalizationBackground}
-                    onDismiss={() => setPersonalizationDismissed(true)}
-                  />
-                )}
-                <EmptyState name={profile.name || "there"} onPick={(s) => send(s)} mode={mode} />
-              </>
+              user &&
+              !savedProfile?.personalization_background &&
+              !personalizationDismissed && (
+                <PersonalizationPanel
+                  initialBackground={savedProfile?.personalization_background ?? ""}
+                  onSave={savePersonalizationBackground}
+                  onDismiss={() => setPersonalizationDismissed(true)}
+                />
+              )
             ) : (
               <div className="space-y-8 sm:space-y-10">
                 {messages.map((m, i) => (
@@ -2393,11 +2191,24 @@ export function ChatPage() {
         {/* Composer */}
         <div
           ref={composerRef}
-          className={`pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${
-            hideComposer ? "translate-y-[calc(100%+1rem)]" : "translate-y-0"
-          }`}
+          className={
+            emptyChat
+              ? // Blank chat: in normal flow, taking the leftover height and
+                // centring the greeting + input as one group.
+                "relative z-10 flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+              : `pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${
+                  hideComposer ? "translate-y-[calc(100%+1rem)]" : "translate-y-0"
+                }`
+          }
         >
-          <div data-tour="composer" className="pointer-events-auto max-w-3xl mx-auto">
+          {/* Outside the composer anchor on purpose: the guided tour spotlights
+              [data-tour="composer"], and the greeting is not part of the input. */}
+          {emptyChat && (
+            <div className="pointer-events-auto mx-auto w-full max-w-3xl">
+              <ChatGreeting name={savedProfile?.name ?? ""} />
+            </div>
+          )}
+          <div data-tour="composer" className="pointer-events-auto max-w-3xl mx-auto w-full">
             {messages.some((m) => m.role === "user") && !flashPillDismissed && (
               <div className="mb-2 flex justify-center">
                 <div className="inline-flex items-center gap-1 rounded-xl border border-border/70 bg-background px-1 py-1 text-xs shadow-sm">
@@ -2419,123 +2230,77 @@ export function ChatPage() {
                 </div>
               </div>
             )}
-            {/* Mobile: collapsed style/source pills that expand to pick, then
-                shrink back to a small bubble showing the selection. */}
-            <div className="mb-2 md:hidden">
-              {expandedSelector === "style" ? (
-                <SegmentedControl
-                  style={ACCENT_INHERIT}
-                  className="selector-reveal"
-                  options={CHAT_MODES}
-                  value={mode}
-                  onChange={(m) => {
-                    applyMode(m);
-                    setExpandedSelector(null);
-                  }}
-                  getIcon={(m) =>
-                    m === "Detailed+" ? (
-                      <NotebookPen className="h-3 w-3" />
-                    ) : m === "Storytelling" ? (
-                      <BookText className="h-3 w-3" />
-                    ) : m === "Visuals" ? (
-                      <Sparkles className="h-3 w-3" />
-                    ) : null
-                  }
-                />
-              ) : expandedSelector === "source" ? (
-                <SegmentedControl
-                  style={ACCENT_INHERIT}
-                  className="selector-reveal"
-                  options={SOURCE_MODES}
-                  value={sourceMode}
-                  getLabel={(item) => SOURCE_SHORT[item]}
-                  onChange={(item) => {
-                    applySourceMode(item);
-                    setExpandedSelector(null);
-                  }}
-                />
-              ) : (
-                <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {/* The row above the input. The answer-style and answer-source
+                pills that used to live here are gone: they were the mobile form
+                of the same two segmented controls the header carried, and the
+                composer's "+" menu now owns both (Answer style / Answer
+                sources), so keeping them was two controls for one setting.
+                What is left is state, not settings - which files this question
+                will read (mobile only; wider screens get the fuller file row
+                below) and the handoff menu, which used to sit in the header
+                that item 6 removed. */}
+            {(useLibrary || messages.length > 0) && (
+              <div
+                // The only child on wide screens is the handoff menu, so the
+                // row collapses its own margin there when there is no handoff
+                // to show and the file pill is hidden.
+                className={`flex items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+                  messages.length > 0 ? "mb-2" : "mb-2 md:mb-0"
+                }`}
+              >
+                {useLibrary && (
                   <button
                     type="button"
-                    onClick={() => setExpandedSelector("style")}
-                    data-tour="answer-style"
-                    title={`Answer style: ${mode}`}
-                    style={ACCENT_INHERIT}
-                    className="gd-press inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/40 bg-pop/[0.1] px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-pop/20"
-                  >
-                    {mode === "Detailed+" && <NotebookPen className="h-3 w-3 text-pop" />}
-                    {mode === "Storytelling" && <BookText className="h-3 w-3 text-pop" />}
-                    {mode === "Visuals" && <Sparkles className="h-3 w-3 text-pop" />}
-                    {MODE_SHORT[mode]}
-                    <ChevronDown className="h-3 w-3 text-pop" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setExpandedSelector("source")}
-                    data-tour="answer-sources"
-                    title={`Sources: ${sourceMode}`}
-                    style={ACCENT_INHERIT}
-                    className="gd-press inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/40 bg-pop/[0.1] px-2.5 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors hover:bg-pop/20"
-                  >
-                    <FileText className="h-3 w-3 text-pop" />
-                    {SOURCE_SHORT[sourceMode]}
-                    <ChevronDown className="h-3 w-3 text-pop" />
-                  </button>
-                  {useLibrary && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (docs.length === 0) {
-                          toast("Your library is empty", {
-                            description:
-                              "Upload your PDFs or notes to the Library first to study them here.",
-                            action: {
-                              label: "Go to Library",
-                              onClick: () => navigate({ to: "/app/library" }),
-                            },
-                          });
-                          return;
-                        }
-                        setFilePickerOpen(true);
-                      }}
-                      title={
-                        selectedDocs.length > 0
-                          ? selectedDocs.map((doc) => doc.file_name).join(", ")
-                          : "Choose files to search"
+                    onClick={() => {
+                      if (docs.length === 0) {
+                        toast("Your library is empty", {
+                          description:
+                            "Upload your PDFs or notes to the Library first to study them here.",
+                          action: {
+                            label: "Go to Library",
+                            onClick: () => navigate({ to: "/app/library" }),
+                          },
+                        });
+                        return;
                       }
-                      className="inline-flex min-w-0 shrink items-center gap-1 rounded-full border border-border/70 bg-background/95 px-2.5 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors hover:bg-foreground/[0.04]"
-                    >
-                      <BookOpen className="h-3 w-3 shrink-0 text-primary" />
-                      <span className="max-w-[8rem] truncate">
-                        {selectedDocs.length > 0
-                          ? `${selectedDocs[0]?.file_name}${selectedDocs.length > 1 ? ` +${selectedDocs.length - 1}` : ""}`
-                          : "Add files"}
-                      </span>
-                      {selectedDocs.length > 0 ? (
-                        <X
-                          className="h-3 w-3 shrink-0 text-muted-foreground"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedDocIds([]);
-                          }}
-                        />
-                      ) : (
-                        <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
-                      )}
-                    </button>
-                  )}
-                  {messages.length > 0 && (
-                    <ContinueElsewhereButton
-                      variant="pill"
-                      copied={handoffCopied}
-                      hasAnswer={hasAssistantAnswer && !streaming}
-                      onPick={copyHandoffPrompt}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
+                      setFilePickerOpen(true);
+                    }}
+                    title={
+                      selectedDocs.length > 0
+                        ? selectedDocs.map((doc) => doc.file_name).join(", ")
+                        : "Choose files to search"
+                    }
+                    className="inline-flex min-w-0 shrink items-center gap-1 rounded-full border border-border/70 bg-background/95 px-2.5 py-1 text-[11px] font-medium text-foreground shadow-sm transition-colors hover:bg-foreground/[0.04] md:hidden"
+                  >
+                    <BookOpen className="h-3 w-3 shrink-0 text-primary" />
+                    <span className="max-w-[8rem] truncate">
+                      {selectedDocs.length > 0
+                        ? `${selectedDocs[0]?.file_name}${selectedDocs.length > 1 ? ` +${selectedDocs.length - 1}` : ""}`
+                        : "Add files"}
+                    </span>
+                    {selectedDocs.length > 0 ? (
+                      <X
+                        className="h-3 w-3 shrink-0 text-muted-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedDocIds([]);
+                        }}
+                      />
+                    ) : (
+                      <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    )}
+                  </button>
+                )}
+                {messages.length > 0 && (
+                  <ContinueElsewhereButton
+                    variant="pill"
+                    copied={handoffCopied}
+                    hasAnswer={hasAssistantAnswer && !streaming}
+                    onPick={copyHandoffPrompt}
+                  />
+                )}
+              </div>
+            )}
             {mode === "Visuals" && (
               <div className="mb-2 hidden border-b border-border/60 px-1 pb-2 md:block">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -2639,9 +2404,40 @@ export function ChatPage() {
                 e.preventDefault();
                 send();
               }}
+              // The bar draws the one fill, the border and the focus ring; the
+              // textarea inside it draws nothing (see .gd-composer-field in
+              // styles.css - without it the skins' "fields are wells" rules
+              // paint the field a different shade from the bar around it).
               className="rounded-[1.35rem] border border-border/80 bg-background/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.16)] backdrop-blur-xl transition-colors focus-within:border-pop/45 focus-within:ring-1 focus-within:ring-pop/25"
             >
               <div className="flex items-end gap-1.5 sm:gap-2">
+                <ComposerPlusMenu
+                  mode={mode}
+                  onPickMode={applyMode}
+                  notesLeftToday={notesLeftToday}
+                  sourceMode={sourceMode}
+                  onPickSource={applySourceMode}
+                  onAddFile={() => {
+                    if (docs.length === 0) {
+                      toast("Your library is empty", {
+                        description:
+                          "Upload your PDFs or notes to the Library first to study them here.",
+                        action: {
+                          label: "Go to Library",
+                          onClick: () => navigate({ to: "/app/library" }),
+                        },
+                      });
+                      return;
+                    }
+                    // Picking a file only makes sense when answers may read
+                    // files, so step off "General knowledge" first - the same
+                    // reason the toolbar Files button is disabled in that mode.
+                    if (!useLibrary) applySourceMode("Files + general");
+                    // Let the menu finish closing before the dialog mounts, so
+                    // the two focus scopes don't fight over the restore.
+                    setTimeout(() => setFilePickerOpen(true), 0);
+                  }}
+                />
                 {speechSupported && (
                   <button
                     type="button"
@@ -2681,7 +2477,7 @@ export function ChatPage() {
                   spellCheck={!nativeApp}
                   rows={1}
                   placeholder="Ask for an explanation, source, example, or exam question..."
-                  className="min-h-[44px] max-h-[180px] flex-1 resize-none border-0 bg-transparent px-2 py-2.5 text-sm focus:outline-none sm:px-3"
+                  className="gd-composer-field min-h-[44px] max-h-[180px] min-w-0 flex-1 resize-none border-0 bg-transparent px-2 py-2.5 text-sm focus:outline-none sm:px-3"
                   style={{ height: "auto" }}
                   onInput={(e) => {
                     const t = e.currentTarget;
@@ -2881,249 +2677,160 @@ function FilePickerDialog({
   );
 }
 
-function ConvoGroup({
-  title,
-  items,
-  activeId,
-  collapsed,
-  onPick,
-  onDelete,
-}: {
-  title: string;
-  items: ConversationRow[];
-  activeId?: string;
-  collapsed?: boolean;
-  onPick: (id: string) => void;
-  onDelete: (id: string) => void;
-}) {
-  if (items.length === 0) return null;
-  return (
-    <div className="overflow-hidden">
-      <div
-        className={`px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground transition-all duration-300 ${
-          title && !collapsed ? "max-h-6 pb-2 opacity-100" : "max-h-0 pb-0 opacity-0"
-        }`}
-      >
-        {title}
-      </div>
-      <ul className="space-y-1">
-        {items.map((c) => {
-          const active = c.id === activeId;
-          return (
-            <li key={c.id}>
-              <div
-                className={`group flex cursor-pointer items-center overflow-hidden rounded-xl transition-all duration-300 ${
-                  collapsed ? "justify-center p-2" : "gap-2 px-2 py-2.5"
-                } ${
-                  active
-                    ? "bg-primary/10 text-foreground"
-                    : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
-                }`}
-                onClick={() => onPick(c.id)}
-                title={collapsed ? c.title || "New conversation" : undefined}
-              >
-                <MessageSquare
-                  className={`h-3.5 w-3.5 flex-shrink-0 ${
-                    active ? "text-primary" : "text-muted-foreground"
-                  }`}
-                />
-                <span
-                  className={`min-w-0 flex-1 transition-all duration-300 ${
-                    collapsed
-                      ? "max-w-0 -translate-x-2 opacity-0"
-                      : "max-w-[12rem] translate-x-0 opacity-100"
-                  }`}
-                >
-                  <span className="block truncate text-sm font-medium">
-                    {c.title || "New conversation"}
-                  </span>
-                  {c.updated_at && (
-                    <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                      {new Date(c.updated_at).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </span>
-                  )}
-                </span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(c.id);
-                  }}
-                  className={`overflow-hidden rounded-lg text-muted-foreground transition-all duration-300 hover:bg-foreground/[0.05] hover:text-destructive group-hover:opacity-100 ${
-                    collapsed
-                      ? "pointer-events-none max-w-0 translate-x-2 p-0 opacity-0"
-                      : "max-w-8 translate-x-0 p-1 opacity-0"
-                  }`}
-                  title="Delete"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-function EmptyState({
-  name,
-  onPick,
+// ChatGPT-style "+" on the composer input row. It is a single entry point to
+// controls that already exist on this page - the file picker, the answer-style
+// modes and the answer-source modes - not a new feature and not a new mode.
+// Level 1 lists "Add file" plus the two groups; level 2 is a submenu that marks
+// whichever option is currently in effect (`mode` / `sourceMode` are the same
+// state the toolbar and mobile pills read, so a forced switch - e.g. the
+// over-limit Detailed+ fallback in send() - shows up here immediately).
+//
+// Built on the shadcn/Radix dropdown-menu primitive, which supplies the focus
+// trap, Escape-to-close, outside-click, roving arrow-key navigation, submenu
+// behaviour and the aria-haspopup / aria-expanded / role="menu" wiring.
+function ComposerPlusMenu({
   mode,
+  onPickMode,
+  notesLeftToday,
+  sourceMode,
+  onPickSource,
+  onAddFile,
 }: {
-  name: string;
-  onPick: (s: string) => void;
   mode: ChatMode;
+  onPickMode: (next: ChatMode) => void;
+  notesLeftToday: number;
+  sourceMode: SourceMode;
+  onPickSource: (next: SourceMode) => void;
+  onAddFile: () => void;
 }) {
-  const suggestions = mode === "Visuals" ? VISUAL_SUGGESTIONS : SUGGESTIONS;
-  const icons = [Search, BookOpen, Layers, Sparkles];
+  // Radix positions with collision detection, so on a phone the panel opens
+  // upward off the composer (clear of the on-screen keyboard) and the submenu
+  // flips to whichever side has room instead of running off the edge.
+  const panel =
+    "rounded-2xl border-border/70 bg-popover/95 p-1.5 shadow-[0_18px_60px_rgba(0,0,0,0.16)] backdrop-blur-xl motion-reduce:animate-none motion-reduce:transition-none";
+  const row = "gap-2 rounded-xl px-2.5 py-2 text-sm";
 
   return (
-    <div className="flex flex-col items-center py-12 text-center sm:py-20">
-      <div className="gd-mark-halo mb-6">
-        <AiMark size="lg" />
-      </div>
-      <h2 className="text-balance text-3xl font-semibold tracking-[-0.03em] text-foreground sm:text-[2.75rem] sm:leading-[1.05]">
-        Ready when you are, <span className="gd-name-accent">{name}</span>
-      </h2>
-      <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground sm:text-base">
-        Ask anything about your material — I'll cite your files, explain it your way, and sketch a
-        quick diagram when it helps.
-      </p>
-      <div className="mx-auto mt-9 grid w-full max-w-2xl gap-3 sm:grid-cols-2">
-        {suggestions.map((s, i) => {
-          const Icon = icons[i % icons.length];
-          return (
-            <button
-              key={s}
-              onClick={() => onPick(s)}
-              className="group flex items-center gap-3 rounded-2xl border border-border/70 bg-surface/50 p-4 text-left text-sm leading-snug text-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-pop/40 hover:bg-pop/[0.05] hover:shadow-[0_12px_32px_-20px_rgba(0,0,0,0.45)] active:translate-y-0 active:scale-[0.99]"
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          // The guided tour's "answer style" and "answer sources" steps point
+          // here: this menu is where both settings live now that the header's
+          // segmented controls are gone (src/lib/feature-tour.ts).
+          data-tour="composer-plus"
+          title="Add files, answer style and sources"
+          aria-label="Add files, answer style and sources"
+          className="gd-press inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-xl border border-border/70 bg-background text-muted-foreground transition-colors hover:border-pop/40 hover:bg-pop/[0.06] hover:text-pop data-[state=open]:border-pop/40 data-[state=open]:bg-pop/[0.06] data-[state=open]:text-pop"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        side="top"
+        align="start"
+        sideOffset={10}
+        collisionPadding={12}
+        className={`w-[min(15rem,calc(100vw-1.5rem))] ${panel}`}
+      >
+        <DropdownMenuItem className={row} onSelect={onAddFile}>
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          <span className="flex-1">Add file</span>
+        </DropdownMenuItem>
+
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className={row}>
+            <Sparkles className="h-4 w-4 text-muted-foreground" />
+            <span className="flex-1">Answer style</span>
+            <span className="text-[11px] text-muted-foreground">{MODE_SHORT[mode]}</span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuSubContent
+              collisionPadding={12}
+              className={`w-[min(14rem,calc(100vw-1.5rem))] ${panel}`}
             >
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-pop/10 text-pop transition-colors group-hover:bg-pop group-hover:text-pop-foreground">
-                <Icon className="h-4 w-4" />
-              </span>
-              <span className="min-w-0 flex-1 font-medium">{s}</span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/40 transition-all group-hover:translate-x-0.5 group-hover:text-pop" />
-            </button>
-          );
-        })}
-      </div>
-    </div>
+              <DropdownMenuRadioGroup
+                value={mode}
+                onValueChange={(next) => onPickMode(next as ChatMode)}
+              >
+                {CHAT_MODES.map((m) => (
+                  <DropdownMenuRadioItem key={m} value={m} className="rounded-xl py-2 text-sm">
+                    <span className="flex-1">{m}</span>
+                    {m === "Detailed+" && (
+                      <span className="ml-2 text-[11px] text-muted-foreground">
+                        {notesLeftToday}/{NOTES_DAILY_LIMIT}
+                      </span>
+                    )}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuPortal>
+        </DropdownMenuSub>
+
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className={row}>
+            <Search className="h-4 w-4 text-muted-foreground" />
+            <span className="flex-1">Answer sources</span>
+            <span className="text-[11px] text-muted-foreground">{SOURCE_SHORT[sourceMode]}</span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuSubContent
+              collisionPadding={12}
+              className={`w-[min(14rem,calc(100vw-1.5rem))] ${panel}`}
+            >
+              <DropdownMenuRadioGroup
+                value={sourceMode}
+                onValueChange={(next) => onPickSource(next as SourceMode)}
+              >
+                {SOURCE_MODES.map((s) => (
+                  <DropdownMenuRadioItem key={s} value={s} className="rounded-xl py-2 text-sm">
+                    {s}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuPortal>
+        </DropdownMenuSub>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
-// In-chat callout that teaches the student to bring their "who I am" summary
-// from another AI into G&D. Shows why, the how-to steps, a one-tap-copy prompt,
-// and a box to paste the reply back — which we save to their profile.
-function PersonalizationCard({
-  initialBackground,
-  onSave,
-  onDismiss,
-}: {
-  initialBackground: string;
-  onSave: (text: string) => Promise<void>;
-  onDismiss: () => void;
-}) {
-  const [copied, setCopied] = useState(false);
-  const [draft, setDraft] = useState(initialBackground);
-  const [saving, setSaving] = useState(false);
-
-  const copyPrompt = async () => {
-    try {
-      await navigator.clipboard.writeText(PERSONALIZATION_PROMPT);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error("Couldn't copy automatically — select the text and copy it.");
-    }
-  };
-
-  const save = async () => {
-    if (!draft.trim() || saving) return;
-    setSaving(true);
-    try {
-      await onSave(draft.trim());
-    } finally {
-      setSaving(false);
-    }
-  };
-
+// The blank-chat screen: just the greeting, sitting directly above the one
+// composer (see the "Composer" block above). The old suggestion chips under the
+// input were removed on purpose - a blank chat is the greeting and the input,
+// nothing else.
+function ChatGreeting({ name }: { name: string }) {
+  // First name only. Guests (and anyone without a saved name) get the
+  // nameless form rather than "there" or an invented "Student".
+  const firstName = name.trim().split(/\s+/)[0] ?? "";
+  // Read the student's own clock at render, never at module scope: a tab left
+  // open overnight must greet for the hour the blank chat is actually shown.
+  // Bands: morning 05:00-11:59, afternoon 12:00-17:59, night 18:00-04:59.
+  const hour = new Date().getHours();
+  const band = hour >= 5 && hour < 12 ? "morning" : hour >= 12 && hour < 18 ? "afternoon" : "night";
   return (
-    <div className="relative mx-auto mb-6 max-w-2xl overflow-hidden rounded-2xl border border-pop/25 bg-pop/[0.04] p-4 text-left sm:p-5">
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label="Dismiss"
-        className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
-      >
-        <X className="h-4 w-4" />
-      </button>
-
-      <div className="flex items-center gap-1.5 text-pop">
-        <Sparkles className="h-4 w-4" />
-        <span className="text-[11px] font-semibold uppercase tracking-[0.14em]">
-          Personalize G&amp;D
-        </span>
-      </div>
-      <h3 className="mt-2 text-lg font-semibold tracking-[-0.01em] text-foreground">
-        Make G&amp;D understand you from day one
-      </h3>
-      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-        Already study with another AI? It has learned how you think and where you struggle. Bring
-        that over so every G&amp;D answer is tailored to you — no starting from scratch.
-      </p>
-
-      <ol className="mt-3 space-y-1.5 text-sm text-foreground">
-        <li className="flex gap-2">
-          <span className="font-semibold text-pop">1.</span> Copy the prompt below.
-        </li>
-        <li className="flex gap-2">
-          <span className="font-semibold text-pop">2.</span> Paste it into the AI you already study
-          with (ChatGPT, etc.).
-        </li>
-        <li className="flex gap-2">
-          <span className="font-semibold text-pop">3.</span> Copy its reply and paste it in the box.
-        </li>
-        <li className="flex gap-2">
-          <span className="font-semibold text-pop">4.</span> Save — and you're personalized.
-        </li>
-      </ol>
-
-      <div className="mt-3 rounded-xl border border-border/70 bg-background/70 p-3">
-        <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-muted-foreground">
-          {PERSONALIZATION_PROMPT}
-        </p>
-        <button
-          type="button"
-          onClick={copyPrompt}
-          className="btn-pop mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
-        >
-          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-          {copied ? "Copied" : "Copy prompt"}
-        </button>
-      </div>
-
-      <textarea
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        rows={4}
-        placeholder="Paste what your AI said about you here…"
-        className="mt-3 w-full resize-y rounded-xl border border-input bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
-      />
-      <div className="mt-2 flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={save}
-          disabled={!draft.trim() || saving}
-          className="btn-pop inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-semibold"
-        >
-          {saving ? "Saving…" : "Save background"}
-        </button>
-      </div>
-    </div>
+    <h2 className="mb-5 text-balance text-center text-3xl font-semibold tracking-[-0.03em] text-foreground sm:mb-7 sm:text-[2.75rem] sm:leading-[1.05]">
+      {band === "night" ? (
+        // Deliberately nameless - it is a complete line as the owner wrote it.
+        "Burning the midnight candle innit"
+      ) : band === "morning" ? (
+        firstName ? (
+          <>
+            Morning grinder, <span className="gd-name-accent">{firstName}</span>
+          </>
+        ) : (
+          "Morning grinder"
+        )
+      ) : firstName ? (
+        <>
+          No rest for <span className="gd-name-accent">{firstName}</span>
+        </>
+      ) : (
+        "No rest for you"
+      )}
+    </h2>
   );
 }
 
@@ -3190,72 +2897,6 @@ function AiMark({
     >
       <span className={`${dotSize} ai-symbiote-dot`} />
     </span>
-  );
-}
-
-// Animated segmented control: the active option is highlighted by a coloured
-// "thumb" that slides between segments (Simplified → Detailed, My files → General)
-// rather than snapping. Segments are equal-width so the thumb can be positioned
-// purely by index, no measurement needed.
-function SegmentedControl<T extends string>({
-  options,
-  value,
-  onChange,
-  getIcon,
-  getLabel,
-  getTitle,
-  className,
-  style,
-  tourAnchor,
-}: {
-  options: readonly T[];
-  value: T;
-  onChange: (value: T) => void;
-  getIcon?: (option: T) => ReactNode;
-  getLabel?: (option: T) => string;
-  getTitle?: (option: T) => string;
-  className?: string;
-  style?: CSSProperties;
-  // Lets the guided tour spotlight this control.
-  tourAnchor?: string;
-}) {
-  const count = options.length;
-  const activeIndex = Math.max(0, options.indexOf(value));
-
-  return (
-    <div
-      style={style}
-      data-tour={tourAnchor}
-      className={`relative flex rounded-xl border border-border/70 bg-foreground/[0.03] p-0.5 ${className ?? ""}`}
-    >
-      <span
-        aria-hidden
-        className="segmented-thumb pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 rounded-lg"
-        style={{
-          width: `calc((100% - 0.25rem) / ${count})`,
-          transform: `translateX(${activeIndex * 100}%)`,
-        }}
-      />
-      {options.map((option) => {
-        const active = option === value;
-        return (
-          <button
-            key={option}
-            type="button"
-            title={getTitle?.(option)}
-            onClick={() => onChange(option)}
-            className={`relative z-10 flex min-h-8 min-w-0 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-lg px-2 text-center text-xs font-medium transition-colors sm:px-2.5 ${
-              active
-                ? "text-pop-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {getIcon?.(option)}
-            {getLabel ? getLabel(option) : option}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -3785,8 +3426,7 @@ function detectKeyTerms(text: string): string[] {
     .replace(/https?:\/\/\S+/g, " ");
 
   // Capitalized run (2+ letters/word, up to 4 words) OR a 2-5 char ALL-CAPS acronym.
-  const re =
-    /\b([A-Z][a-zA-Z]{1,}(?:\s+[A-Z][a-zA-Z]{1,}){0,3}|[A-Z]{2,5})\b/g;
+  const re = /\b([A-Z][a-zA-Z]{1,}(?:\s+[A-Z][a-zA-Z]{1,}){0,3}|[A-Z]{2,5})\b/g;
 
   type Candidate = { term: string; count: number; multiword: boolean };
   const byKey = new Map<string, Candidate>();
@@ -4788,9 +4428,7 @@ function Message({
       }
 
       if (position > cursor) {
-        rendered.push(
-          renderMd(displayContent.slice(cursor, position), `before-${item.key}`),
-        );
+        rendered.push(renderMd(displayContent.slice(cursor, position), `before-${item.key}`));
       }
 
       const anchoredItems = [item];
@@ -4845,9 +4483,7 @@ function Message({
     }
 
     if (cursor < displayContent.length) {
-      rendered.push(
-        renderMd(displayContent.slice(cursor), "after-inline-threads"),
-      );
+      rendered.push(renderMd(displayContent.slice(cursor), "after-inline-threads"));
     }
 
     if (unattached.length) {
@@ -4920,7 +4556,7 @@ function Message({
                 }
               }}
               rows={1}
-              className="min-h-[24px] max-h-[240px] w-full resize-none bg-transparent text-sm leading-relaxed text-foreground outline-none"
+              className="gd-composer-field min-h-[24px] max-h-[240px] w-full resize-none bg-transparent text-sm leading-relaxed text-foreground outline-none"
               style={{ height: "auto" }}
               onInput={(e) => {
                 const t = e.currentTarget;
@@ -5256,9 +4892,7 @@ function Message({
             <button
               type="button"
               onClick={() =>
-                onVersionChange?.(
-                  Math.min(msg.versions!.length - 1, (msg.activeVersion ?? 0) + 1),
-                )
+                onVersionChange?.(Math.min(msg.versions!.length - 1, (msg.activeVersion ?? 0) + 1))
               }
               disabled={(msg.activeVersion ?? 0) >= msg.versions.length - 1}
               title="Next answer"

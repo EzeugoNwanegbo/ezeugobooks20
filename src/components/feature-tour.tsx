@@ -198,13 +198,15 @@ export function FeatureTour({
             left: box.left - 6,
             width: box.width + 12,
             height: box.height + 12,
-            boxShadow: "0 0 0 9999px rgba(3, 7, 12, 0.68)",
-            outline: "2px solid var(--pop, #ee6c4d)",
+            // Warm-neutral scrim so the dimmed page stays the palette's Black
+            // rather than the old cool navy-black.
+            boxShadow: "0 0 0 9999px rgba(7, 7, 7, 0.72)",
+            outline: "2px solid var(--pop, #a58763)",
             outlineOffset: 0,
           }}
         />
       ) : (
-        <div aria-hidden="true" className="fixed inset-0 z-[195] bg-[rgba(3,7,12,0.68)]" />
+        <div aria-hidden="true" className="fixed inset-0 z-[195] bg-[rgba(7,7,7,0.72)]" />
       )}
 
       <div

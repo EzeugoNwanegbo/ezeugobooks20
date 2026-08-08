@@ -50,8 +50,10 @@ export function initNativeShell(): void {
         const theme =
           stored === "light" || stored === "brutal" || stored === "neo" ? stored : "dark";
         const bar = {
-          dark: { style: Style.Dark, color: "#060606" },
-          light: { style: Style.Light, color: "#e3d6bf" },
+          // These must track --background in styles.css: Black for dark, Bone
+          // for light.
+          dark: { style: Style.Dark, color: "#070707" },
+          light: { style: Style.Light, color: "#e9e0d1" },
           brutal: { style: Style.Light, color: "#f4f1e8" },
           // Matches --neo-plate, so the bar disappears into the sheet.
           neo: { style: Style.Dark, color: "#272a30" },
