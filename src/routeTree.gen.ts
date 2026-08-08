@@ -22,6 +22,7 @@ import { Route as AppLibraryRouteImport } from './routes/app.library'
 import { Route as AppLeaderboardRouteImport } from './routes/app.leaderboard'
 import { Route as AppLastMinuteRouteImport } from './routes/app.last-minute'
 import { Route as AppHistoryRouteImport } from './routes/app.history'
+import { Route as AppFriendsRouteImport } from './routes/app.friends'
 import { Route as AppFeedbackRouteImport } from './routes/app.feedback'
 import { Route as AppChatRouteImport } from './routes/app.chat'
 import { Route as AppAdminRouteImport } from './routes/app.admin'
@@ -91,6 +92,11 @@ const AppHistoryRoute = AppHistoryRouteImport.update({
   path: '/history',
   getParentRoute: () => AppRoute,
 } as any)
+const AppFriendsRoute = AppFriendsRouteImport.update({
+  id: '/friends',
+  path: '/friends',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppFeedbackRoute = AppFeedbackRouteImport.update({
   id: '/feedback',
   path: '/feedback',
@@ -117,6 +123,7 @@ export interface FileRoutesByFullPath {
   '/app/admin': typeof AppAdminRoute
   '/app/chat': typeof AppChatRoute
   '/app/feedback': typeof AppFeedbackRoute
+  '/app/friends': typeof AppFriendsRoute
   '/app/history': typeof AppHistoryRoute
   '/app/last-minute': typeof AppLastMinuteRoute
   '/app/leaderboard': typeof AppLeaderboardRoute
@@ -135,6 +142,7 @@ export interface FileRoutesByTo {
   '/app/admin': typeof AppAdminRoute
   '/app/chat': typeof AppChatRoute
   '/app/feedback': typeof AppFeedbackRoute
+  '/app/friends': typeof AppFriendsRoute
   '/app/history': typeof AppHistoryRoute
   '/app/last-minute': typeof AppLastMinuteRoute
   '/app/leaderboard': typeof AppLeaderboardRoute
@@ -154,6 +162,7 @@ export interface FileRoutesById {
   '/app/admin': typeof AppAdminRoute
   '/app/chat': typeof AppChatRoute
   '/app/feedback': typeof AppFeedbackRoute
+  '/app/friends': typeof AppFriendsRoute
   '/app/history': typeof AppHistoryRoute
   '/app/last-minute': typeof AppLastMinuteRoute
   '/app/leaderboard': typeof AppLeaderboardRoute
@@ -174,6 +183,7 @@ export interface FileRouteTypes {
     | '/app/admin'
     | '/app/chat'
     | '/app/feedback'
+    | '/app/friends'
     | '/app/history'
     | '/app/last-minute'
     | '/app/leaderboard'
@@ -192,6 +202,7 @@ export interface FileRouteTypes {
     | '/app/admin'
     | '/app/chat'
     | '/app/feedback'
+    | '/app/friends'
     | '/app/history'
     | '/app/last-minute'
     | '/app/leaderboard'
@@ -210,6 +221,7 @@ export interface FileRouteTypes {
     | '/app/admin'
     | '/app/chat'
     | '/app/feedback'
+    | '/app/friends'
     | '/app/history'
     | '/app/last-minute'
     | '/app/leaderboard'
@@ -321,6 +333,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppHistoryRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/friends': {
+      id: '/app/friends'
+      path: '/friends'
+      fullPath: '/app/friends'
+      preLoaderRoute: typeof AppFriendsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/feedback': {
       id: '/app/feedback'
       path: '/feedback'
@@ -349,6 +368,7 @@ interface AppRouteChildren {
   AppAdminRoute: typeof AppAdminRoute
   AppChatRoute: typeof AppChatRoute
   AppFeedbackRoute: typeof AppFeedbackRoute
+  AppFriendsRoute: typeof AppFriendsRoute
   AppHistoryRoute: typeof AppHistoryRoute
   AppLastMinuteRoute: typeof AppLastMinuteRoute
   AppLeaderboardRoute: typeof AppLeaderboardRoute
@@ -362,6 +382,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAdminRoute: AppAdminRoute,
   AppChatRoute: AppChatRoute,
   AppFeedbackRoute: AppFeedbackRoute,
+  AppFriendsRoute: AppFriendsRoute,
   AppHistoryRoute: AppHistoryRoute,
   AppLastMinuteRoute: AppLastMinuteRoute,
   AppLeaderboardRoute: AppLeaderboardRoute,

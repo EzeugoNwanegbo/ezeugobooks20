@@ -20,6 +20,14 @@ export type Profile = {
   recent_topics: string[] | null;
   onboarded: boolean | null;
   is_admin: boolean | null;
+  // Social layer (src/lib/social.ts). OPTIONAL, and that is the point: the
+  // profile is loaded with select("*"), which never names a column, so these
+  // simply arrive as undefined until the social migration is applied. Marking
+  // them optional rather than `| null` is what keeps that honest — code has to
+  // handle "this build is talking to a database without the column".
+  username?: string | null;
+  username_set_at?: string | null;
+  discoverable_by?: string | null;
 };
 
 type AuthContextValue = {
@@ -290,7 +298,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           },
         });
         if (!res.ok) {
-          const body = await res.json().catch(() => ({})) as { error?: string };
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(body.error ?? "Failed to delete account");
         }
         await supabase.auth.signOut();

@@ -47,9 +47,12 @@ import {
 import {
   formatClock,
   readTimedChallenge,
-  timerPresetSeconds,
+  speedBonusMaxSeconds,
   type TimedChallenge,
 } from "@/lib/timed-challenge";
+import { TimerPicker } from "@/components/timer-picker";
+import { chosenTimerSeconds, timerChoiceBlocker, useTimerChoice } from "@/lib/use-timer-choice";
+import { submitChallengeForSession } from "@/lib/social";
 
 type PracticeSearch = { plan?: string; session?: string; mode?: PracticeMode };
 
@@ -237,10 +240,6 @@ function ConfigView({ planId }: { planId: string }) {
   const [practiceMode, setPracticeMode] = useState<PracticeMode>("learning");
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [practiceLoading, setPracticeLoading] = useState(false);
-  // "Race the clock" — off by default, and off means the set is created with no
-  // timer key at all, i.e. byte-for-byte the old behaviour.
-  const [timerOn, setTimerOn] = useState(false);
-  const [timerSeconds, setTimerSeconds] = useState(0);
   // An unfinished set for the selected topic, so the student can pick up where
   // they stopped instead of generating (and paying for) a brand-new one.
   const [resumable, setResumable] = useState<{
@@ -259,17 +258,10 @@ function ConfigView({ planId }: { planId: string }) {
   const supportsTimer = supportsModes;
 
   const requestedTotal = questionType === "mixed" ? mixedMcq + mixedEssay : count;
-  const timerOptions = useMemo(
-    () => timerPresetSeconds(Math.max(1, requestedTotal)),
-    [requestedTotal],
-  );
-  // Changing the size of the set re-prices the clock. Keep the student's choice
-  // when it is still on offer, otherwise fall back to the suggested pace.
-  useEffect(() => {
-    setTimerSeconds((current) =>
-      timerOptions.includes(current) ? current : (timerOptions[1] ?? timerOptions[0] ?? 0),
-    );
-  }, [timerOptions]);
+  // "Race the clock" — off by default, and off means the set is created with no
+  // timer key at all, i.e. byte-for-byte the old behaviour. The hook is called
+  // unconditionally; only the picker's rendering depends on `supportsTimer`.
+  const timer = useTimerChoice(requestedTotal);
 
   const activeTopic = useMemo(
     () => topics.find((topic) => topic.id === selectedTopicId) ?? null,
@@ -411,6 +403,13 @@ function ConfigView({ planId }: { planId: string }) {
       toast.error("This roadmap has no source files to practice from.");
       return;
     }
+    // Timer on but nothing usable typed: say so rather than quietly building an
+    // untimed set out of a choice the student thought they had made.
+    const timerProblem = supportsTimer ? timerChoiceBlocker(timer) : null;
+    if (timerProblem) {
+      toast.error(timerProblem);
+      return;
+    }
 
     setPracticeLoading(true);
     try {
@@ -471,7 +470,7 @@ function ConfigView({ planId }: { planId: string }) {
       const sessionMode: PracticeMode | undefined = supportsModes ? practiceMode : undefined;
       // Only written when the student opted in, so an untimed set carries no
       // timer key and every older set keeps reading as untimed.
-      const challenge = supportsTimer && timerOn && timerSeconds > 0 ? timerSeconds : null;
+      const challenge = supportsTimer ? chosenTimerSeconds(timer) || null : null;
       const isMixed = questionType === "mixed";
       const requestedCount = isMixed ? mixedMcq + mixedEssay : count;
       const generated = await generateStudyQuestions({
@@ -665,7 +664,10 @@ function ConfigView({ planId }: { planId: string }) {
                   {resumable && (
                     <button
                       onClick={() =>
-                        navigate({ to: "/app/practice", search: { plan: planId, session: resumable.id } })
+                        navigate({
+                          to: "/app/practice",
+                          search: { plan: planId, session: resumable.id },
+                        })
                       }
                       className="mt-4 flex w-full items-center justify-between gap-2 rounded-xl border border-pop/40 bg-pop/10 px-3 py-2.5 text-left transition-colors hover:bg-pop/15"
                     >
@@ -676,8 +678,8 @@ function ConfigView({ planId }: { planId: string }) {
                             Continue where you left off
                           </span>
                           <span className="text-[11px] text-muted-foreground">
-                            {TYPE_LABEL[resumable.questionType]} ·{" "}
-                            {resumable.answered}/{resumable.total} answered - no new questions
+                            {TYPE_LABEL[resumable.questionType]} · {resumable.answered}/
+                            {resumable.total} answered - no new questions
                           </span>
                         </span>
                       </span>
@@ -699,7 +701,9 @@ function ConfigView({ planId }: { planId: string }) {
                       value={questionType}
                       onChange={changeType}
                       getLabel={(type) => TYPE_LABEL[type]}
-                      getIcon={(type) => (type === "flashcard" ? <Layers className="h-3.5 w-3.5" /> : null)}
+                      getIcon={(type) =>
+                        type === "flashcard" ? <Layers className="h-3.5 w-3.5" /> : null
+                      }
                       className="h-10"
                     />
                   </div>
@@ -884,42 +888,8 @@ function ConfigView({ planId }: { planId: string }) {
                   </div>
 
                   {supportsTimer && (
-                    <div className="mt-3 rounded-xl border border-border p-3">
-                      <label className="flex cursor-pointer items-start gap-2.5">
-                        <input
-                          type="checkbox"
-                          checked={timerOn}
-                          onChange={(event) => setTimerOn(event.target.checked)}
-                          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--pop)]"
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-1.5 text-sm font-semibold">
-                            <Timer className="h-3.5 w-3.5 text-pop" />
-                            Race the clock
-                          </span>
-                          <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
-                            Optional. Finish inside the time for a bonus. Running out costs the
-                            bonus and nothing else — the set stays open.
-                          </span>
-                        </span>
-                      </label>
-                      {timerOn && (
-                        <div className="mt-2.5 grid grid-cols-3 gap-1.5">
-                          {timerOptions.map((option) => (
-                            <button
-                              key={option}
-                              onClick={() => setTimerSeconds(option)}
-                              className={`rounded-xl border px-2 py-2 text-sm font-medium tabular-nums transition-colors ${
-                                timerSeconds === option
-                                  ? "border-pop/50 bg-pop/10 text-pop"
-                                  : "border-border hover:border-pop/30 hover:bg-foreground/[0.02]"
-                              }`}
-                            >
-                              {Math.round(option / 60)} min
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                    <div className="mt-3">
+                      <TimerPicker choice={timer} />
                     </div>
                   )}
 
@@ -1013,7 +983,7 @@ function SessionView({
   // Mode resolves from the persisted session first (so reopening a completed set
   // keeps its mode), then the URL param, defaulting to learning.
   const mode: PracticeMode =
-    ((session?.feedback as { mode?: PracticeMode } | null)?.mode ?? modeParam ?? "learning");
+    (session?.feedback as { mode?: PracticeMode } | null)?.mode ?? modeParam ?? "learning";
 
   useEffect(() => {
     if (!user) return;
@@ -1022,7 +992,9 @@ function SessionView({
       setLoading(true);
       const { data: sessionData, error: sessionErr } = await db
         .from("study_sessions")
-        .select("id, plan_id, topic_id, question_type, score, total_questions, status, feedback")
+        .select(
+          "id, plan_id, topic_id, question_type, score, requested_count, total_questions, status, feedback",
+        )
         .eq("id", sessionId)
         .eq("user_id", user.id)
         .single();
@@ -1086,9 +1058,10 @@ function SessionView({
           setAnswers(savedAnswers);
           setGrades(savedGrades);
           setExamSubmitted(true);
-          const fb = sessionRow.feedback as
-            | { time_taken_seconds?: number; review?: StudyReview }
-            | null;
+          const fb = sessionRow.feedback as {
+            time_taken_seconds?: number;
+            review?: StudyReview;
+          } | null;
           if (typeof fb?.time_taken_seconds === "number") setElapsedSec(fb.time_taken_seconds);
           if (fb?.review) setReview(fb.review);
         } else if (sessionRow.status !== "completed") {
@@ -1384,6 +1357,17 @@ function SessionView({
       updated_at: new Date().toISOString(),
     });
     setCompleted(true);
+
+    // If this set is half of a friend challenge, tell the server it is finished
+    // NOW, so the tie-break time is stamped by the server's clock within a
+    // second of the real finish. A device-reported duration is not merely
+    // inaccurate — it is a number the device chooses, and duration decides every
+    // drawn contest. No-ops for an ordinary practice set, and no-ops entirely
+    // while SOCIAL_SCHEMA_APPLIED is false (it returns before any network call).
+    // It never throws: practice must not fail because a social feature did, and
+    // opening the challenge list recovers a result that did not land here.
+    await submitChallengeForSession(session.id);
+
     const correct = questions.filter((question) => isGradeCorrect(map[question.id])).length;
     const failed = Math.max(0, questions.length - correct);
     if (correct) recordGamificationEvent(user.id, "coach_question_correct", { count: correct });
@@ -1392,9 +1376,22 @@ function SessionView({
     // Timed set: the opt-in award, plus the bonus for landing inside the budget.
     // `elapsed` is measured from the wall clock, not the countdown, so a paused
     // or throttled tab cannot claim a beat it did not earn.
+    //
+    // The second condition closes the hole a student-typed time would otherwise
+    // open: without it, 90 minutes on a 5-question set beats the clock every
+    // time and mints the daily +15 for free. The bonus only pays inside the
+    // most generous budget the app itself would have suggested for this many
+    // questions, which every preset already satisfies — so nothing changes for
+    // a student who took a preset, and the picker says the rule out loud before
+    // the set is built.
     if (challenge) {
       recordGamificationEvent(user.id, "coach_timed_challenge");
-      if (elapsed != null && elapsed <= challenge.seconds) {
+      // Priced on what was ASKED for, which is what the picker priced its
+      // presets on. The generator is allowed to return fewer questions than
+      // requested, and using the delivered count would quietly move the line
+      // under a student who took an honest preset.
+      const bonusCap = speedBonusMaxSeconds(session.requested_count || questions.length || 1);
+      if (elapsed != null && elapsed <= challenge.seconds && challenge.seconds <= bonusCap) {
         recordGamificationEvent(user.id, "coach_beat_timer");
       }
     }
@@ -1519,9 +1516,7 @@ function SessionView({
   const learningReady = allMcqGraded && allEssaysWritten;
   // Presentational-only: how far through the set the student has progressed,
   // for the header progress bar. Not used by any submit/scoring logic.
-  const answeredCount = questions.filter((question) =>
-    (answers[question.id] ?? "").trim(),
-  ).length;
+  const answeredCount = questions.filter((question) => (answers[question.id] ?? "").trim()).length;
   const sessionProgressPct = isFlashcards
     ? flashcards.length
       ? Math.round((Object.keys(fcRatings).length / flashcards.length) * 100)
@@ -1783,12 +1778,13 @@ function SessionView({
                               {(question.options ?? []).map((option) => {
                                 const selected = answers[question.id] === option.id;
                                 const isCorrectOption = option.id === question.correct_answer;
-                                let cls = "border-border hover:border-pop/30 hover:bg-foreground/[0.02]";
+                                let cls =
+                                  "border-border hover:border-pop/30 hover:bg-foreground/[0.02]";
                                 if (showFeedback) {
-                                  if (isCorrectOption)
-                                    cls = "border-leaf/50 bg-leaf/10 text-leaf";
+                                  if (isCorrectOption) cls = "border-leaf/50 bg-leaf/10 text-leaf";
                                   else if (selected)
-                                    cls = "border-destructive/60 bg-destructive/10 text-destructive";
+                                    cls =
+                                      "border-destructive/60 bg-destructive/10 text-destructive";
                                   else cls = "border-border opacity-60";
                                 } else if (selected) {
                                   cls = "border-pop/50 bg-pop/10";
@@ -1808,7 +1804,9 @@ function SessionView({
                                     className={`flex w-full items-start gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition-colors disabled:cursor-default ${cls}`}
                                   >
                                     <span className="shrink-0 font-semibold">{option.id}</span>
-                                    <span className="min-w-0 flex-1 break-words">{option.text}</span>
+                                    <span className="min-w-0 flex-1 break-words">
+                                      {option.text}
+                                    </span>
                                     {showFeedback && isCorrectOption && (
                                       <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-leaf" />
                                     )}
@@ -1850,9 +1848,7 @@ function SessionView({
                               )}
                             </>
                           )}
-                          {showFeedback && (
-                            <AnswerFeedback question={question} grade={grade} />
-                          )}
+                          {showFeedback && <AnswerFeedback question={question} grade={grade} />}
                         </div>
                       );
                     })}
@@ -1863,11 +1859,7 @@ function SessionView({
                         disabled={reviewLoading}
                         className="btn-pop inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold"
                       >
-                        {reviewLoading ? (
-                          <LoadingDots />
-                        ) : (
-                          <GraduationCap className="h-4 w-4" />
-                        )}
+                        {reviewLoading ? <LoadingDots /> : <GraduationCap className="h-4 w-4" />}
                         Submit quiz
                       </button>
                     ) : !completed ? (
@@ -1876,11 +1868,7 @@ function SessionView({
                         disabled={!learningReady || reviewLoading}
                         className="btn-pop inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold"
                       >
-                        {reviewLoading ? (
-                          <LoadingDots />
-                        ) : (
-                          <CheckCircle2 className="h-4 w-4" />
-                        )}
+                        {reviewLoading ? <LoadingDots /> : <CheckCircle2 className="h-4 w-4" />}
                         {learningReady ? "Finish & save" : "Answer all to finish"}
                       </button>
                     ) : (
@@ -1973,11 +1961,7 @@ function SessionView({
                     disabled={reviewLoading}
                     className="btn-pop inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold"
                   >
-                    {reviewLoading ? (
-                      <LoadingDots />
-                    ) : (
-                      <CheckCircle2 className="h-4 w-4" />
-                    )}
+                    {reviewLoading ? <LoadingDots /> : <CheckCircle2 className="h-4 w-4" />}
                     Submit and review
                   </button>
                 )}

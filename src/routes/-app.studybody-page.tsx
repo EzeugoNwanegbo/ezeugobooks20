@@ -1,22 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { BrainCircuit, ChevronRight, FileText, History, Route, Timer, Zap } from "lucide-react";
-import { LoadingDots } from "@/components/loading-dots";
+import { BrainCircuit, ChevronRight, FileText, History, Route, Zap } from "lucide-react";
+import { StageProgress, type ProgressStage } from "@/components/stage-progress";
+import { TimerPicker } from "@/components/timer-picker";
+import { chosenTimerSeconds, timerChoiceBlocker, useTimerChoice } from "@/lib/use-timer-choice";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { takeLastMinuteForCoach } from "@/lib/last-minute-handoff";
 import { generateStudyPlan, type StudyRoadmapTopic } from "@/lib/studybody-client";
 import { PageHeader } from "@/components/ui/page-header";
 import { Segmented } from "@/components/ui/segmented";
-import { timerPresetSeconds } from "@/lib/timed-challenge";
 import {
   createStraightInSession,
   db,
   folderName,
+  loadPreferredStraightInType,
   loadStudyDocuments,
   loadStudyDocumentsSpanning,
+  STRAIGHT_IN_TYPES,
   type DocRow,
   type PlanRow,
+  type StraightInStage,
+  type StraightInType,
 } from "@/lib/studybody-data";
 
 const SCOPE_OPTIONS = ["whole", "topic"] as const;
@@ -29,6 +34,56 @@ const ENTRY_OPTIONS = ["roadmap", "straight"] as const;
 type EntryMode = (typeof ENTRY_OPTIONS)[number];
 
 const STRAIGHT_IN_COUNTS = [10, 20, 30, 50];
+
+// The style of question, chosen on the same step as the count so going straight
+// in stays one decision point. "flashcard" is not here on purpose — see the note
+// on createStraightInSession's `questionType`.
+const STRAIGHT_IN_TYPE_LABEL: Record<StraightInType, string> = {
+  mcq: "MCQ",
+  essay: "Written",
+  mixed: "Mixed",
+};
+
+/** Lower-case-safe wording for sentences: "20 MCQ questions", "a written set". */
+const STRAIGHT_IN_TYPE_NOUN: Record<StraightInType, string> = {
+  mcq: "MCQ",
+  essay: "written",
+  mixed: "mixed",
+};
+
+const STRAIGHT_IN_TYPE_BLURB: Record<StraightInType, string> = {
+  mcq: "Multiple choice only, graded the moment you answer.",
+  essay: "Written answers only, marked against the material when you submit.",
+  mixed: "Mostly multiple choice with a few written answers.",
+};
+
+// The two long waits, named for the work that is actually happening. Each label
+// belongs to one awaited call, and the step only moves when that call returns.
+const ROADMAP_STAGES: readonly ProgressStage[] = [
+  { key: "reading", label: "Reading your material" },
+  {
+    key: "planning",
+    label: "Planning your topics",
+    note: "The long part. We read the whole file before ordering it into topics.",
+  },
+  { key: "saving", label: "Saving your roadmap" },
+];
+
+const STRAIGHT_IN_STAGES: readonly ProgressStage[] = [
+  { key: "reading", label: "Reading across your files" },
+  {
+    key: "writing",
+    label: "Writing your questions",
+    note: "The long part. Larger sets take a little longer to build from your files.",
+  },
+  { key: "saving", label: "Saving your set" },
+];
+
+const STRAIGHT_IN_STAGE_INDEX: Record<StraightInStage, number> = {
+  reading: 0,
+  writing: 1,
+  saving: 2,
+};
 
 function formatDate(value: string | null): string {
   if (!value) return "";
@@ -51,20 +106,34 @@ export function StudyBodyPage() {
   const [schemaMissing, setSchemaMissing] = useState(false);
   const [entry, setEntry] = useState<EntryMode>("roadmap");
   const [straightCount, setStraightCount] = useState(20);
+  // "mixed" is what this flow has always built, so it stays the fallback. It is
+  // replaced below by the student's own last-used style when we know one.
+  const [straightType, setStraightType] = useState<StraightInType>("mixed");
   const [straightDifficulty, setStraightDifficulty] = useState<"easy" | "medium" | "hard">(
     "medium",
   );
-  const [straightTimerOn, setStraightTimerOn] = useState(false);
-  const [straightTimerSeconds, setStraightTimerSeconds] = useState(0);
+  // Which real step the build is on, and the failure that stopped it.
+  const [stageIndex, setStageIndex] = useState(0);
+  const [stageError, setStageError] = useState<string | null>(null);
 
-  const straightTimerOptions = useMemo(() => timerPresetSeconds(straightCount), [straightCount]);
+  const timer = useTimerChoice(straightCount);
+  // The clock rides on the sets that keep an elapsed time — the same rule the
+  // practice screen uses. A written-answer set has no such clock, so offering a
+  // timer there would show a countdown that could never pay out.
+  const straightSupportsTimer = straightType !== "essay";
+
+  // Default the style to whatever the student last finished a set in, rather
+  // than to a number we picked. Silent when there is nothing to go on.
   useEffect(() => {
-    setStraightTimerSeconds((current) =>
-      straightTimerOptions.includes(current)
-        ? current
-        : (straightTimerOptions[1] ?? straightTimerOptions[0] ?? 0),
-    );
-  }, [straightTimerOptions]);
+    if (!user) return;
+    let active = true;
+    loadPreferredStraightInType(user.id).then((preferred) => {
+      if (active && preferred) setStraightType(preferred);
+    });
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   const refreshDocsAndPlans = async () => {
     if (!user) return;
@@ -134,13 +203,24 @@ export function StudyBodyPage() {
       toast.error("Pick at least one file to be questioned on.");
       return;
     }
+    // The timer stays optional, but "on with nothing usable set" is not a choice
+    // we should silently resolve into an untimed set.
+    const timerProblem = straightSupportsTimer ? timerChoiceBlocker(timer) : null;
+    if (timerProblem) {
+      toast.error(timerProblem);
+      return;
+    }
 
+    setStageIndex(0);
+    setStageError(null);
     setLoading(true);
     try {
       const chosen = docs.filter((doc) => selectedDocIds.includes(doc.id));
       const title =
         planTitle.trim() ||
-        (chosen.length === 1 ? chosen[0].file_name : `${chosen.length} files - mixed set`);
+        (chosen.length === 1
+          ? chosen[0].file_name
+          : `${chosen.length} files - ${STRAIGHT_IN_TYPE_NOUN[straightType]} set`);
       const { planId, sessionId } = await createStraightInSession({
         userId: user.id,
         profile,
@@ -148,14 +228,20 @@ export function StudyBodyPage() {
         documentIds: selectedDocIds,
         docsMeta: docs,
         count: straightCount,
+        questionType: straightType,
         difficulty: straightDifficulty,
-        timerSeconds: straightTimerOn ? straightTimerSeconds : 0,
+        timerSeconds: straightSupportsTimer ? chosenTimerSeconds(timer) : 0,
+        onStage: (stage) => setStageIndex(STRAIGHT_IN_STAGE_INDEX[stage]),
       });
       setSelectedDocIds([]);
       setPlanTitle("");
       navigate({ to: "/app/practice", search: { plan: planId, session: sessionId } });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not build your set");
+      // Both: the toast for the student who has scrolled away, and the stopped
+      // progress line in place so the wait visibly ends instead of spinning on.
+      const message = err instanceof Error ? err.message : "Could not build your set";
+      setStageError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -178,11 +264,14 @@ export function StudyBodyPage() {
       return;
     }
 
+    setStageIndex(0);
+    setStageError(null);
     setLoading(true);
     try {
-      // For a single-topic roadmap we pull only the chunks that match the topic
-      // (same pinpoint extraction the chat uses), so the plan and every later
-      // question stays grounded on just that part of the file - with page refs.
+      // Step 1 of the progress line: retrieval. For a single-topic roadmap we
+      // pull only the chunks that match the topic (same pinpoint extraction the
+      // chat uses), so the plan and every later question stays grounded on just
+      // that part of the file - with page refs.
       const studyDocs = topicScoped
         ? await loadStudyDocuments(selectedDocIds, focus)
         : await loadStudyDocumentsSpanning(selectedDocIds, docs);
@@ -191,6 +280,8 @@ export function StudyBodyPage() {
             courseOutline.trim() ? `\n\n${courseOutline}` : ""
           }`
         : courseOutline;
+      // Step 2: the model call, and the reason this screen felt like dead air.
+      setStageIndex(1);
       const generated = await generateStudyPlan({
         profile,
         planTitle: planTitle.trim() || focus || "My Coach roadmap",
@@ -198,6 +289,8 @@ export function StudyBodyPage() {
         documents: studyDocs,
       });
 
+      // Step 3: writing the plan and its topics down.
+      setStageIndex(2);
       const { data: planData, error: planErr } = await db
         .from("study_plans")
         .insert({
@@ -244,7 +337,9 @@ export function StudyBodyPage() {
       toast.success("Roadmap created");
       navigate({ to: "/app/practice", search: { plan: plan.id } });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not create roadmap");
+      const message = err instanceof Error ? err.message : "Could not create roadmap";
+      setStageError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -293,7 +388,10 @@ export function StudyBodyPage() {
               <Segmented
                 options={ENTRY_OPTIONS}
                 value={entry}
-                onChange={setEntry}
+                onChange={(option) => {
+                  setEntry(option);
+                  setStageError(null);
+                }}
                 getLabel={(option) =>
                   option === "roadmap" ? "Follow a roadmap" : "Go straight in"
                 }
@@ -360,9 +458,10 @@ export function StudyBodyPage() {
               </>
             ) : (
               <div className="space-y-4">
+                {/* Count and style are one step: how many, and what kind. */}
                 <div className="space-y-2">
                   <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    How many questions?
+                    How many, and what kind?
                   </div>
                   <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
                     {STRAIGHT_IN_COUNTS.map((option) => (
@@ -379,9 +478,17 @@ export function StudyBodyPage() {
                       </button>
                     ))}
                   </div>
+                  <div className="pt-1">
+                    <Segmented
+                      options={STRAIGHT_IN_TYPES}
+                      value={straightType}
+                      onChange={setStraightType}
+                      getLabel={(option) => STRAIGHT_IN_TYPE_LABEL[option]}
+                      className="h-10"
+                    />
+                  </div>
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    Mostly multiple choice with a few written answers, spread across everything you
-                    picked.
+                    {STRAIGHT_IN_TYPE_BLURB[straightType]} Spread across everything you picked.
                   </p>
                 </div>
 
@@ -400,43 +507,7 @@ export function StudyBodyPage() {
                   />
                 </div>
 
-                <div className="rounded-xl border border-border p-3">
-                  <label className="flex cursor-pointer items-start gap-2.5">
-                    <input
-                      type="checkbox"
-                      checked={straightTimerOn}
-                      onChange={(event) => setStraightTimerOn(event.target.checked)}
-                      className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--pop)]"
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-1.5 text-sm font-semibold">
-                        <Timer className="h-3.5 w-3.5 text-pop" />
-                        Race the clock
-                      </span>
-                      <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
-                        Optional. Finish inside the time for a bonus; running out costs the bonus
-                        and nothing else.
-                      </span>
-                    </span>
-                  </label>
-                  {straightTimerOn && (
-                    <div className="mt-2.5 grid grid-cols-3 gap-1.5">
-                      {straightTimerOptions.map((option) => (
-                        <button
-                          key={option}
-                          onClick={() => setStraightTimerSeconds(option)}
-                          className={`rounded-xl border px-2 py-2 text-sm font-medium tabular-nums transition-colors ${
-                            straightTimerSeconds === option
-                              ? "border-pop/50 bg-pop/10 text-pop"
-                              : "border-border hover:border-pop/30 hover:bg-foreground/[0.02]"
-                          }`}
-                        >
-                          {Math.round(option / 60)} min
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                {straightSupportsTimer && <TimerPicker choice={timer} />}
               </div>
             )}
 
@@ -486,19 +557,29 @@ export function StudyBodyPage() {
               disabled={loading}
               className="btn-pop mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed"
             >
-              {loading ? (
-                <LoadingDots />
-              ) : entry === "roadmap" ? (
+              {/* No dots while the staged line is up: it is the one progress
+                  indicator, and a spinner beside it would be a second, vaguer
+                  one saying the same thing. The button just goes quiet. */}
+              {entry === "roadmap" ? (
                 <BrainCircuit className="h-4 w-4" />
               ) : (
                 <Zap className="h-4 w-4" />
               )}
-              {entry === "roadmap" ? "Build roadmap" : `Start ${straightCount} questions`}
+              {loading
+                ? entry === "roadmap"
+                  ? "Building roadmap"
+                  : "Building your set"
+                : entry === "roadmap"
+                  ? "Build roadmap"
+                  : `Start ${straightCount} ${STRAIGHT_IN_TYPE_NOUN[straightType]} questions`}
             </button>
-            {loading && entry === "straight" && (
-              <p className="mt-2 text-center text-xs text-muted-foreground">
-                Reading across the whole file. Larger sets take a little longer.
-              </p>
+            {(loading || stageError) && (
+              <StageProgress
+                className="mt-2"
+                stages={entry === "roadmap" ? ROADMAP_STAGES : STRAIGHT_IN_STAGES}
+                currentIndex={stageIndex}
+                error={loading ? null : stageError}
+              />
             )}
           </div>
 

@@ -69,6 +69,8 @@ export type SessionRow = {
   topic_id: string;
   question_type: StudyQuestionType;
   score: number | null;
+  /** How many were asked for. The generator may return fewer. */
+  requested_count: number;
   total_questions: number;
   status: "in_progress" | "completed";
   feedback: Record<string, unknown> | null;
@@ -210,6 +212,46 @@ export function straightInSplit(count: number): { mcq: number; essay: number } {
   return { mcq: total - essay, essay };
 }
 
+/**
+ * The styles "Go straight in" can build. Not the whole StudyQuestionType union:
+ * "flashcard" is deliberately absent — see the note on `questionType` below.
+ */
+export type StraightInType = Extract<StudyQuestionType, "mcq" | "essay" | "mixed">;
+
+export const STRAIGHT_IN_TYPES: readonly StraightInType[] = ["mcq", "essay", "mixed"] as const;
+
+/** The steps the caller can show a progress line for. Each is one awaited call. */
+export type StraightInStage = "reading" | "writing" | "saving";
+
+/**
+ * The style this student last finished a set in, if we know one.
+ *
+ * `study_preferences.preferred_question_type` is already written after every
+ * completed set (see the two upserts on the practice page) but has never been
+ * read back anywhere — so the app has been recording a preference and then
+ * ignoring it. This reads it, and it is the only per-student question-style
+ * signal that exists: `profile.preferred_mode` is the explanation style
+ * (Simplified / Detailed), not a question type.
+ *
+ * Returns null on anything unexpected — a missing row for a new student, a
+ * "flashcard" value from the roadmap screen, or an error — and the caller keeps
+ * its own default. Never throws: a default is not worth failing a page load for.
+ */
+export async function loadPreferredStraightInType(userId: string): Promise<StraightInType | null> {
+  try {
+    const { data, error } = await db
+      .from("study_preferences")
+      .select("preferred_question_type")
+      .eq("user_id", userId);
+    if (error) return null;
+    const rows = (data as { preferred_question_type?: unknown }[] | null) ?? [];
+    const value = rows[0]?.preferred_question_type;
+    return STRAIGHT_IN_TYPES.find((type) => type === value) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function createStraightInSession({
   userId,
   profile,
@@ -217,8 +259,10 @@ export async function createStraightInSession({
   documentIds,
   docsMeta,
   count,
+  questionType = "mixed",
   difficulty,
   timerSeconds,
+  onStage,
 }: {
   userId: string;
   profile: Profile;
@@ -226,12 +270,35 @@ export async function createStraightInSession({
   documentIds: string[];
   docsMeta: DocRow[];
   count: number;
+  /**
+   * The style the student picked. Defaults to "mixed", which is what this flow
+   * always built before the choice existed, so an older caller is unchanged.
+   *
+   * "flashcard" is not offered: the edge function's generate_questions action
+   * only knows mcq / essay / mixed and silently falls back to MCQ for anything
+   * else, and cards come from a different action (generate_flashcards) with a
+   * different row shape. Adding it here would mean a second generation path
+   * inside this function, not a value passed down the existing one.
+   */
+  questionType?: StraightInType;
   difficulty: "easy" | "medium" | "hard";
   /** Omitted or 0 for an untimed set — no timer key is written at all. */
   timerSeconds?: number;
+  /** Called as each real step begins, so the caller can show honest progress. */
+  onStage?: (stage: StraightInStage) => void;
 }): Promise<{ planId: string; sessionId: string }> {
+  onStage?.("reading");
   const documents = await loadStudyDocumentsSpanning(documentIds, docsMeta);
-  const split = straightInSplit(count);
+
+  // Only "mixed" splits the set two ways; the single-style sets ask for one kind
+  // and let the edge function's non-mixed branch handle the whole count.
+  const requested = Math.max(1, Math.round(count));
+  const split =
+    questionType === "mixed"
+      ? straightInSplit(requested)
+      : questionType === "essay"
+        ? { mcq: 0, essay: requested }
+        : { mcq: requested, essay: 0 };
 
   const topicStub = {
     title,
@@ -239,13 +306,14 @@ export async function createStraightInSession({
     objectives: [],
     source_refs: [],
   };
+  onStage?.("writing");
   const generated = await generateStudyQuestions({
     profile,
     topic: topicStub,
-    questionType: "mixed",
+    questionType,
     count: split.mcq + split.essay,
-    mcqCount: split.mcq,
-    essayCount: split.essay,
+    mcqCount: questionType === "mixed" ? split.mcq : undefined,
+    essayCount: questionType === "mixed" ? split.essay : undefined,
     documents,
     difficulty,
   });
@@ -253,6 +321,7 @@ export async function createStraightInSession({
     throw new Error("No questions could be built from this material. Try another file.");
   }
 
+  onStage?.("saving");
   const { data: planData, error: planErr } = await db
     .from("study_plans")
     .insert({
@@ -291,7 +360,7 @@ export async function createStraightInSession({
       user_id: userId,
       plan_id: planId,
       topic_id: topicId,
-      question_type: "mixed",
+      question_type: questionType,
       requested_count: split.mcq + split.essay,
       total_questions: generated.questions.length,
       feedback: {

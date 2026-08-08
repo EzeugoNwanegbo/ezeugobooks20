@@ -16,6 +16,7 @@ import {
   TimerReset,
   Trophy,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -51,6 +52,7 @@ import { rankProgress, type AcademicRank } from "@/lib/ranks";
 import { takeRankCelebration, takeStreakOpening } from "@/lib/progression-moments";
 import { useAuth } from "@/lib/auth-context";
 import { isGuestUser } from "@/lib/guest-session";
+import { socialEnabled } from "@/lib/social";
 import { rememberRoute } from "@/lib/last-route";
 import {
   emptyGamificationStats,
@@ -708,6 +710,11 @@ function AppLayout() {
                 "Leaderboard",
                 "amber",
               )}
+              {/* Hidden entirely until the social migration is applied, and
+                  hidden from guests always — see socialEnabled(). The route
+                  still exists; this only decides whether it is advertised. */}
+              {socialEnabled(user) &&
+                navItem("/app/friends", <Users className="h-4 w-4 shrink-0" />, "Friends", "coral")}
               {navAction(
                 <Sparkles className="h-4 w-4 shrink-0" />,
                 "Personalize",
