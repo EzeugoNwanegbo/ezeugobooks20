@@ -31,6 +31,12 @@ import {
   snoozePersonalizationNudge,
 } from "@/lib/personalization";
 import { PersonalizationPanel } from "@/components/personalization-panel";
+import { ProgressionCard } from "@/components/progression-card";
+import {
+  emptyGamificationStats,
+  loadGamificationStats,
+  type GamificationStats,
+} from "@/lib/gamification";
 import { isNativeApp } from "@/lib/native";
 import { lookupTerm, isTermLookupComplete, type TermLookupState } from "@/lib/term-lookup";
 import { embedQuery } from "@/lib/embeddings";
@@ -1373,6 +1379,21 @@ export function ChatPage() {
   // composer doesn't jump up and back down.
   const emptyChat = messages.length === 0 && !loadingConvo;
 
+  // Progression, for the strip above the greeting on a blank chat. Read from
+  // the same localStorage the shell reads and refreshed off the same event, so
+  // the two never disagree.
+  const [progressStats, setProgressStats] = useState<GamificationStats>(emptyGamificationStats);
+  useEffect(() => {
+    if (!user) {
+      setProgressStats(emptyGamificationStats());
+      return;
+    }
+    setProgressStats(loadGamificationStats(user.id));
+    const onChange = () => setProgressStats(loadGamificationStats(user.id));
+    window.addEventListener("gd:gamification", onChange);
+    return () => window.removeEventListener("gd:gamification", onChange);
+  }, [user]);
+
   // Build a self-contained prompt from this conversation and copy it, so the
   // student can paste it into any other AI and keep going without starting over.
   // "history" carries the whole thread; "explain" carries only the latest answer
@@ -2224,6 +2245,13 @@ export function ChatPage() {
               [data-tour="composer"], and the greeting is not part of the input. */}
           {emptyChat && (
             <div className="pointer-events-auto mx-auto w-full max-w-3xl">
+              {/* One compact row above the greeting. It is inside the same
+                  centred group, which already scrolls itself
+                  (overflow-y-auto on the composer block), so on a short phone
+                  it costs a little scroll rather than pushing the composer off
+                  screen. It renders nothing for a student with no points and
+                  no streak, so a first run is unchanged. */}
+              <ProgressionCard stats={progressStats} />
               <ChatGreeting name={savedProfile?.name ?? ""} />
             </div>
           )}

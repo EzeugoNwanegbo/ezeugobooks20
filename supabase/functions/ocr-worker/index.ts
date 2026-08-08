@@ -370,6 +370,16 @@ async function finalizeDocument(
     .from("documents")
     .update({ extracted_text: fullText, extract_status: "ready", extract_error: null })
     .eq("id", documentId);
+
+  // Fingerprint the finished chunk set so a later upload of the same scan links
+  // to it rather than storing (and re-OCR'ing) a second copy. This is the right
+  // moment: every part-job has landed, so the chunk set is final. Best-effort -
+  // a missing hash only costs storage on some future upload.
+  const { error: hashErr } = await admin.rpc("refresh_document_content_hash", {
+    p_document_id: documentId,
+  });
+  if (hashErr) console.error("ocr-worker content hash error:", hashErr);
+
   return "ready";
 }
 

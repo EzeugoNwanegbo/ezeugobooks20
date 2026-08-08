@@ -10,6 +10,7 @@ import {
   GraduationCap,
   Layers,
   Play,
+  Timer,
   Trophy,
   XCircle,
 } from "lucide-react";
@@ -38,7 +39,17 @@ import {
   type TopicRow,
 } from "@/lib/studybody-data";
 import { getCached, setCached } from "@/lib/data-cache";
-import { recordGamificationEvent, recordRoadmapCompletedOnce } from "@/lib/gamification";
+import {
+  recordGamificationEvent,
+  recordRoadmapCompletedOnce,
+  recordWeekendMissionIfDue,
+} from "@/lib/gamification";
+import {
+  formatClock,
+  readTimedChallenge,
+  timerPresetSeconds,
+  type TimedChallenge,
+} from "@/lib/timed-challenge";
 
 type PracticeSearch = { plan?: string; session?: string; mode?: PracticeMode };
 
@@ -226,6 +237,10 @@ function ConfigView({ planId }: { planId: string }) {
   const [practiceMode, setPracticeMode] = useState<PracticeMode>("learning");
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [practiceLoading, setPracticeLoading] = useState(false);
+  // "Race the clock" — off by default, and off means the set is created with no
+  // timer key at all, i.e. byte-for-byte the old behaviour.
+  const [timerOn, setTimerOn] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState(0);
   // An unfinished set for the selected topic, so the student can pick up where
   // they stopped instead of generating (and paying for) a brand-new one.
   const [resumable, setResumable] = useState<{
@@ -239,6 +254,22 @@ function ConfigView({ planId }: { planId: string }) {
   const supportsModes = questionType === "mcq" || questionType === "mixed";
   // Difficulty applies to graded question sets, not flashcards.
   const supportsDifficulty = questionType !== "flashcard";
+  // The timer rides on the same sets that already keep an elapsed clock, so
+  // flashcards and essay-only sets are untouched by it.
+  const supportsTimer = supportsModes;
+
+  const requestedTotal = questionType === "mixed" ? mixedMcq + mixedEssay : count;
+  const timerOptions = useMemo(
+    () => timerPresetSeconds(Math.max(1, requestedTotal)),
+    [requestedTotal],
+  );
+  // Changing the size of the set re-prices the clock. Keep the student's choice
+  // when it is still on offer, otherwise fall back to the suggested pace.
+  useEffect(() => {
+    setTimerSeconds((current) =>
+      timerOptions.includes(current) ? current : (timerOptions[1] ?? timerOptions[0] ?? 0),
+    );
+  }, [timerOptions]);
 
   const activeTopic = useMemo(
     () => topics.find((topic) => topic.id === selectedTopicId) ?? null,
@@ -438,6 +469,9 @@ function ConfigView({ planId }: { planId: string }) {
       }
 
       const sessionMode: PracticeMode | undefined = supportsModes ? practiceMode : undefined;
+      // Only written when the student opted in, so an untimed set carries no
+      // timer key and every older set keeps reading as untimed.
+      const challenge = supportsTimer && timerOn && timerSeconds > 0 ? timerSeconds : null;
       const isMixed = questionType === "mixed";
       const requestedCount = isMixed ? mixedMcq + mixedEssay : count;
       const generated = await generateStudyQuestions({
@@ -465,9 +499,12 @@ function ConfigView({ planId }: { planId: string }) {
           question_type: questionType,
           requested_count: requestedCount,
           total_questions: generated.questions.length,
-          // Persist the mode up front so a resumed set keeps Learning/Exam even
-          // before the first answer is autosaved.
-          feedback: sessionMode ? { mode: sessionMode } : {},
+          // Persist the mode (and the clock) up front so a resumed set keeps
+          // Learning/Exam and its timer even before the first answer is autosaved.
+          feedback: {
+            ...(sessionMode ? { mode: sessionMode } : {}),
+            ...(challenge ? { timer_seconds: challenge } : {}),
+          },
         })
         .select("id")
         .single();
@@ -846,6 +883,46 @@ function ConfigView({ planId }: { planId: string }) {
                     )}
                   </div>
 
+                  {supportsTimer && (
+                    <div className="mt-3 rounded-xl border border-border p-3">
+                      <label className="flex cursor-pointer items-start gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={timerOn}
+                          onChange={(event) => setTimerOn(event.target.checked)}
+                          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--pop)]"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5 text-sm font-semibold">
+                            <Timer className="h-3.5 w-3.5 text-pop" />
+                            Race the clock
+                          </span>
+                          <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
+                            Optional. Finish inside the time for a bonus. Running out costs the
+                            bonus and nothing else — the set stays open.
+                          </span>
+                        </span>
+                      </label>
+                      {timerOn && (
+                        <div className="mt-2.5 grid grid-cols-3 gap-1.5">
+                          {timerOptions.map((option) => (
+                            <button
+                              key={option}
+                              onClick={() => setTimerSeconds(option)}
+                              className={`rounded-xl border px-2 py-2 text-sm font-medium tabular-nums transition-colors ${
+                                timerSeconds === option
+                                  ? "border-pop/50 bg-pop/10 text-pop"
+                                  : "border-border hover:border-pop/30 hover:bg-foreground/[0.02]"
+                              }`}
+                            >
+                              {Math.round(option / 60)} min
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <button
                     onClick={start}
                     disabled={practiceLoading}
@@ -916,6 +993,10 @@ function SessionView({
   const [revealedEssays, setRevealedEssays] = useState<Record<string, boolean>>({});
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsedSec, setElapsedSec] = useState<number | null>(null);
+  // Drives the countdown chip only; the bonus is settled from the real elapsed
+  // time on submit, so a backgrounded tab cannot be used to buy time.
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [timeUpNotified, setTimeUpNotified] = useState(false);
 
   const [fcIndex, setFcIndex] = useState(0);
   const [fcFlipped, setFcFlipped] = useState(false);
@@ -925,6 +1006,9 @@ function SessionView({
 
   const isFlashcards = session?.question_type === "flashcard";
   const usesModes = session?.question_type === "mcq" || session?.question_type === "mixed";
+  // Null for every set created without the timer, which is every set that
+  // existed before this feature and every set where the student left it off.
+  const challenge: TimedChallenge | null = readTimedChallenge(session?.feedback);
   const hasEssays = questions.some((question) => question.question_type === "essay");
   // Mode resolves from the persisted session first (so reopening a completed set
   // keeps its mode), then the URL param, defaulting to learning.
@@ -1062,6 +1146,30 @@ function SessionView({
     return () => window.clearTimeout(timer);
   }, [answers, grades, revealedEssays, completed, isFlashcards, session, mode]);
 
+  // The countdown. Only runs while a timed set is actually open, so an untimed
+  // or finished set never schedules an interval. Recomputed from the wall clock
+  // on every tick rather than decremented, so a throttled background tab shows
+  // the truth when it comes back rather than however many ticks it missed.
+  const challengeSeconds = challenge?.seconds ?? 0;
+  useEffect(() => {
+    if (!challengeSeconds || completed || examSubmitted || startedAt == null) {
+      setSecondsLeft(null);
+      return;
+    }
+    const compute = () =>
+      setSecondsLeft(Math.max(0, challengeSeconds - Math.round((Date.now() - startedAt) / 1000)));
+    compute();
+    const id = window.setInterval(compute, 1000);
+    return () => window.clearInterval(id);
+  }, [challengeSeconds, completed, examSubmitted, startedAt]);
+
+  useEffect(() => {
+    if (secondsLeft !== 0 || timeUpNotified || completed) return;
+    setTimeUpNotified(true);
+    // Deliberately not a submit. See the note at the top of lib/timed-challenge.ts.
+    toast.message("Time's up — the bonus is gone, but finish the set at your own pace.");
+  }, [secondsLeft, timeUpNotified, completed]);
+
   const backToTopics = () => navigate({ to: "/app/practice", search: { plan: planId } });
 
   const submitPractice = async () => {
@@ -1140,6 +1248,7 @@ function SessionView({
       if (correct) recordGamificationEvent(user.id, "coach_question_correct", { count: correct });
       if (failed) recordGamificationEvent(user.id, "coach_question_failed", { count: failed });
       recordGamificationEvent(user.id, "coach_session_completed");
+      recordWeekendMissionIfDue(user.id);
       if (mastered) await awardRoadmapIfComplete(user.id, session.plan_id);
 
       // Keep the per-question grades in state so each answer can show its model
@@ -1280,6 +1389,18 @@ function SessionView({
     if (correct) recordGamificationEvent(user.id, "coach_question_correct", { count: correct });
     if (failed) recordGamificationEvent(user.id, "coach_question_failed", { count: failed });
     recordGamificationEvent(user.id, "coach_session_completed");
+    // Timed set: the opt-in award, plus the bonus for landing inside the budget.
+    // `elapsed` is measured from the wall clock, not the countdown, so a paused
+    // or throttled tab cannot claim a beat it did not earn.
+    if (challenge) {
+      recordGamificationEvent(user.id, "coach_timed_challenge");
+      if (elapsed != null && elapsed <= challenge.seconds) {
+        recordGamificationEvent(user.id, "coach_beat_timer");
+      }
+    }
+    // Friday / Saturday / Sunday bonus, paid for studying rather than for
+    // opening the app. No-ops on a weekday and at most once a day.
+    recordWeekendMissionIfDue(user.id);
     if (mastered) await awardRoadmapIfComplete(user.id, session.plan_id);
     return { mastered, percentage };
   };
@@ -1356,6 +1477,7 @@ function SessionView({
         recordGamificationEvent(user.id, "coach_question_failed", { count: total - gotIt });
       }
       recordGamificationEvent(user.id, "coach_session_completed");
+      recordWeekendMissionIfDue(user.id);
       if (mastered) await awardRoadmapIfComplete(user.id, session.plan_id);
       toast.success("Flashcards reviewed");
     } catch (err) {
@@ -1439,6 +1561,22 @@ function SessionView({
               <span className="shrink-0 text-xs font-semibold tabular-nums text-muted-foreground">
                 {sessionProgressPct}%
               </span>
+              {secondsLeft != null && (
+                <span
+                  role="timer"
+                  aria-live="off"
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1 text-xs font-semibold tabular-nums ${
+                    secondsLeft === 0
+                      ? "border-border text-muted-foreground"
+                      : secondsLeft <= 60
+                        ? "border-destructive/40 bg-destructive/10 text-destructive"
+                        : "border-pop/40 bg-pop/10 text-pop"
+                  }`}
+                >
+                  <Timer className="h-3.5 w-3.5" />
+                  {secondsLeft === 0 ? "Time up" : formatClock(secondsLeft)}
+                </span>
+              )}
             </div>
           )}
         </div>

@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { LogOut, Trash2, Copy, Check, Sparkles } from "lucide-react";
+import { LogOut, Trash2, Copy, Check, Flame, Sparkles, Upload } from "lucide-react";
 import { LoadingDots } from "@/components/loading-dots";
+import { RankSummary } from "@/components/rank-badge";
+import { uploadAllowance } from "@/lib/allowances";
+import { emptyGamificationStats, loadGamificationStats } from "@/lib/gamification";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { PERSONALIZATION_PROMPT } from "@/lib/personalization";
@@ -55,6 +58,17 @@ export function SettingsPage() {
   const [savedBackground, setSavedBackground] = useState("");
   const [savingBackground, setSavingBackground] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [stats, setStats] = useState(emptyGamificationStats);
+
+  useEffect(() => {
+    if (!user) return;
+    setStats(loadGamificationStats(user.id));
+    const onChange = () => setStats(loadGamificationStats(user.id));
+    window.addEventListener("gd:gamification", onChange);
+    return () => window.removeEventListener("gd:gamification", onChange);
+  }, [user]);
+
+  const allowance = uploadAllowance(user?.id ?? "guest", stats.points);
 
   useEffect(() => {
     if (!profile) return;
@@ -387,6 +401,44 @@ export function SettingsPage() {
                 Remove
               </button>
             )}
+          </div>
+        </section>
+
+        {/* Rank + what it has earned. Framed as an expansion, never a budget:
+            the upload line says what this rank has ADDED, and nothing here is
+            enforced (see the header note in src/lib/allowances.ts). */}
+        <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-pop">Your rank</h2>
+          <RankSummary points={stats.points} className="mt-4" />
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-border bg-background/40 p-3">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <Flame className="h-3.5 w-3.5" />
+                Streak
+              </div>
+              <div className="mt-1 font-display text-xl font-light tabular-nums">
+                {stats.currentStreak}d
+                <span className="ml-2 text-xs text-muted-foreground">
+                  best {stats.longestStreak}d
+                </span>
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-background/40 p-3">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <Upload className="h-3.5 w-3.5" />
+                Daily uploads
+              </div>
+              <div className="mt-1 font-display text-xl font-light tabular-nums">
+                {allowance.total}
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {allowance.rankBonus > 0
+                    ? `${allowance.base} base + ${allowance.rankBonus} rank bonus`
+                    : allowance.nextBonusRankName
+                      ? `${allowance.base} base · ${allowance.nextBonusRankName} makes it ${allowance.nextBonusTotal}`
+                      : `${allowance.base} base`}
+                </span>
+              </div>
+            </div>
           </div>
         </section>
 

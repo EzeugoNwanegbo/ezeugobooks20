@@ -46,14 +46,20 @@ import { FeatureTour } from "@/components/feature-tour";
 import { hasSeenTour } from "@/lib/feature-tour";
 import { LibraryAnnouncement } from "@/components/library-announcement";
 import { hasSeenAnnouncement } from "@/lib/announcement";
+import { RankUpCelebration } from "@/components/rank-up-celebration";
+import { StreakOpening } from "@/components/streak-opening";
+import { RankBadge, RankProgressBar } from "@/components/rank-badge";
+import { rankProgress, type AcademicRank } from "@/lib/ranks";
+import { takeRankCelebration, takeStreakOpening } from "@/lib/progression-moments";
 import { useAuth } from "@/lib/auth-context";
 import { isGuestUser } from "@/lib/guest-session";
 import { rememberRoute } from "@/lib/last-route";
 import {
   emptyGamificationStats,
-  levelFromPoints,
   loadGamificationStats,
+  pointsAvailableToday,
   recordGamificationEvent,
+  weekendMissionFor,
   type GamificationStats,
 } from "@/lib/gamification";
 import { getCached, setCached } from "@/lib/data-cache";
@@ -119,6 +125,12 @@ function AppLayout() {
   const [personalizeOpen, setPersonalizeOpen] = useState(false);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [gamification, setGamification] = useState<GamificationStats>(emptyGamificationStats);
+  // The two progression moments. Both are corner cards, never dialogs, and both
+  // decide whether they may run at all in src/lib/progression-moments.ts.
+  const [rankUp, setRankUp] = useState<AcademicRank | null>(null);
+  const [streakOpeningOpen, setStreakOpeningOpen] = useState(false);
+  // The opening streak card is offered once per mount, not once per navigation.
+  const streakOfferedRef = useRef(false);
 
   useEffect(() => {
     const handleChatScroll = (e: Event) => {
@@ -206,6 +218,34 @@ function AppLayout() {
     window.addEventListener("gd:gamification", onGamification);
     return () => window.removeEventListener("gd:gamification", onGamification);
   }, [user, location.pathname]);
+
+  // Rank-up. Driven by the point total rather than by a "you just earned" event
+  // so it also catches a crossing that happened in another tab; takeRankCelebration
+  // consumes the rank as it hands it over, so re-running this is harmless and it
+  // can only ever fire once per rank per device.
+  useEffect(() => {
+    if (!user) return;
+    const earned = takeRankCelebration(gamification.points);
+    if (earned) setRankUp(earned);
+  }, [user, gamification.points]);
+
+  // The opening streak card. Gated hard, because it sits between a student and
+  // the thing they opened the app to do:
+  //   - never during the first-run tour or the what's-new card (one at a time)
+  //   - never for a brand-new student who has not seen the tour yet
+  //   - never on a 0-day streak, and at most once per device per day, both
+  //     enforced by takeStreakOpening()
+  useEffect(() => {
+    if (loading || !user || !profile || streakOfferedRef.current) return;
+    if (tourOpen || announcementOpen || !hasSeenTour()) return;
+    if (gamification.currentStreak < 1) return;
+    streakOfferedRef.current = true;
+    if (!takeStreakOpening(gamification.currentStreak)) return;
+    // Behind the shell's own paint, so it arrives beside the app rather than
+    // in front of it. Nothing waits on this.
+    const timer = window.setTimeout(() => setStreakOpeningOpen(true), 700);
+    return () => window.clearTimeout(timer);
+  }, [loading, user, profile, tourOpen, announcementOpen, gamification.currentStreak]);
 
   // The one conversation query in the app. It feeds the desktop sidebar's
   // grouped history and the mobile drawer's; the chat page no longer keeps a
@@ -378,6 +418,8 @@ function AppLayout() {
   };
 
   const onChat = location.pathname.startsWith("/app/chat");
+  // The named rank + progress that the footer shows in place of the old "L7".
+  const rank = rankProgress(gamification.points);
   // Only highlight a conversation while the chat screen is actually showing it.
   const activeConvoId = onChat ? search.c : undefined;
 
@@ -771,6 +813,12 @@ function AppLayout() {
               pinned user row: avatar + name on the left, gear on the right. */}
           {isSidebarCollapsed ? (
             <div className="order-last flex flex-col items-center gap-3">
+              {/* Collapsed, there is no room for a name or a bar, so the rail
+                  carries the badge alone - the rank is still legible at a
+                  glance and the title spells it out. */}
+              <span title={`${rank.rank.name} · ${gamification.points.toLocaleString()} pts`}>
+                <RankBadge rank={rank.rank} size="sm" />
+              </span>
               <Link
                 to="/app/settings"
                 title="Settings"
@@ -799,9 +847,11 @@ function AppLayout() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
-                  <div className="truncate text-[11px] text-muted-foreground">
-                    {gamification.points} pts - L{levelFromPoints(gamification.points)} -{" "}
-                    {gamification.currentStreak}d
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <RankBadge rank={rank.rank} size="sm" className="h-4 w-4 rounded" />
+                    <span className="truncate text-[11px] font-medium text-foreground">
+                      {rank.rank.name}
+                    </span>
                   </div>
                 </div>
                 <Link
@@ -813,7 +863,17 @@ function AppLayout() {
                   <Settings className="h-4 w-4" />
                 </Link>
               </div>
-              <div className="truncate text-xs text-muted-foreground">
+              {/* Progress to the next rank, then the raw numbers underneath -
+                  the bar answers "how close am I", the line answers "to what". */}
+              <RankProgressBar percent={rank.percent} className="mt-2" />
+              <div className="mt-1 truncate text-[11px] text-muted-foreground tabular-nums">
+                {gamification.points.toLocaleString()} pts ·{" "}
+                {rank.next
+                  ? `${rank.pointsToNext.toLocaleString()} to ${rank.next.name}`
+                  : "top rank"}{" "}
+                · {gamification.currentStreak}d
+              </div>
+              <div className="mt-1 truncate text-xs text-muted-foreground">
                 {[profile.year, profile.university].filter(Boolean).join(" - ")}
               </div>
             </div>
@@ -1185,6 +1245,22 @@ function AppLayout() {
       </Dialog>
 
       <LibraryAnnouncement open={announcementOpen} onClose={() => setAnnouncementOpen(false)} />
+
+      {/* A rank-up outranks the daily streak note, so it closes it: two corner
+          cards stacked on a phone would cover the top of the screen. */}
+      <RankUpCelebration
+        rank={rankUp}
+        onDismiss={() => {
+          setRankUp(null);
+        }}
+      />
+      <StreakOpening
+        open={streakOpeningOpen && !rankUp}
+        streak={gamification.currentStreak}
+        mission={weekendMissionFor()}
+        pointsAvailable={pointsAvailableToday(gamification)}
+        onDismiss={() => setStreakOpeningOpen(false)}
+      />
 
       <FeatureTour
         open={tourOpen}

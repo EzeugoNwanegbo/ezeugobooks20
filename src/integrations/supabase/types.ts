@@ -34,6 +34,8 @@ export type Database = {
       };
       documents: {
         Row: {
+          canonical_document_id: string | null;
+          content_hash: string | null;
           created_at: string | null;
           extract_error: string | null;
           extract_status: string | null;
@@ -51,6 +53,8 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          canonical_document_id?: string | null;
+          content_hash?: string | null;
           created_at?: string | null;
           extract_error?: string | null;
           extract_status?: string | null;
@@ -68,6 +72,8 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          canonical_document_id?: string | null;
+          content_hash?: string | null;
           created_at?: string | null;
           extract_error?: string | null;
           extract_status?: string | null;
@@ -409,6 +415,12 @@ export type Database = {
           rank: number;
           total: number;
         }[];
+      };
+      find_canonical_document: {
+        Args: {
+          p_content_hash: string;
+        };
+        Returns: string | null;
       };
       search_document_chunks: {
         Args: {

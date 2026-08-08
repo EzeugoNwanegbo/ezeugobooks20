@@ -4,11 +4,12 @@ import type { ReactNode } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/ui/page-header";
+import { RankBadge, RankProgressBar } from "@/components/rank-badge";
+import { rankFromPoints, rankProgress } from "@/lib/ranks";
 import {
   emptyGamificationStats,
-  levelFromPoints,
   loadGamificationStats,
-  pointsToNextLevel,
+  pointsAvailableToday,
   pushGamificationToServer,
   type GamificationStats,
 } from "@/lib/gamification";
@@ -62,7 +63,7 @@ export function LeaderboardPage() {
     };
   }, [user, stats.points]);
 
-  const level = levelFromPoints(stats.points);
+  const progress = rankProgress(stats.points);
   const ranked = stats.points > 0 && myRank != null;
   const podium = useMemo(() => board.slice(0, 3), [board]);
 
@@ -82,6 +83,38 @@ export function LeaderboardPage() {
           subtitle="Points for showing up, answering My Coach questions, and finishing roadmaps — ranked against every other student."
         />
 
+        {/* The student's own rank, ahead of the standings: where you are on the
+            ladder is the thing you came to check, and it is the one number the
+            board itself cannot show you. */}
+        <section className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <RankBadge rank={progress.rank} size="lg" />
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-pop">
+                Your rank
+              </div>
+              <div className="truncate font-display text-2xl font-light tracking-[-0.02em]">
+                {progress.rank.name}
+              </div>
+            </div>
+            <div className="shrink-0 text-right">
+              <div className="font-display text-2xl font-light tabular-nums">
+                {stats.points.toLocaleString()}
+              </div>
+              <div className="text-[11px] text-muted-foreground">points</div>
+            </div>
+          </div>
+          <RankProgressBar percent={progress.percent} className="mt-4" />
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground tabular-nums">
+            <span>
+              {progress.next
+                ? `${progress.pointsToNext.toLocaleString()} points to ${progress.next.name}`
+                : "Top of the ladder — Academic General"}
+            </span>
+            <span>{pointsAvailableToday(stats).toLocaleString()} points still on today</span>
+          </div>
+        </section>
+
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile
             accent
@@ -94,7 +127,11 @@ export function LeaderboardPage() {
             label="Current streak"
             value={`${stats.currentStreak}d`}
           />
-          <StatTile icon={<Medal className="h-4 w-4" />} label="Level" value={level} />
+          <StatTile
+            icon={<Medal className="h-4 w-4" />}
+            label="Longest streak"
+            value={`${stats.longestStreak}d`}
+          />
           <StatTile
             accent
             icon={<Trophy className="h-4 w-4" />}
@@ -141,13 +178,22 @@ export function LeaderboardPage() {
                         isMe ? "bg-pop/10" : "hover:bg-foreground/[0.02]"
                       }`}
                     >
-                      <RankBadge rank={row.rank} />
+                      <PlaceBadge place={row.rank} />
                       <div className="min-w-0">
                         <div className="truncate text-sm font-semibold tracking-[-0.01em]">
                           {isMe ? `${row.name} (you)` : row.name}
                         </div>
-                        <div className="text-xs text-muted-foreground">
-                          {row.current_streak} day streak
+                        {/* Rank is derived from the points the board already
+                            returns, so naming it costs no extra column and no
+                            extra query. */}
+                        <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                          <RankBadge
+                            rank={rankFromPoints(row.points)}
+                            size="sm"
+                            className="h-4 w-4 rounded"
+                          />
+                          <span className="truncate">{rankFromPoints(row.points).name}</span>
+                          <span className="shrink-0">· {row.current_streak}d</span>
                         </div>
                       </div>
                       <div className="text-right text-sm font-bold tabular-nums">
@@ -166,7 +212,9 @@ export function LeaderboardPage() {
           <aside className="rounded-2xl border border-border bg-surface p-4">
             <h2 className="text-sm font-semibold tracking-[-0.01em]">Recent points</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              {pointsToNextLevel(stats.points)} points to level {level + 1}.
+              {progress.next
+                ? `${progress.pointsToNext.toLocaleString()} points to ${progress.next.name}.`
+                : "Every rank earned."}
             </p>
             <div className="mt-4 space-y-2">
               {stats.events.length === 0 ? (
@@ -205,7 +253,10 @@ const MEDAL_GRADIENT: Record<number, string> = {
   3: "linear-gradient(145deg, #e0a163, #b06a2f)",
 };
 
-function RankBadge({ rank }: { rank: number }) {
+// The 1/2/3 medal, i.e. the PLACE on the board. Distinct from RankBadge, which
+// is the academic rank (Academic Scout, Knowledge Colonel…) — the two used to
+// share a name and they mean completely different things.
+function PlaceBadge({ place: rank }: { place: number }) {
   if (rank <= 3) {
     return (
       <span

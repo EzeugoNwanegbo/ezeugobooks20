@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { BrainCircuit, ChevronRight, FileText, History, Route } from "lucide-react";
+import { BrainCircuit, ChevronRight, FileText, History, Route, Timer, Zap } from "lucide-react";
 import { LoadingDots } from "@/components/loading-dots";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
@@ -8,7 +8,9 @@ import { takeLastMinuteForCoach } from "@/lib/last-minute-handoff";
 import { generateStudyPlan, type StudyRoadmapTopic } from "@/lib/studybody-client";
 import { PageHeader } from "@/components/ui/page-header";
 import { Segmented } from "@/components/ui/segmented";
+import { timerPresetSeconds } from "@/lib/timed-challenge";
 import {
+  createStraightInSession,
   db,
   folderName,
   loadStudyDocuments,
@@ -18,6 +20,15 @@ import {
 } from "@/lib/studybody-data";
 
 const SCOPE_OPTIONS = ["whole", "topic"] as const;
+
+// The two ways in. A roadmap is the structured route — plan the material, then
+// work through it in order. Straight in skips the planning entirely and asks
+// questions from across the whole file right now, for the student who opened
+// the app with an exam tomorrow and does not want a curriculum first.
+const ENTRY_OPTIONS = ["roadmap", "straight"] as const;
+type EntryMode = (typeof ENTRY_OPTIONS)[number];
+
+const STRAIGHT_IN_COUNTS = [10, 20, 30, 50];
 
 function formatDate(value: string | null): string {
   if (!value) return "";
@@ -38,6 +49,22 @@ export function StudyBodyPage() {
   const [topicFocus, setTopicFocus] = useState("");
   const [loading, setLoading] = useState(false);
   const [schemaMissing, setSchemaMissing] = useState(false);
+  const [entry, setEntry] = useState<EntryMode>("roadmap");
+  const [straightCount, setStraightCount] = useState(20);
+  const [straightDifficulty, setStraightDifficulty] = useState<"easy" | "medium" | "hard">(
+    "medium",
+  );
+  const [straightTimerOn, setStraightTimerOn] = useState(false);
+  const [straightTimerSeconds, setStraightTimerSeconds] = useState(0);
+
+  const straightTimerOptions = useMemo(() => timerPresetSeconds(straightCount), [straightCount]);
+  useEffect(() => {
+    setStraightTimerSeconds((current) =>
+      straightTimerOptions.includes(current)
+        ? current
+        : (straightTimerOptions[1] ?? straightTimerOptions[0] ?? 0),
+    );
+  }, [straightTimerOptions]);
 
   const refreshDocsAndPlans = async () => {
     if (!user) return;
@@ -92,6 +119,46 @@ export function StudyBodyPage() {
     setSelectedDocIds((current) =>
       current.includes(id) ? current.filter((docId) => docId !== id) : [...current, id],
     );
+  };
+
+  // Straight in: no roadmap, no plan-generation call, questions from across the
+  // whole of the selected files. Everything it creates is an ordinary plan +
+  // topic + session, so the practice screen it lands on is unchanged.
+  const startStraightIn = async () => {
+    if (!user || !profile) return;
+    if (schemaMissing) {
+      toast.error("My Coach tables are missing in Supabase. Apply the StudyBody migration first.");
+      return;
+    }
+    if (!selectedDocIds.length) {
+      toast.error("Pick at least one file to be questioned on.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const chosen = docs.filter((doc) => selectedDocIds.includes(doc.id));
+      const title =
+        planTitle.trim() ||
+        (chosen.length === 1 ? chosen[0].file_name : `${chosen.length} files - mixed set`);
+      const { planId, sessionId } = await createStraightInSession({
+        userId: user.id,
+        profile,
+        title,
+        documentIds: selectedDocIds,
+        docsMeta: docs,
+        count: straightCount,
+        difficulty: straightDifficulty,
+        timerSeconds: straightTimerOn ? straightTimerSeconds : 0,
+      });
+      setSelectedDocIds([]);
+      setPlanTitle("");
+      navigate({ to: "/app/practice", search: { plan: planId, session: sessionId } });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not build your set");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const createPlan = async () => {
@@ -188,8 +255,8 @@ export function StudyBodyPage() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 overflow-x-hidden">
         <PageHeader
           eyebrow="My Coach"
-          title="Build a roadmap, then practice it."
-          subtitle="Turn your uploaded files into a study roadmap, then open it to practice with MCQs, essays, mixed sets, or flash cards."
+          title="Follow a roadmap, or go straight in."
+          subtitle="Build a study roadmap from your files and work through it in order — or skip the plan and get a broad set of questions from across the whole file right now."
         />
 
         {schemaMissing && (
@@ -209,54 +276,169 @@ export function StudyBodyPage() {
         )}
 
         <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          {/* New roadmap */}
+          {/* New roadmap / straight in */}
           <div className="rounded-2xl border border-border bg-surface p-5">
             <div className="mb-4 flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-pop/12 text-pop">
-                <Route className="h-4 w-4" />
+                {entry === "roadmap" ? <Route className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
               </div>
-              <h2 className="text-sm font-semibold tracking-[-0.01em]">New roadmap</h2>
-            </div>
-            <div className="space-y-3">
-              <input
-                value={planTitle}
-                onChange={(event) => setPlanTitle(event.target.value)}
-                placeholder="Course or topic name"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop focus:ring-2 focus:ring-pop/20"
-              />
-              <textarea
-                value={courseOutline}
-                onChange={(event) => setCourseOutline(event.target.value)}
-                placeholder="Paste course outline, or leave blank and build from selected files"
-                className="min-h-28 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop focus:ring-2 focus:ring-pop/20"
-              />
+              <h2 className="text-sm font-semibold tracking-[-0.01em]">
+                {entry === "roadmap" ? "New roadmap" : "Straight in"}
+              </h2>
             </div>
 
-            <div className="mt-4 space-y-2">
-              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                What are you learning?
-              </div>
+            {/* The entry choice. Roadmap is first and stays the default, so the
+                existing flow is exactly where returning students left it. */}
+            <div className="mb-4 space-y-2">
               <Segmented
-                options={SCOPE_OPTIONS}
-                value={scope}
-                onChange={setScope}
-                getLabel={(option) => (option === "whole" ? "The whole file" : "A specific topic")}
+                options={ENTRY_OPTIONS}
+                value={entry}
+                onChange={setEntry}
+                getLabel={(option) =>
+                  option === "roadmap" ? "Follow a roadmap" : "Go straight in"
+                }
+                getIcon={(option) =>
+                  option === "roadmap" ? (
+                    <Route className="h-3.5 w-3.5" />
+                  ) : (
+                    <Zap className="h-3.5 w-3.5" />
+                  )
+                }
+                className="h-10"
               />
-              {scope === "topic" && (
-                <div className="space-y-2 pt-1">
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {entry === "roadmap"
+                  ? "We plan the material into ordered topics, then you practice them one at a time and build mastery."
+                  : "No plan, no order. We pull from the start, middle and end of everything you pick and question you across the lot."}
+              </p>
+            </div>
+
+            {entry === "roadmap" ? (
+              <>
+                <div className="space-y-3">
                   <input
-                    value={topicFocus}
-                    onChange={(event) => setTopicFocus(event.target.value)}
-                    placeholder="Which topic in the file? e.g. “The nephron”"
+                    value={planTitle}
+                    onChange={(event) => setPlanTitle(event.target.value)}
+                    placeholder="Course or topic name"
                     className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop focus:ring-2 focus:ring-pop/20"
                   />
+                  <textarea
+                    value={courseOutline}
+                    onChange={(event) => setCourseOutline(event.target.value)}
+                    placeholder="Paste course outline, or leave blank and build from selected files"
+                    className="min-h-28 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop focus:ring-2 focus:ring-pop/20"
+                  />
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    What are you learning?
+                  </div>
+                  <Segmented
+                    options={SCOPE_OPTIONS}
+                    value={scope}
+                    onChange={setScope}
+                    getLabel={(option) =>
+                      option === "whole" ? "The whole file" : "A specific topic"
+                    }
+                  />
+                  {scope === "topic" && (
+                    <div className="space-y-2 pt-1">
+                      <input
+                        value={topicFocus}
+                        onChange={(event) => setTopicFocus(event.target.value)}
+                        placeholder="Which topic in the file? e.g. “The nephron”"
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop focus:ring-2 focus:ring-pop/20"
+                      />
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        We’ll pull only the pages about this topic, and every question and answer
+                        will stay grounded on them - with the page it came from.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    How many questions?
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+                    {STRAIGHT_IN_COUNTS.map((option) => (
+                      <button
+                        key={option}
+                        onClick={() => setStraightCount(option)}
+                        className={`rounded-xl border px-2 py-2 text-sm font-medium tabular-nums transition-colors ${
+                          straightCount === option
+                            ? "border-pop/50 bg-pop/10 text-pop"
+                            : "border-border hover:border-pop/30 hover:bg-foreground/[0.02]"
+                        }`}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    We’ll pull only the pages about this topic, and every question and answer will
-                    stay grounded on them - with the page it came from.
+                    Mostly multiple choice with a few written answers, spread across everything you
+                    picked.
                   </p>
                 </div>
-              )}
-            </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Difficulty
+                  </div>
+                  <Segmented
+                    options={["easy", "medium", "hard"] as const}
+                    value={straightDifficulty}
+                    onChange={setStraightDifficulty}
+                    getLabel={(value) =>
+                      value === "easy" ? "Easy" : value === "medium" ? "Medium" : "Hard"
+                    }
+                    className="h-10"
+                  />
+                </div>
+
+                <div className="rounded-xl border border-border p-3">
+                  <label className="flex cursor-pointer items-start gap-2.5">
+                    <input
+                      type="checkbox"
+                      checked={straightTimerOn}
+                      onChange={(event) => setStraightTimerOn(event.target.checked)}
+                      className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--pop)]"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5 text-sm font-semibold">
+                        <Timer className="h-3.5 w-3.5 text-pop" />
+                        Race the clock
+                      </span>
+                      <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
+                        Optional. Finish inside the time for a bonus; running out costs the bonus
+                        and nothing else.
+                      </span>
+                    </span>
+                  </label>
+                  {straightTimerOn && (
+                    <div className="mt-2.5 grid grid-cols-3 gap-1.5">
+                      {straightTimerOptions.map((option) => (
+                        <button
+                          key={option}
+                          onClick={() => setStraightTimerSeconds(option)}
+                          className={`rounded-xl border px-2 py-2 text-sm font-medium tabular-nums transition-colors ${
+                            straightTimerSeconds === option
+                              ? "border-pop/50 bg-pop/10 text-pop"
+                              : "border-border hover:border-pop/30 hover:bg-foreground/[0.02]"
+                          }`}
+                        >
+                          {Math.round(option / 60)} min
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="mt-4 space-y-2">
               <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -300,13 +482,24 @@ export function StudyBodyPage() {
               </div>
             </div>
             <button
-              onClick={createPlan}
+              onClick={entry === "roadmap" ? createPlan : startStraightIn}
               disabled={loading}
               className="btn-pop mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed"
             >
-              {loading ? <LoadingDots /> : <BrainCircuit className="h-4 w-4" />}
-              Build roadmap
+              {loading ? (
+                <LoadingDots />
+              ) : entry === "roadmap" ? (
+                <BrainCircuit className="h-4 w-4" />
+              ) : (
+                <Zap className="h-4 w-4" />
+              )}
+              {entry === "roadmap" ? "Build roadmap" : `Start ${straightCount} questions`}
             </button>
+            {loading && entry === "straight" && (
+              <p className="mt-2 text-center text-xs text-muted-foreground">
+                Reading across the whole file. Larger sets take a little longer.
+              </p>
+            )}
           </div>
 
           {/* History */}

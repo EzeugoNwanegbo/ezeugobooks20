@@ -9,11 +9,20 @@ import {
   sanitizeExtractedText,
   type DocumentChunkInput,
 } from "@/lib/document-chunks";
+import { chunkSetContentHash } from "@/lib/content-hash";
 import { backfillMissingEmbeddings } from "@/lib/embeddings";
 import { getCached, setCached } from "@/lib/data-cache";
 import { GUEST_DOCUMENT_LIMIT, isGuestUser } from "@/lib/guest-session";
 import { stageDocForChat } from "@/lib/chat-handoff";
 import { importChunk } from "@/lib/lazy-import";
+import {
+  allowanceFrom,
+  planUploadBatch,
+  recordUploads,
+  uploadAllowanceLabel,
+  uploadsUsedToday,
+} from "@/lib/allowances";
+import { emptyGamificationStats, loadGamificationStats } from "@/lib/gamification";
 import { toast } from "sonner";
 import {
   Upload,
@@ -46,7 +55,102 @@ type DocRow = {
   folder_id: string | null;
   suggested_subject: string | null;
   created_at: string;
+  // Written by every ingestion path (this page, extract-pdf, ocr-enqueue /
+  // ocr-worker). NULL only on rows that predate the column - see isDocReady.
+  extract_status: string | null;
+  extract_error: string | null;
 };
+
+// The upload lifecycle, in the vocabulary every other reader already speaks
+// (supabase/functions/{extract-pdf,ocr-enqueue,ocr-worker}, last-minute,
+// connect-dots, gandd-mobile):
+//
+//   'processing' - the row exists and is listed, but is NOT groundable yet.
+//                  Written WITH the documents row, before a single chunk.
+//   'ready'      - every chunk is committed. Written only after that fact.
+//   'error'      - the extraction or the chunk write failed; extract_error
+//                  carries something the student can act on.
+//   'rejected'   - the file itself is unusable (server paths only).
+//   'pending'    - queued for server-side work (server-OCR path only).
+//
+// NULL is "unknown, assume ready": last-minute treats NULL-with-text as ready
+// and the mobile chat picker treats NULL as ready, because rows written before
+// the column existed are fine. That tolerance is exactly why this page must
+// never leave a half-written book on NULL.
+function isDocReady(doc: { extract_status: string | null }): boolean {
+  return !doc.extract_status || doc.extract_status === "ready";
+}
+
+// Chunk rows as document_chunks wants them.
+type ChunkRow = {
+  document_id: string;
+  user_id: string;
+  chunk_index: number;
+  page_start: number | null;
+  page_end: number | null;
+  content: string;
+  token_estimate: number;
+  embedding: null;
+};
+
+// Insert chunks in parallel batches instead of one-at-a-time. The browser caps
+// ~6 concurrent requests per host, so a big textbook's chunks drain in a few
+// waves rather than dozens of serial round trips.
+const CHUNK_BATCH = 200;
+const CHUNK_BATCH_RETRIES = 3;
+
+/**
+ * Write one batch of chunks, halving and recursing on a statement timeout.
+ *
+ * UPSERT on (document_id, chunk_index), not INSERT: the same reasoning that
+ * supabase/functions/extract-pdf now follows. Writing an index twice must repair
+ * the row rather than abort the batch, so a re-run of a partially-written
+ * document is pure repair. document_chunks carries UNIQUE (document_id,
+ * chunk_index) (migration 20260430002000) for the upsert to land on.
+ *
+ * A statement timeout is about the size of THIS statement, not bad luck - the
+ * same batch would fail again however many times it is retried - so splitting is
+ * what actually fixes it. Copied from scripts/ingest-library.mjs.
+ *
+ * Returns null on success, or the error message.
+ */
+async function upsertChunkBatch(rows: ChunkRow[], attempt = 0): Promise<string | null> {
+  if (rows.length === 0) return null;
+  const { error } = await supabase
+    .from("document_chunks")
+    .upsert(rows, { onConflict: "document_id,chunk_index" });
+  if (!error) return null;
+
+  const timedOut = /statement timeout|canceling statement/i.test(error.message ?? "");
+  if (timedOut && rows.length > 1 && attempt < CHUNK_BATCH_RETRIES) {
+    const mid = Math.ceil(rows.length / 2);
+    const left = await upsertChunkBatch(rows.slice(0, mid), attempt + 1);
+    const right = await upsertChunkBatch(rows.slice(mid), attempt + 1);
+    return left ?? right;
+  }
+  return error.message || "Could not save this document's searchable text.";
+}
+
+/**
+ * Write every chunk of one document. Reports how many landed and the first
+ * failure, so the caller can mark the document honestly instead of guessing.
+ */
+async function writeAllChunks(
+  rows: ChunkRow[],
+): Promise<{ written: number; error: string | null }> {
+  const batches: ChunkRow[][] = [];
+  for (let i = 0; i < rows.length; i += CHUNK_BATCH) batches.push(rows.slice(i, i + CHUNK_BATCH));
+
+  const results = await Promise.all(batches.map((batch) => upsertChunkBatch(batch)));
+
+  let written = 0;
+  let error: string | null = null;
+  results.forEach((result, index) => {
+    if (result === null) written += batches[index].length;
+    else if (error === null) error = result;
+  });
+  return { written, error };
+}
 
 // A file that has been read + chunked in the browser and is waiting for the
 // user to choose a folder. Uploading several files queues a batch of these.
@@ -117,6 +221,22 @@ export function LibraryPage() {
   // as the way documents are scoped on screen.
   const [activeFolder, setActiveFolder] = useState<string>("all");
   const fileRef = useRef<HTMLInputElement>(null);
+  // The daily upload allowance, shown as an earned expansion and enforced in
+  // onUploadFiles. Counted in files, not in drops: a folder of ten spends ten.
+  // See src/lib/allowances.ts.
+  const [gamification, setGamification] = useState(emptyGamificationStats);
+  const [uploadsToday, setUploadsToday] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    setUploadsToday(uploadsUsedToday(user.id));
+    const refreshStats = () => setGamification(loadGamificationStats(user.id));
+    refreshStats();
+    window.addEventListener("gd:gamification", refreshStats);
+    return () => window.removeEventListener("gd:gamification", refreshStats);
+  }, [user]);
+
+  const allowance = allowanceFrom(gamification.points, uploadsToday);
 
   const applyLibraryData = (nextFolders: FolderRow[], nextDocs: DocRow[]) => {
     setFolders(nextFolders);
@@ -144,7 +264,7 @@ export function LibraryPage() {
       supabase
         .from("documents")
         .select(
-          "id, file_name, file_type, file_size, page_count, folder_id, suggested_subject, created_at",
+          "id, file_name, file_type, file_size, page_count, folder_id, suggested_subject, created_at, extract_status, extract_error",
         )
         .eq("user_id", user.id)
         .order("created_at", { ascending: false }),
@@ -549,6 +669,31 @@ export function LibraryPage() {
         files = files.slice(0, remaining);
       }
     }
+
+    // The daily allowance, in files. Guests are governed by GUEST_DOCUMENT_LIMIT
+    // above and are deliberately exempt here, so the two never double-apply or
+    // hand out two different numbers for the same batch.
+    if (!isGuestUser(user)) {
+      // Read the counter fresh rather than trusting `uploadsToday`: a tab left
+      // open across the UTC rollover holds a stale count in state.
+      const usedNow = uploadsUsedToday(user.id);
+      const current = allowanceFrom(gamification.points, usedNow);
+      setUploadsToday(usedNow);
+      const plan = planUploadBatch(current, files.length);
+      if (plan.message) {
+        const waiting = files.slice(plan.accepted).map((f) => f.name);
+        const shown = waiting.slice(0, 3).join(", ");
+        toast.info(plan.message, {
+          description:
+            waiting.length > 3
+              ? `Waiting for tomorrow: ${shown} and ${waiting.length - 3} more`
+              : `Waiting for tomorrow: ${shown}`,
+        });
+      }
+      if (plan.accepted <= 0) return;
+      if (plan.accepted < files.length) files = files.slice(0, plan.accepted);
+    }
+
     setUploading(true);
     const processed: ProcessedFile[] = [];
     try {
@@ -582,6 +727,9 @@ export function LibraryPage() {
     }
 
     if (processed.length === 0) return; // every file failed; toasts already shown
+    // Spend the allowance on what actually made it through. A file that failed
+    // to extract cost the student nothing, so it must not cost them an upload.
+    if (user) setUploadsToday(recordUploads(user.id, processed.length));
     setPendingBatch(processed);
     setChosenFolder("__none");
     setNewFolderName("");
@@ -628,11 +776,40 @@ export function LibraryPage() {
       mark("folder", t0);
       // Insert every file in the batch into the chosen folder. One file's
       // failure is reported but doesn't abort the rest.
-      let firstDocId: string | null = null;
-      let savedCount = 0;
-      let chunkSaveFailed = false;
+      // Only a document whose chunks are ALL committed counts as saved, and only
+      // such a document may be handed to the chat below. Anything else lands in
+      // brokenFiles and is reported by name.
+      let firstReadyDocId: string | null = null;
+      const readyNames: string[] = [];
+      const brokenFiles: { fileName: string; reason: string }[] = [];
+      let dedupedCount = 0;
       for (const item of pendingBatch) {
         const tDoc = performance.now();
+
+        // De-duplication. Everybody in a year group uploads the same handful of
+        // textbooks, and storing each student a private copy of the same chunks
+        // is what filled the database. Fingerprint the extracted text and ask
+        // whether we already hold it; if so this document links to that copy and
+        // writes no chunks at all. Saving also becomes near-instant for the
+        // student, since the chunk inserts were the bulk of the wait.
+        //
+        // Fails soft in every direction: no hash, no match, or an errored lookup
+        // all fall through to the normal full-copy path. The cost of getting it
+        // wrong is storage, never a missing or mismatched book - the database
+        // re-checks the hash before it will accept the link.
+        const tHash = performance.now();
+        const contentHash = await chunkSetContentHash(item.chunks);
+        let canonicalId: string | null = null;
+        if (contentHash) {
+          const { data: existingId, error: lookupErr } = await supabase.rpc(
+            "find_canonical_document",
+            { p_content_hash: contentHash },
+          );
+          if (lookupErr) console.warn("dedup lookup skipped", lookupErr);
+          else canonicalId = (existingId as string | null) ?? null;
+          mark(`dedup-lookup(${canonicalId ? "hit" : "miss"})`, tHash);
+        }
+
         const { data: doc, error: dbErr } = await supabase
           .from("documents")
           .insert({
@@ -645,6 +822,39 @@ export function LibraryPage() {
             extracted_text: item.extracted,
             folder_id: folderId,
             suggested_subject: null,
+            // THE FINGERPRINT IS STAMPED WHEN IT BECOMES TRUE, NOT BEFORE.
+            //
+            // contentHash describes the chunk set we are ABOUT to write. Writing
+            // it here - as this page used to - means an upload interrupted half
+            // way (a failed batch, or a closed tab) leaves a row claiming the
+            // whole book while holding a fraction of it. find_canonical_document
+            // matches on content_hash and only checks that SOME chunk exists; it
+            // does not look at extract_status. The next student to upload that
+            // textbook would link to the broken copy and inherit the failure,
+            // and the one after that, and so on. So a fresh copy is hashed only
+            // after its last chunk commits, in the same UPDATE that marks it
+            // ready - which costs no extra round trip.
+            //
+            // A LINK is the exception and must carry the hash immediately: the
+            // canonical guard trigger refuses any link whose content_hash does
+            // not already equal its target's. It is also true from the moment
+            // the row exists, because the link owns no chunks to get wrong.
+            content_hash: canonicalId ? contentHash : null,
+            canonical_document_id: canonicalId,
+            // Written WITH the row, not after it, and never optimistically.
+            //
+            // A link needs no chunks of its own - it reads the canonical
+            // document's - so it is complete the moment the row exists, exactly
+            // as extract-pdf's dedup branch decides. Everything else is
+            // 'processing' until its last chunk is committed further down.
+            //
+            // This page used to leave the column NULL from beginning to end,
+            // which is why the seven damaged textbooks looked perfectly normal:
+            // every reader treats NULL-with-text as ready, so a document holding
+            // 100 chunks of a 2,785-page book was listed, searched, and returned
+            // nothing, with no hint that anything was wrong.
+            extract_status: canonicalId ? "ready" : "processing",
+            extract_error: null,
           })
           .select("id")
           .single();
@@ -654,17 +864,39 @@ export function LibraryPage() {
           toast.error(`Couldn't save "${item.fileName}": ${dbErr.message}`);
           continue;
         }
-        savedCount += 1;
-        if (!firstDocId) firstDocId = doc.id;
 
-        if (item.chunks.length > 0) {
+        if (canonicalId) {
+          // Already stored by someone; this document reads through the link.
+          // Skipping the insert here is the entire point of the feature.
+          dedupedCount += 1;
+          readyNames.push(item.fileName);
+          if (!firstReadyDocId) firstReadyDocId = doc.id;
+          continue;
+        }
+
+        if (item.chunks.length === 0) {
+          // No chunks means no searchable text at all - an image whose OCR found
+          // nothing, or an empty file. Saying so is the honest outcome; leaving
+          // it unmarked would list an empty book as a usable one. Same call
+          // extract-pdf makes when its chunker returns nothing.
+          const message =
+            "We couldn't find any readable text in this file, so there's nothing to search. If it's a scan or a photo, try a clearer copy or a text-based PDF.";
+          await supabase
+            .from("documents")
+            .update({ extract_status: "error", extract_error: message })
+            .eq("id", doc.id);
+          brokenFiles.push({ fileName: item.fileName, reason: "no readable text" });
+          continue;
+        }
+
+        {
           // Save chunks immediately with no embedding. Embedding each chunk means
           // a round trip to OpenAI per 96-chunk batch - on a big textbook that's
           // the bulk of the "saving" wait. We skip it here so saving is just the
           // DB inserts (near-instant), and let the background backfill below add
           // the vectors a few seconds later. Chunks stay keyword-searchable in
           // the meantime, so search never breaks while embeddings catch up.
-          const rows = item.chunks.map((chunk) => ({
+          const rows: ChunkRow[] = item.chunks.map((chunk) => ({
             document_id: doc.id,
             user_id: user.id,
             chunk_index: chunk.chunk_index,
@@ -675,35 +907,81 @@ export function LibraryPage() {
             embedding: null,
           }));
 
-          // Insert chunks in parallel batches instead of one-at-a-time. The
-          // browser caps ~6 concurrent requests per host, so a big textbook's
-          // chunks drain in a few waves rather than dozens of serial round
-          // trips - that serial loop was the bulk of the long "saving" wait.
-          const CHUNK_BATCH = 200;
-          const batchStarts: number[] = [];
-          for (let i = 0; i < rows.length; i += CHUNK_BATCH) {
-            batchStarts.push(i);
-          }
           const tChunks = performance.now();
-          const results = await Promise.all(
-            batchStarts.map((start) =>
-              supabase.from("document_chunks").insert(rows.slice(start, start + CHUNK_BATCH)),
-            ),
-          );
-          const failedBatch = results.find((result) => result.error);
-          if (failedBatch?.error) {
-            console.error("save document chunks", failedBatch.error);
-            chunkSaveFailed = true;
+          const write = await writeAllChunks(rows);
+          mark(`chunk-insert(${write.written}/${rows.length})`, tChunks);
+
+          if (write.error) {
+            // A PARTIAL is the dangerous case, and it is the common one: the
+            // batches run in parallel, so one failing leaves the successful ones
+            // in place. Those rows are valid and stay put - a re-upload upserts
+            // over them index-for-index - but the document must not be listed as
+            // usable while it holds a fraction of the book.
+            console.error("save document chunks", item.fileName, write.error);
+            const message =
+              write.written > 0
+                ? `Only ${write.written} of ${rows.length} sections of this file were saved (${write.error}), so searching it would miss most of the book. Delete it and upload it again.`
+                : `None of this file's searchable text could be saved (${write.error}). Delete it and upload it again.`;
+            const { error: markErr } = await supabase
+              .from("documents")
+              // content_hash is deliberately NOT written here - see the insert
+              // above. It is still null, so this broken copy can never be chosen
+              // as the canonical for anyone else's upload.
+              .update({ extract_status: "error", extract_error: message })
+              .eq("id", doc.id);
+            // If even the marking fails the row stays 'processing' - still not
+            // treated as usable by any reader, which is the property that
+            // matters. Never fall through to 'ready'.
+            if (markErr) console.error("mark document failed", item.fileName, markErr);
+            brokenFiles.push({
+              fileName: item.fileName,
+              reason: `${write.written} of ${rows.length} sections saved`,
+            });
+            continue;
           }
-          mark(`chunk-insert(${rows.length})`, tChunks);
+
+          // Every chunk is committed. ONLY NOW is this document usable, so only
+          // now does it say so - and only now is its fingerprint true, so this is
+          // where it gets stamped and offered to the next student who uploads
+          // the same book.
+          const { error: readyErr } = await supabase
+            .from("documents")
+            .update({
+              extract_status: "ready",
+              extract_error: null,
+              content_hash: contentHash,
+            })
+            .eq("id", doc.id);
+          if (readyErr) {
+            // The chunks are all there; the flag is not. Honest and retryable:
+            // it stays 'processing', which reads as "not ready yet" everywhere,
+            // rather than being claimed as finished.
+            console.error("mark document ready", item.fileName, readyErr);
+            brokenFiles.push({
+              fileName: item.fileName,
+              reason: "saved, but still finishing - reload in a moment",
+            });
+            continue;
+          }
         }
+
+        readyNames.push(item.fileName);
+        if (!firstReadyDocId) firstReadyDocId = doc.id;
       }
+
+      const savedCount = readyNames.length;
 
       if (savedCount > 0) {
         toast.success(
-          savedCount === 1 ? `Added "${pendingBatch[0].fileName}"` : `Added ${savedCount} files`,
+          savedCount === 1 ? `Added "${readyNames[0]}"` : `Added ${savedCount} files`,
           // TEMP: show where the save time went. Remove with the timing code.
-          { description: `${Math.round(performance.now() - t0)}ms - ${timings.join(", ")}` },
+          {
+            description: `${Math.round(performance.now() - t0)}ms - ${timings.join(", ")}${
+              dedupedCount > 0
+                ? ` - ${dedupedCount} already in the library, linked instead of re-stored`
+                : ""
+            }`,
+          },
         );
         // Embed the just-saved chunks in the background so semantic search lights
         // up shortly after, without making the user wait for it. Fire-and-forget:
@@ -724,17 +1002,32 @@ export function LibraryPage() {
           });
         }, 1200);
       }
-      if (chunkSaveFailed) {
-        toast.warning("Saved, but searchable chunks need the database migration.");
+      if (brokenFiles.length > 0) {
+        // Say which files and what to do about them. The old code toasted
+        // "searchable chunks need the database migration" and moved on, which
+        // told the student nothing and left the file looking fine.
+        const names = brokenFiles.map((f) => `${f.fileName} (${f.reason})`).join("; ");
+        toast.error(
+          brokenFiles.length === 1
+            ? `"${brokenFiles[0].fileName}" didn't finish saving and can't be searched yet.`
+            : `${brokenFiles.length} files didn't finish saving and can't be searched yet.`,
+          {
+            description: `${names}. They're marked as failed in your library - delete them and upload again.`,
+            duration: 20_000,
+          },
+        );
       }
       setPendingBatch(null);
       setChosenFolder("");
       setNewFolderName("");
 
-      if (thenChat && firstDocId && pendingBatch.length === 1) {
+      // Only hand a COMPLETE document to the chat. Opening a conversation
+      // grounded on a book that saved 200 of its 1,500 sections is the exact
+      // silent failure this whole change exists to remove.
+      if (thenChat && firstReadyDocId && pendingBatch.length === 1) {
         // Hand the new document to the chat as its search context and jump
         // straight into a fresh conversation - "upload, then start chatting".
-        stageDocForChat(user.id, firstDocId);
+        stageDocForChat(user.id, firstReadyDocId);
         navigate({ to: "/app/chat", search: {} });
         return;
       }
@@ -1062,6 +1355,15 @@ export function LibraryPage() {
             </div>
           )}
         </div>
+
+        {/* The daily allowance, phrased as what the student's rank has ADDED
+            rather than what is being withheld. onUploadFiles enforces it. */}
+        {!isGuestUser(user) && (
+          <p className="flex flex-wrap items-center justify-center gap-x-1.5 text-center text-xs text-muted-foreground tabular-nums">
+            <Sparkles className="h-3.5 w-3.5 text-pop" />
+            <span>{uploadAllowanceLabel(allowance)}</span>
+          </p>
+        )}
 
         {/* Server-side OCR progress: large scanned PDFs process on Supabase in
             small page-range jobs. This banner tracks each one so the user can
@@ -1411,6 +1713,22 @@ function DocumentCard({
   const meta = [folderName, doc.page_count ? `${doc.page_count} pages` : null]
     .filter(Boolean)
     .join(" · ");
+
+  // The card used to say "Indexed" for everything that wasn't mid server-OCR,
+  // so a document the database knew was broken still looked finished here. Read
+  // the column instead. NULL stays "Indexed" - rows predating the column are
+  // fine, and every other reader makes the same allowance.
+  const status = doc.extract_status;
+  const failed = status === "error" || status === "rejected";
+  const busy = isProcessing || status === "processing" || status === "pending";
+  const usable = !failed && !busy && isDocReady(doc);
+  const statusLabel = failed
+    ? status === "rejected"
+      ? "Unsupported"
+      : "Failed"
+    : busy
+      ? "Processing"
+      : "Indexed";
   return (
     <div className="group relative flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-lg">
       <div className="flex items-start justify-between gap-2">
@@ -1478,21 +1796,28 @@ function DocumentCard({
           {doc.file_name}
         </div>
         <div className="mt-1 truncate text-xs text-muted-foreground">{meta}</div>
+        {/* What actually went wrong, in the student's words, on the file it
+            happened to. Without this a failed book is just a red pill. */}
+        {failed && doc.extract_error && (
+          <p className="mt-1.5 text-xs leading-snug text-destructive">{doc.extract_error}</p>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <span
           className={`inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-            isProcessing ? "bg-pop/12 text-pop" : "bg-leaf/12 text-leaf"
+            failed ? "bg-destructive/12 text-destructive" : busy ? "bg-pop/12 text-pop" : "bg-leaf/12 text-leaf"
           }`}
         >
-          {isProcessing ? "Processing" : "Indexed"}
+          {statusLabel}
         </span>
 
         {/* Sharing used to be buried in the "..." menu, where nobody found it.
             It sits on the face of the card now: one tap, states its reward, and
             turns into a status pill once submitted. */}
-        {!isProcessing &&
+        {/* Only a complete book may be offered to everyone. Sharing a partial
+            extraction would propagate the failure to every student. */}
+        {usable &&
           (shareStatus ? (
             <span
               className="inline-flex w-fit items-center gap-1 rounded-full bg-surface-elevated px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"

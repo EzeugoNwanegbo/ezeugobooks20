@@ -26,7 +26,13 @@ const EXTRACT_URL = `${SUPABASE_URL_VALUE}/functions/v1/extract-pdf`;
 const CONNECT_URL = `${SUPABASE_URL_VALUE}/functions/v1/connect-dots`;
 const SYNTHESIS_TIMEOUT_MS = 120_000;
 
-export type ExtractStatus = "pending" | "ready" | "rejected" | "error";
+// 'pending'    - uploaded, extraction not started (this client sets it below).
+// 'processing' - server is mid-book: extract-pdf while it writes chunks, or the
+//                OCR queue between ocr-enqueue and the last ocr-worker job.
+// 'ready'      - text AND the full chunk set are stored; the only groundable state.
+// 'rejected'   - over the page limit.
+// 'error'      - failed; extract_error carries a message worth showing.
+export type ExtractStatus = "pending" | "processing" | "ready" | "rejected" | "error";
 
 export type LinkDocument = {
   id: string;

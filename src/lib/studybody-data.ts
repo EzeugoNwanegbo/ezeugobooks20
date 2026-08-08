@@ -3,6 +3,8 @@
 // helpers and row types, so the query logic lives in one place.
 import { supabase } from "@/integrations/supabase/client";
 import { embedQuery } from "@/lib/embeddings";
+import { generateStudyQuestions } from "@/lib/studybody-client";
+import type { Profile } from "@/lib/auth-context";
 import type { StudyDocument, StudyQuestionType } from "@/lib/studybody-client";
 
 type AnyDb = {
@@ -182,6 +184,150 @@ export async function finalizeTopicMastery(topicId: string, percentage: number):
   return mastered;
 }
 
+// ── "Go straight in" ────────────────────────────────────────────────────────
+// The second way into My Coach: no roadmap, no AI planning call, no ordered
+// topics — just questions from the whole of the selected material, now.
+//
+// What makes it *broad* rather than a linear progression is the retrieval, not
+// the prompt. The roadmap flow narrows to one topic and pulls the chunks that
+// match that topic's title (loadStudyDocuments with a query). This flow uses
+// loadStudyDocumentsSpanning, which samples evenly from the start, middle and
+// end of every selected file, so a 400-page textbook produces questions from
+// chapter 1 and chapter 19 in the same set.
+//
+// It stores itself as an ordinary plan with exactly one topic, which is why it
+// needs no schema change and why the practice screen, the resume flow, the
+// mastery maths and the points all work on it unmodified.
+
+/** The share of a straight-in set given to written answers, the rest MCQ. */
+const STRAIGHT_IN_ESSAY_SHARE = 0.2;
+
+export function straightInSplit(count: number): { mcq: number; essay: number } {
+  const total = Math.max(1, Math.round(count));
+  if (total < 5) return { mcq: total, essay: 0 };
+  const essay = Math.max(1, Math.round(total * STRAIGHT_IN_ESSAY_SHARE));
+  return { mcq: total - essay, essay };
+}
+
+export async function createStraightInSession({
+  userId,
+  profile,
+  title,
+  documentIds,
+  docsMeta,
+  count,
+  difficulty,
+  timerSeconds,
+}: {
+  userId: string;
+  profile: Profile;
+  title: string;
+  documentIds: string[];
+  docsMeta: DocRow[];
+  count: number;
+  difficulty: "easy" | "medium" | "hard";
+  /** Omitted or 0 for an untimed set — no timer key is written at all. */
+  timerSeconds?: number;
+}): Promise<{ planId: string; sessionId: string }> {
+  const documents = await loadStudyDocumentsSpanning(documentIds, docsMeta);
+  const split = straightInSplit(count);
+
+  const topicStub = {
+    title,
+    summary: "A broad set drawn from across the whole of the selected material.",
+    objectives: [],
+    source_refs: [],
+  };
+  const generated = await generateStudyQuestions({
+    profile,
+    topic: topicStub,
+    questionType: "mixed",
+    count: split.mcq + split.essay,
+    mcqCount: split.mcq,
+    essayCount: split.essay,
+    documents,
+    difficulty,
+  });
+  if (!generated.questions.length) {
+    throw new Error("No questions could be built from this material. Try another file.");
+  }
+
+  const { data: planData, error: planErr } = await db
+    .from("study_plans")
+    .insert({
+      user_id: userId,
+      title,
+      course_outline: "",
+      source_type: "uploaded",
+      source_document_ids: documentIds,
+      preference_snapshot: { straight_in: true },
+    })
+    .select("id")
+    .single();
+  if (planErr) throw planErr;
+  const planId = (planData as { id: string }).id;
+
+  const { data: topicData, error: topicErr } = await db
+    .from("study_topics")
+    .insert({
+      user_id: userId,
+      plan_id: planId,
+      title,
+      summary: topicStub.summary,
+      objectives: [],
+      source_refs: [],
+      position: 0,
+      status: "practicing",
+    })
+    .select("id")
+    .single();
+  if (topicErr) throw topicErr;
+  const topicId = (topicData as { id: string }).id;
+
+  const { data: sessionData, error: sessionErr } = await db
+    .from("study_sessions")
+    .insert({
+      user_id: userId,
+      plan_id: planId,
+      topic_id: topicId,
+      question_type: "mixed",
+      requested_count: split.mcq + split.essay,
+      total_questions: generated.questions.length,
+      feedback: {
+        mode: "learning",
+        straight_in: true,
+        ...(timerSeconds && timerSeconds > 0 ? { timer_seconds: timerSeconds } : {}),
+      },
+    })
+    .select("id")
+    .single();
+  if (sessionErr) throw sessionErr;
+  const sessionId = (sessionData as { id: string }).id;
+
+  const questionRows = generated.questions.map((question, index) => {
+    const normalizedType: "mcq" | "essay" = question.type === "essay" ? "essay" : "mcq";
+    return {
+      user_id: userId,
+      session_id: sessionId,
+      plan_id: planId,
+      topic_id: topicId,
+      question_type: normalizedType,
+      prompt: question.prompt,
+      options: normalizedType === "mcq" ? (question.options ?? []) : [],
+      correct_answer: question.correct_answer,
+      explanation: question.explanation ?? "",
+      rubric: question.rubric ?? [],
+      difficulty: question.difficulty ?? difficulty,
+      source_refs: question.source_refs ?? [],
+      position: index,
+    };
+  });
+  const { error: questionErr } = await db.from("study_questions").insert(questionRows);
+  if (questionErr) throw questionErr;
+
+  return { planId, sessionId };
+}
+
 // Pick items spread evenly across the list (always including the first and
 // last) until the character budget is reached, so the sample represents the
 // whole document instead of just the opening chunks.
@@ -271,8 +417,14 @@ export async function loadStudyDocumentsSpanning(
 ): Promise<StudyDocument[]> {
   if (!documentIds.length) return [];
 
+  // document_chunks_effective, not document_chunks: when several students upload
+  // the same textbook only one copy of its chunks is stored, and the other
+  // students' documents rows link to it (documents.canonical_document_id). The
+  // view resolves that link and still reports the CALLER'S document id, so the
+  // filter and the per-document grouping below are unchanged. Reading the raw
+  // table here would return zero rows for anyone holding a linked copy.
   const { data, error } = await db
-    .from("document_chunks")
+    .from("document_chunks_effective")
     .select("document_id, chunk_index, page_start, page_end, content")
     .in("document_id", documentIds)
     .order("chunk_index", { ascending: true });

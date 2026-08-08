@@ -77,7 +77,11 @@ export function ChatDocPicker({
 
   // Non-ready files are listed but can't be grounded on yet, so we show why.
   const statusLabel = (s: LinkDocument["extract_status"]) =>
-    s === "pending" ? "Processing…" : s === "rejected" ? "Unsupported file" : "Couldn't process";
+    s === "pending" || s === "processing"
+      ? "Processing…"
+      : s === "rejected"
+        ? "Unsupported file"
+        : "Couldn't process";
 
   // Upload a new PDF without leaving the chat — same path the Library uses.
   const upload = async () => {

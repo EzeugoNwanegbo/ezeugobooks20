@@ -897,6 +897,100 @@ html.gd-low-power .gd-chat-aura::after {
   animation: blink 1s infinite;
 }
 
+/* ── PROGRESSION MOMENTS: rank-up + opening streak ────────────────────────
+   Both cards are corner announcements, not dialogs, so their motion has to
+   read as "something arrived over there" rather than "stop what you are
+   doing". Entrance only — nothing here loops, because a card that keeps
+   moving beside a paragraph a student is reading is a card they will close.
+
+   Every rule in this block is inside the motion query at the bottom, so
+   prefers-reduced-motion leaves both cards fully present and completely
+   still. That is the requirement: skippable AND reduced-motion safe, with
+   the information intact either way.
+
+   The phone layout centres these with -translate-x-1/2, so the entrance
+   animates opacity and a translateY only. Animating translateX (or a scale
+   on the card itself) would fight that centring for the length of the
+   animation and visibly knock the card off-centre — the same trap noted on
+   the library announcement. The badge does the popping instead. */
+.gd-rankup,
+.gd-streak-open {
+  animation: gdMomentIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes gdMomentIn {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* Wider screens drop the centring transform, so the entrance is a plain
+   vertical settle with no -50% to preserve. */
+@media (min-width: 640px) {
+  @keyframes gdMomentIn {
+    0% {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+/* The badge is the payload of a rank-up, so it is the thing that lands. */
+.gd-rankup-badge {
+  display: inline-block;
+  animation: gdBadgePop 620ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
+}
+
+@keyframes gdBadgePop {
+  0% {
+    opacity: 0;
+    transform: scale(0.6) rotate(-8deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.06) rotate(1deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* The streak flame gets one warm-up beat and then stops. */
+.gd-streak-flame {
+  animation: gdFlameKick 900ms cubic-bezier(0.16, 1, 0.3, 1) 100ms both;
+}
+
+@keyframes gdFlameKick {
+  0% {
+    transform: scale(0.82);
+  }
+  55% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gd-rankup,
+  .gd-streak-open,
+  .gd-rankup-badge,
+  .gd-streak-flame {
+    animation: none;
+  }
+}
+
 /* Indeterminate "preparing" loading bar shown while the AI reply is empty */
 @keyframes gdLoadingSlide {
   0% {

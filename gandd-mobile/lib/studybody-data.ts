@@ -252,8 +252,13 @@ export async function loadStudyDocumentsSpanning(
 ): Promise<StudyDocument[]> {
   if (!documentIds.length) return [];
 
+  // document_chunks_effective, not document_chunks: identical textbooks are
+  // stored once and the other students' documents rows link to that copy
+  // (documents.canonical_document_id). The view resolves the link and still
+  // reports the CALLER'S document id, so the filter and grouping are unchanged.
+  // Reading the raw table returns nothing for anyone holding a linked copy.
   const { data, error } = await db
-    .from("document_chunks")
+    .from("document_chunks_effective")
     .select("document_id, chunk_index, page_start, page_end, content")
     .in("document_id", documentIds)
     .order("chunk_index", { ascending: true });
