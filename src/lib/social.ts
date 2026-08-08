@@ -20,7 +20,7 @@
 // returns an empty result before it reaches Supabase, every write throws
 // locally, and `socialEnabled()` is false so no entry point renders. There is
 // nothing to fail because nothing is asked.
-export const SOCIAL_SCHEMA_APPLIED = false;
+export const SOCIAL_SCHEMA_APPLIED = true;
 
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
