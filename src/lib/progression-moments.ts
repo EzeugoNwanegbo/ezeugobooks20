@@ -1,6 +1,6 @@
 // When the celebratory moments are allowed to fire.
 //
-// Same shape and the same failure posture as src/lib/announcement.ts: a
+// Same shape and the same failure posture as src/lib/feature-tour.ts: a
 // versioned localStorage key, and a blocked-storage fallback that reports
 // "already seen". A student in private mode gets no confetti; a student in
 // private mode trapped behind a dialog that reopens on every navigation would

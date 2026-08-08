@@ -2,6 +2,7 @@
 // (roadmap building + history) and the Practice page reuse these Supabase
 // helpers and row types, so the query logic lives in one place.
 import { supabase } from "@/integrations/supabase/client";
+import { DEDUP_SCHEMA_APPLIED } from "@/lib/content-hash";
 import { embedQuery } from "@/lib/embeddings";
 import { generateStudyQuestions } from "@/lib/studybody-client";
 import type { Profile } from "@/lib/auth-context";
@@ -423,8 +424,12 @@ export async function loadStudyDocumentsSpanning(
   // view resolves that link and still reports the CALLER'S document id, so the
   // filter and the per-document grouping below are unchanged. Reading the raw
   // table here would return zero rows for anyone holding a linked copy.
+  //
+  // Gated: the view is created by the dedup migration, which is applied by hand.
+  // Until then there are no linked copies to resolve, so the raw table is exactly
+  // equivalent - and querying a view that does not exist returns nothing at all.
   const { data, error } = await db
-    .from("document_chunks_effective")
+    .from(DEDUP_SCHEMA_APPLIED ? "document_chunks_effective" : "document_chunks")
     .select("document_id, chunk_index, page_start, page_end, content")
     .in("document_id", documentIds)
     .order("chunk_index", { ascending: true });

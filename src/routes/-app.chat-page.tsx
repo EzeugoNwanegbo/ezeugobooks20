@@ -869,9 +869,9 @@ export function ChatPage() {
   const [libraryNotice, setLibraryNotice] = useState<LibraryNotice>(null);
   const [flashPillDismissed, setFlashPillDismissed] = useState(false);
   // Starts hidden and is un-hidden after mount, for the same reason the tour
-  // and the announcement read their storage in an effect: localStorage does not
-  // exist during the server render, so deciding this at first render would
-  // either throw or hydrate to a different answer than the server gave.
+  // reads its storage in an effect: localStorage does not exist during the
+  // server render, so deciding this at first render would either throw or
+  // hydrate to a different answer than the server gave.
   const [personalizationDismissed, setPersonalizationDismissed] = useState(true);
   const [sessionReady, setSessionReady] = useState(false);
   // The composer is absolutely positioned and its height varies (mode tabs,
@@ -2754,7 +2754,10 @@ function ComposerPlusMenu({
   // upward off the composer (clear of the on-screen keyboard) and the submenu
   // flips to whichever side has room instead of running off the edge.
   const panel =
-    "rounded-2xl border-border/70 bg-popover/95 p-1.5 shadow-[0_18px_60px_rgba(0,0,0,0.16)] backdrop-blur-xl motion-reduce:animate-none motion-reduce:transition-none";
+    // bg-popover at full opacity, not /95: backdrop-blur is switched off on
+    // every touch device and in low-power mode (see styles.css), so a
+    // translucent menu there is just the composer showing through the options.
+    "rounded-2xl border-border/70 bg-popover p-1.5 shadow-[0_18px_60px_rgba(0,0,0,0.16)] backdrop-blur-xl motion-reduce:animate-none motion-reduce:transition-none";
   const row = "gap-2 rounded-xl px-2.5 py-2 text-sm";
 
   return (

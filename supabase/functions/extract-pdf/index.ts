@@ -270,9 +270,20 @@ Deno.serve(async (req: Request) => {
     const { documentId } = (await req.json()) as { documentId?: string };
     if (!documentId) return json({ error: "documentId is required." }, 400);
 
+    // DEDUP_SCHEMA_APPLIED - keep in step with src/lib/content-hash.ts.
+    // canonical_document_id and content_hash are created by the dedup migration,
+    // which is applied by hand. Naming a column PostgREST cannot find fails the
+    // WHOLE query, so selecting it before the migration runs turns every upload
+    // into "Document not found". Flip this with the migration, not before.
+    const DEDUP_SCHEMA_APPLIED = false;
+
     const { data: doc, error: docErr } = await admin
       .from("documents")
-      .select("id, user_id, file_name, storage_path, canonical_document_id")
+      .select(
+        DEDUP_SCHEMA_APPLIED
+          ? "id, user_id, file_name, storage_path, canonical_document_id"
+          : "id, user_id, file_name, storage_path",
+      )
       .eq("id", documentId)
       .eq("user_id", user.id)
       .single();
@@ -282,7 +293,7 @@ Deno.serve(async (req: Request) => {
     // extracted text and this one reads through it (documents.canonical_document_id).
     // Re-extracting would burn the work and then write a second copy of chunks
     // that resolution never reads - the exact waste the de-duplication removed.
-    if (doc.canonical_document_id) {
+    if (DEDUP_SCHEMA_APPLIED && (doc as { canonical_document_id?: string | null }).canonical_document_id) {
       await admin
         .from("documents")
         .update({ extract_status: "ready", extract_error: null })

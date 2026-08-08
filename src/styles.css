@@ -110,6 +110,18 @@ html {
   --card: rgba(233, 224, 209, 0.04);
   --card-foreground: #e9e0d1;
 
+  /* --panel is --card resolved against the page, as an OPAQUE colour.
+     --card is a 4% Bone tint: correct for a plate drawn on top of an opaque
+     parent, and wrong for anything that floats (a dialog, a popover, a sheet),
+     which has the whole app behind it rather than the page. A 4% tint over a
+     chat transcript is a 96% see-through dialog, which is exactly the bug this
+     token exists to stop. rgba(233,224,209,0.04) composited over #070707 is
+     (16.0, 15.7, 15.1) — so #10100f renders identically to the old tint on the
+     page, and stays opaque everywhere else.
+     .luxury-panel uses THIS, never --card. Anything genuinely layered on an
+     opaque parent may still use --card. */
+  --panel: #10100f;
+
   --popover: #1a1918;
   --popover-foreground: #e9e0d1;
 
@@ -236,6 +248,10 @@ html {
 
   --card: #f4eee3;
   --card-foreground: #131211;
+
+  /* Already opaque here — the token exists so .luxury-panel never has to care
+     which skin it is in. */
+  --panel: #f4eee3;
 
   --popover: #fbf7ef;
   --popover-foreground: #131211;
@@ -374,6 +390,8 @@ html {
   --card: #fffdf7;
   --card-foreground: #0d0d0d;
 
+  --panel: #fffdf7;
+
   --popover: #ffffff;
   --popover-foreground: #0d0d0d;
 
@@ -496,6 +514,8 @@ html {
 
   --card: #272a30;
   --card-foreground: #e9eaec;
+
+  --panel: #272a30;
 
   --popover: #2b2e35;
   --popover-foreground: #e9eaec;
@@ -898,56 +918,57 @@ html.gd-low-power .gd-chat-aura::after {
 }
 
 /* ── PROGRESSION MOMENTS: rank-up + opening streak ────────────────────────
-   Both cards are corner announcements, not dialogs, so their motion has to
-   read as "something arrived over there" rather than "stop what you are
-   doing". Entrance only — nothing here loops, because a card that keeps
-   moving beside a paragraph a student is reading is a card they will close.
+   Both are centred cards now (src/components/progression-moment.tsx). They
+   are NOT dialogs — no focus trap, no scroll lock — but they are in the
+   middle of the screen, so the motion has one job: make the card feel like a
+   moment that arrived and finished, never a thing that keeps moving while a
+   student is trying to read past it. Entrance only, nothing loops.
 
-   Every rule in this block is inside the motion query at the bottom, so
-   prefers-reduced-motion leaves both cards fully present and completely
-   still. That is the requirement: skippable AND reduced-motion safe, with
-   the information intact either way.
+   The whole gesture is: the progress bar fills (that transition lives on
+   RankProgressBar in rank-badge.tsx), and when it tops out the payload lands
+   — the rank badge flips to the new rank, the resolved copy fades in. React
+   adds .gd-moment-badge / .gd-moment-resolve at that instant, which is what
+   starts these animations; there is no second timeline to keep in sync.
 
-   The phone layout centres these with -translate-x-1/2, so the entrance
-   animates opacity and a translateY only. Animating translateX (or a scale
-   on the card itself) would fight that centring for the length of the
-   animation and visibly knock the card off-centre — the same trap noted on
-   the library announcement. The badge does the popping instead. */
-.gd-rankup,
-.gd-streak-open {
-  animation: gdMomentIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+   The cards are centred by flexbox, not by -translate-x-1/2, so unlike the
+   old corner toasts these animations own `transform` outright and cannot be
+   knocked off-centre by it.
+
+   Every rule here is switched off by the motion query at the bottom, so
+   prefers-reduced-motion leaves both cards fully present, fully resolved and
+   completely still. Skippable AND reduced-motion safe, information intact. */
+.gd-moment-card {
+  animation: gdMomentIn 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes gdMomentIn {
   0% {
     opacity: 0;
-    transform: translate(-50%, -10px);
+    transform: translateY(10px) scale(0.97);
   }
   100% {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: translateY(0) scale(1);
   }
 }
 
-/* Wider screens drop the centring transform, so the entrance is a plain
-   vertical settle with no -50% to preserve. */
-@media (min-width: 640px) {
-  @keyframes gdMomentIn {
-    0% {
-      opacity: 0;
-      transform: translateY(10px);
-    }
-    100% {
-      opacity: 1;
-      transform: translateY(0);
-    }
+.gd-moment-scrim {
+  animation: gdMomentScrimIn 300ms ease both;
+}
+
+@keyframes gdMomentScrimIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
   }
 }
 
-/* The badge is the payload of a rank-up, so it is the thing that lands. */
-.gd-rankup-badge {
+/* The payload of the moment: this is what the filling bar was building to. */
+.gd-moment-badge {
   display: inline-block;
-  animation: gdBadgePop 620ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
+  animation: gdBadgePop 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes gdBadgePop {
@@ -965,28 +986,27 @@ html.gd-low-power .gd-chat-aura::after {
   }
 }
 
-/* The streak flame gets one warm-up beat and then stops. */
-.gd-streak-flame {
-  animation: gdFlameKick 900ms cubic-bezier(0.16, 1, 0.3, 1) 100ms both;
+/* Copy that only becomes true once the bar has arrived. */
+.gd-moment-resolve {
+  animation: gdMomentResolve 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-@keyframes gdFlameKick {
+@keyframes gdMomentResolve {
   0% {
-    transform: scale(0.82);
-  }
-  55% {
-    transform: scale(1.08);
+    opacity: 0;
+    transform: translateY(4px);
   }
   100% {
-    transform: scale(1);
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gd-rankup,
-  .gd-streak-open,
-  .gd-rankup-badge,
-  .gd-streak-flame {
+  .gd-moment-card,
+  .gd-moment-scrim,
+  .gd-moment-badge,
+  .gd-moment-resolve {
     animation: none;
   }
 }
@@ -1629,9 +1649,18 @@ a.bg-gradient-primary > * {
   font-size: 21px;
 }
 
+/* The app's plate. Used both in-page (history, feedback, onboarding, auth) and
+   as the skin for floating surfaces (the Personalize dialog, the file picker),
+   so its background MUST be opaque — see --panel above. It used to read
+   var(--card), which in the default dark skin is a 4% tint, and because this
+   rule is unlayered CSS while Tailwind's `bg-background` on DialogContent is a
+   layered utility, this always won: the Personalize dialog rendered 96%
+   see-through over the chat behind it. Fixing it at the token means every
+   consumer is fixed at once and there is no specificity/source-order race with
+   the dialog primitive. */
 .luxury-panel {
   border: 0.5px solid var(--luxury-border-soft);
-  background: var(--card);
+  background: var(--panel);
 }
 
 .google-g-mark {

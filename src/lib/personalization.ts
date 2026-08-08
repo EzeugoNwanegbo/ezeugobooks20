@@ -31,8 +31,9 @@ export async function savePersonalizationBackground(
 // re-offers itself once the week is up. Saving a background removes it for good
 // - that is the caller's `!profile.personalization_background` check, not this.
 //
-// Same shape as the feature tour and the announcement (src/lib/feature-tour.ts,
-// src/lib/announcement.ts): a versioned localStorage key, try/catch around every
+// Same shape as the feature tour and the progression moments
+// (src/lib/feature-tour.ts, src/lib/progression-moments.ts): a versioned
+// localStorage key, try/catch around every
 // access, and a blocked-storage fallback that reports "snoozed" so nobody is
 // trapped behind a card that reappears on every navigation. Deliberately NOT a
 // column on user_profiles for the same reason given there - once per device is

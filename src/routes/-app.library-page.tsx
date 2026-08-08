@@ -9,7 +9,7 @@ import {
   sanitizeExtractedText,
   type DocumentChunkInput,
 } from "@/lib/document-chunks";
-import { chunkSetContentHash } from "@/lib/content-hash";
+import { chunkSetContentHash, DEDUP_SCHEMA_APPLIED } from "@/lib/content-hash";
 import { backfillMissingEmbeddings } from "@/lib/embeddings";
 import { getCached, setCached } from "@/lib/data-cache";
 import { GUEST_DOCUMENT_LIMIT, isGuestUser } from "@/lib/guest-session";
@@ -800,7 +800,7 @@ export function LibraryPage() {
         const tHash = performance.now();
         const contentHash = await chunkSetContentHash(item.chunks);
         let canonicalId: string | null = null;
-        if (contentHash) {
+        if (DEDUP_SCHEMA_APPLIED && contentHash) {
           const { data: existingId, error: lookupErr } = await supabase.rpc(
             "find_canonical_document",
             { p_content_hash: contentHash },
@@ -839,8 +839,11 @@ export function LibraryPage() {
             // canonical guard trigger refuses any link whose content_hash does
             // not already equal its target's. It is also true from the moment
             // the row exists, because the link owns no chunks to get wrong.
-            content_hash: canonicalId ? contentHash : null,
-            canonical_document_id: canonicalId,
+            // Gated: naming a column PostgREST cannot find rejects the entire
+            // insert, so these are omitted until the dedup migration is applied.
+            ...(DEDUP_SCHEMA_APPLIED
+              ? { content_hash: canonicalId ? contentHash : null, canonical_document_id: canonicalId }
+              : {}),
             // Written WITH the row, not after it, and never optimistically.
             //
             // A link needs no chunks of its own - it reads the canonical
@@ -949,7 +952,7 @@ export function LibraryPage() {
             .update({
               extract_status: "ready",
               extract_error: null,
-              content_hash: contentHash,
+              ...(DEDUP_SCHEMA_APPLIED ? { content_hash: contentHash } : {}),
             })
             .eq("id", doc.id);
           if (readyErr) {

@@ -257,8 +257,14 @@ export async function loadStudyDocumentsSpanning(
   // (documents.canonical_document_id). The view resolves the link and still
   // reports the CALLER'S document id, so the filter and grouping are unchanged.
   // Reading the raw table returns nothing for anyone holding a linked copy.
+  //
+  // Gated on the same flag as the web app: the view is created by the dedup
+  // migration, which is applied by hand. Until it runs there are no linked
+  // copies, so the raw table is equivalent - and a view that does not exist
+  // returns nothing at all. Keep this in step with src/lib/content-hash.ts.
+  const DEDUP_SCHEMA_APPLIED = false;
   const { data, error } = await db
-    .from("document_chunks_effective")
+    .from(DEDUP_SCHEMA_APPLIED ? "document_chunks_effective" : "document_chunks")
     .select("document_id, chunk_index, page_start, page_end, content")
     .in("document_id", documentIds)
     .order("chunk_index", { ascending: true });

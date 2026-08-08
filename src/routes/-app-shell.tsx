@@ -44,8 +44,6 @@ import { ThemePicker, ThemeToggle } from "@/components/theme-toggle";
 import { AppShellSkeleton } from "@/components/app-skeletons";
 import { FeatureTour } from "@/components/feature-tour";
 import { hasSeenTour } from "@/lib/feature-tour";
-import { LibraryAnnouncement } from "@/components/library-announcement";
-import { hasSeenAnnouncement } from "@/lib/announcement";
 import { RankUpCelebration } from "@/components/rank-up-celebration";
 import { StreakOpening } from "@/components/streak-opening";
 import { RankBadge, RankProgressBar } from "@/components/rank-badge";
@@ -123,10 +121,9 @@ function AppLayout() {
   // profile-shaped, so it must stay reachable from every page and after it has
   // already been filled in (the in-chat card disappears once it is set).
   const [personalizeOpen, setPersonalizeOpen] = useState(false);
-  const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [gamification, setGamification] = useState<GamificationStats>(emptyGamificationStats);
-  // The two progression moments. Both are corner cards, never dialogs, and both
-  // decide whether they may run at all in src/lib/progression-moments.ts.
+  // The two progression moments. Both are centred cards, and both decide
+  // whether they may run at all in src/lib/progression-moments.ts.
   const [rankUp, setRankUp] = useState<AcademicRank | null>(null);
   const [streakOpeningOpen, setStreakOpeningOpen] = useState(false);
   // The opening streak card is offered once per mount, not once per navigation.
@@ -156,22 +153,6 @@ function AppLayout() {
     const timer = window.setTimeout(() => setTourOpen(true), 900);
     return () => window.clearTimeout(timer);
   }, [loading, profile]);
-
-  // "Textbooks are built in now" — shown once, to returning students only.
-  // Three gates, each for a reason:
-  //   hasSeenTour()  - a brand-new user gets the guided tour instead; stacking a
-  //                    what's-new dialog on a first run is just noise.
-  //   discipline     - the first shelf is medicine-only, and the library is
-  //                    discipline-scoped, so a law student would be told about
-  //                    books they cannot see.
-  //   !tourOpen      - never two dialogs at once.
-  useEffect(() => {
-    if (loading || !profile || tourOpen) return;
-    if (!hasSeenTour() || hasSeenAnnouncement()) return;
-    if (profile.discipline !== "medicine") return;
-    const timer = window.setTimeout(() => setAnnouncementOpen(true), 900);
-    return () => window.clearTimeout(timer);
-  }, [loading, profile, tourOpen]);
 
   // Theme the whole app to the student's discipline (medicine/law) via a
   // root attribute, parallel to the .dark/.light theme classes. Guests and
@@ -231,13 +212,13 @@ function AppLayout() {
 
   // The opening streak card. Gated hard, because it sits between a student and
   // the thing they opened the app to do:
-  //   - never during the first-run tour or the what's-new card (one at a time)
+  //   - never during the first-run tour (one at a time)
   //   - never for a brand-new student who has not seen the tour yet
   //   - never on a 0-day streak, and at most once per device per day, both
   //     enforced by takeStreakOpening()
   useEffect(() => {
     if (loading || !user || !profile || streakOfferedRef.current) return;
-    if (tourOpen || announcementOpen || !hasSeenTour()) return;
+    if (tourOpen || !hasSeenTour()) return;
     if (gamification.currentStreak < 1) return;
     streakOfferedRef.current = true;
     if (!takeStreakOpening(gamification.currentStreak)) return;
@@ -245,7 +226,7 @@ function AppLayout() {
     // in front of it. Nothing waits on this.
     const timer = window.setTimeout(() => setStreakOpeningOpen(true), 700);
     return () => window.clearTimeout(timer);
-  }, [loading, user, profile, tourOpen, announcementOpen, gamification.currentStreak]);
+  }, [loading, user, profile, tourOpen, gamification.currentStreak]);
 
   // The one conversation query in the app. It feeds the desktop sidebar's
   // grouped history and the mobile drawer's; the chat page no longer keeps a
@@ -1244,12 +1225,11 @@ function AppLayout() {
         </DialogContent>
       </Dialog>
 
-      <LibraryAnnouncement open={announcementOpen} onClose={() => setAnnouncementOpen(false)} />
-
-      {/* A rank-up outranks the daily streak note, so it closes it: two corner
-          cards stacked on a phone would cover the top of the screen. */}
+      {/* A rank-up outranks the daily streak note, so it suppresses it: two
+          centred cards at once is two things to dismiss. */}
       <RankUpCelebration
         rank={rankUp}
+        points={gamification.points}
         onDismiss={() => {
           setRankUp(null);
         }}
@@ -1257,6 +1237,7 @@ function AppLayout() {
       <StreakOpening
         open={streakOpeningOpen && !rankUp}
         streak={gamification.currentStreak}
+        points={gamification.points}
         mission={weekendMissionFor()}
         pointsAvailable={pointsAvailableToday(gamification)}
         onDismiss={() => setStreakOpeningOpen(false)}

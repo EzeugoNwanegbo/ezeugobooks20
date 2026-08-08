@@ -1,5 +1,19 @@
 // Content fingerprint for upload de-duplication.
 //
+// ── OFF UNTIL THE MIGRATION IS APPLIED ──────────────────────────────────────
+// Everything below depends on schema that does not exist in production yet:
+// documents.content_hash, documents.canonical_document_id, the
+// find_canonical_document() function and the document_chunks_effective view,
+// all created by supabase/migrations/20260808120000_dedup_document_chunks_schema.sql.
+//
+// That migration is deliberately run by hand, in stages, after previewing what
+// it would merge - so the app must not assume it has run. Naming a column that
+// does not exist makes PostgREST reject the WHOLE insert, which took uploads
+// down in production once already. Every reference is therefore gated on this
+// flag. Flip it to true in the same change that applies the migration, not
+// before, and not in a separate deploy.
+export const DEDUP_SCHEMA_APPLIED = false;
+//
 // Several students upload the same textbook. Before this, each upload stored its
 // own full copy of the extracted chunks - 51% of document_chunks was redundant
 // copies, which is what pushed the database past the free-tier ceiling. Now a
