@@ -13,7 +13,7 @@
 //
 // Flip it to true in the SAME commit that applies the migration. Not before,
 // and not in a separate deploy.
-export const MCQ_GRADING_APPLIED = false;
+export const MCQ_GRADING_APPLIED = true;
 
 import { db, type QuestionRow } from "@/lib/studybody-data";
 
