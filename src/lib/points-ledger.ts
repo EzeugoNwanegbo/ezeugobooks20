@@ -8,7 +8,7 @@
 // makes a network call.
 //
 // Flip it to true in the SAME commit that applies the migration.
-export const POINTS_LEDGER_APPLIED = false;
+export const POINTS_LEDGER_APPLIED = true;
 
 import { supabase } from "@/integrations/supabase/client";
 import { reconcilePointsFromServer, type ServerAward } from "@/lib/gamification";
