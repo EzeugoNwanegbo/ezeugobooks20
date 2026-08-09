@@ -488,11 +488,12 @@ export async function loadStudyDocumentsSpanning(
   if (!documentIds.length) return [];
 
   // document_chunks_effective, not document_chunks: when several students upload
-  // the same textbook only one copy of its chunks is stored, and the other
-  // students' documents rows link to it (documents.canonical_document_id). The
-  // view resolves that link and still reports the CALLER'S document id, so the
-  // filter and the per-document grouping below are unchanged. Reading the raw
-  // table here would return zero rows for anyone holding a linked copy.
+  // the same textbook only one copy of its chunks is stored, in the G&D pool,
+  // and each student's documents row links to it (documents.pooled_document_id).
+  // The view resolves that link and still reports the CALLER'S document id, so
+  // the filter and the per-document grouping below are unchanged. Reading the
+  // raw table here would return zero rows for anyone holding a pooled copy -
+  // silently, as an empty roadmap rather than an error.
   //
   // Gated: the view is created by the dedup migration, which is applied by hand.
   // Until then there are no linked copies to resolve, so the raw table is exactly

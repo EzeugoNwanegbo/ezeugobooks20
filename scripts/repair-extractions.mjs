@@ -120,6 +120,14 @@ const MIN_PAGES_TO_JUDGE = 20;
 // is virtual. See the header.
 const TEXT_ONLY_PREFIX = "text-only/";
 const SERVER_OCR_PREFIX = "serverocr/";
+// DEDUP_SCHEMA_APPLIED - keep in step with src/lib/content-hash.ts. The dedup
+// migration is applied by hand, and PostgREST rejects a whole statement that
+// names a column or function it cannot find: with this false, filtering on
+// pooled_document_id would make findTargets() fail outright, and calling
+// refresh_document_content_hash would log a spurious PGRST202 on every repaired
+// document. Both are skipped instead - correctly, because with no pool there are
+// no pooled documents to exclude and no hash worth stamping.
+const DEDUP_SCHEMA_APPLIED = false;
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
@@ -256,10 +264,11 @@ async function upsertChunks(supabase, rows, attempt = 0) {
 
 // ── target selection ────────────────────────────────────────────────────────
 // The same test as dedup.ineligible, computed client-side because PostgREST does
-// not expose the `dedup` schema. Links (canonical_document_id set) hold no chunks
-// BY DESIGN and are excluded; so is anything already mid-flight ('processing' /
-// 'pending'), which would otherwise pull a running server-OCR job out from under
-// itself.
+// not expose the `dedup` schema. Pooled documents (pooled_document_id set) hold
+// no chunks BY DESIGN - they read the G&D pool - so re-extracting one would
+// write a private copy that resolution never reads. They are excluded; so is
+// anything already mid-flight ('processing' / 'pending'), which would otherwise
+// pull a running server-OCR job out from under itself.
 async function findTargets(supabase, opts) {
   const selected = [];
   const PAGE = 1000;
@@ -267,9 +276,9 @@ async function findTargets(supabase, opts) {
     let query = supabase
       .from("documents")
       .select("id, user_id, file_name, page_count, storage_path, extract_status, file_type")
-      .is("canonical_document_id", null)
       .order("created_at", { ascending: true })
       .range(from, from + PAGE - 1);
+    if (DEDUP_SCHEMA_APPLIED) query = query.is("pooled_document_id", null);
     if (opts.docs.length) query = query.in("id", opts.docs);
 
     const { data, error } = await query;
@@ -437,10 +446,12 @@ async function repairDocument(supabase, env, doc, opts) {
   // 5. Re-fingerprint, so the staged dedup work can collapse this copy against
   //    the identical books other students uploaded. Best-effort: a missing hash
   //    costs storage, nothing else.
-  const { error: hashErr } = await supabase.rpc("refresh_document_content_hash", {
-    p_document_id: doc.id,
-  });
-  if (hashErr) console.log(`      note: content hash refresh failed (${hashErr.message})`);
+  if (DEDUP_SCHEMA_APPLIED) {
+    const { error: hashErr } = await supabase.rpc("refresh_document_content_hash", {
+      p_document_id: doc.id,
+    });
+    if (hashErr) console.log(`      note: content hash refresh failed (${hashErr.message})`);
+  }
 
   // 6. Embeddings, best-effort. Degrade to NULL rather than abort: chunks stay
   //    keyword-searchable, and the app's backfillMissingEmbeddings fills the

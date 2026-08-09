@@ -34,7 +34,7 @@ export type Database = {
       };
       documents: {
         Row: {
-          canonical_document_id: string | null;
+          pooled_document_id: string | null;
           content_hash: string | null;
           created_at: string | null;
           extract_error: string | null;
@@ -53,7 +53,7 @@ export type Database = {
           user_id: string;
         };
         Insert: {
-          canonical_document_id?: string | null;
+          pooled_document_id?: string | null;
           content_hash?: string | null;
           created_at?: string | null;
           extract_error?: string | null;
@@ -72,7 +72,7 @@ export type Database = {
           user_id: string;
         };
         Update: {
-          canonical_document_id?: string | null;
+          pooled_document_id?: string | null;
           content_hash?: string | null;
           created_at?: string | null;
           extract_error?: string | null;
@@ -416,11 +416,21 @@ export type Database = {
           total: number;
         }[];
       };
-      find_canonical_document: {
+      find_pooled_document: {
         Args: {
           p_content_hash: string;
         };
         Returns: string | null;
+      };
+      pool_share_document: {
+        Args: {
+          p_document_id: string;
+        };
+        Returns: {
+          pool_id: string;
+          chunks_pooled: number;
+          created_pool: boolean;
+        }[];
       };
       search_document_chunks: {
         Args: {

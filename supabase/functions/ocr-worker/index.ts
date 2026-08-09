@@ -48,6 +48,20 @@ const CHUNK_CHARS = 6000;
 const CHUNK_OVERLAP = 700;
 const MAX_ATTEMPTS = 3;
 
+// DEDUP_SCHEMA_APPLIED - keep in step with src/lib/content-hash.ts and
+// supabase/functions/extract-pdf/index.ts. public.refresh_document_content_hash
+// is created by the dedup migration, which is applied by hand; calling an RPC
+// that does not exist returns PGRST202, so with the flag off this worker must
+// not call it at all - otherwise every finished scan logs an error that means
+// nothing. Flip it with the migration, not before, and remember this edge
+// function is deployed separately from the web app.
+//
+// Nothing else here needs a flag. This worker only ever finalises a document it
+// OCR'd itself, and a document is only pooled once it is 'ready', so it never
+// meets a pooled row - and refresh_document_content_hash returns NULL for one
+// anyway rather than corrupting its link.
+const DEDUP_SCHEMA_APPLIED = false;
+
 type OcrJob = {
   id: string;
   document_id: string;
@@ -371,14 +385,17 @@ async function finalizeDocument(
     .update({ extracted_text: fullText, extract_status: "ready", extract_error: null })
     .eq("id", documentId);
 
-  // Fingerprint the finished chunk set so a later upload of the same scan links
-  // to it rather than storing (and re-OCR'ing) a second copy. This is the right
-  // moment: every part-job has landed, so the chunk set is final. Best-effort -
-  // a missing hash only costs storage on some future upload.
-  const { error: hashErr } = await admin.rpc("refresh_document_content_hash", {
-    p_document_id: documentId,
-  });
-  if (hashErr) console.error("ocr-worker content hash error:", hashErr);
+  // Fingerprint the finished chunk set so the student can offer this scan to the
+  // pool, and so a later upload of the same scan links to it rather than storing
+  // (and re-OCR'ing) a second copy. This is the right moment: every part-job has
+  // landed, so the chunk set is final. Best-effort - a missing hash only costs
+  // storage on some future upload.
+  if (DEDUP_SCHEMA_APPLIED) {
+    const { error: hashErr } = await admin.rpc("refresh_document_content_hash", {
+      p_document_id: documentId,
+    });
+    if (hashErr) console.error("ocr-worker content hash error:", hashErr);
+  }
 
   return "ready";
 }

@@ -253,15 +253,20 @@ export async function loadStudyDocumentsSpanning(
   if (!documentIds.length) return [];
 
   // document_chunks_effective, not document_chunks: identical textbooks are
-  // stored once and the other students' documents rows link to that copy
-  // (documents.canonical_document_id). The view resolves the link and still
+  // stored once in the G&D pool and each student's documents row links to that
+  // copy (documents.pooled_document_id). The view resolves the link and still
   // reports the CALLER'S document id, so the filter and grouping are unchanged.
-  // Reading the raw table returns nothing for anyone holding a linked copy.
+  // Reading the raw table returns nothing for anyone holding a pooled copy.
   //
   // Gated on the same flag as the web app: the view is created by the dedup
-  // migration, which is applied by hand. Until it runs there are no linked
+  // migration, which is applied by hand. Until it runs there are no pooled
   // copies, so the raw table is equivalent - and a view that does not exist
   // returns nothing at all. Keep this in step with src/lib/content-hash.ts.
+  //
+  // THIS APP SHIPS SEPARATELY. Flipping the flag on the web does not flip it
+  // here, and stage 5 of the migration deletes the private chunk rows this file
+  // would otherwise read - so the build students have installed must already be
+  // one with this true before that stage runs.
   const DEDUP_SCHEMA_APPLIED = false;
   const { data, error } = await db
     .from(DEDUP_SCHEMA_APPLIED ? "document_chunks_effective" : "document_chunks")

@@ -13,6 +13,7 @@ import {
   pushGamificationToServer,
   type GamificationStats,
 } from "@/lib/gamification";
+import { reconcileServerPoints } from "@/lib/points-ledger";
 
 type LeaderboardRow = {
   user_id: string;
@@ -44,6 +45,12 @@ export function LeaderboardPage() {
     let active = true;
     (async () => {
       setBoardState("loading");
+      // Order matters. Reconcile first so anything the server awarded (today,
+      // only a challenge win) is folded into the local cache, THEN push - so
+      // the total that lands on the leaderboard includes it rather than
+      // overwriting it with a browser total that never knew about it. A no-op
+      // until the ledger migration is applied.
+      await reconcileServerPoints(user.id);
       await pushGamificationToServer(user.id);
       const [top, rank] = await Promise.all([
         supabase.rpc("leaderboard_top", { limit_count: 50 }),

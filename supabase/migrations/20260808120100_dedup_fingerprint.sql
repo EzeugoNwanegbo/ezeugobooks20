@@ -1,23 +1,29 @@
 -- Chunk de-duplication, stage 2 of 5: FINGERPRINT. Computes the identity key.
 --
 -- Writes exactly one derived column - documents.content_hash - and nothing else.
--- No links, no deletions, no behaviour change: content_hash is inert until stage
--- 4 reads it. Undo is `update public.documents set content_hash = NULL;`.
+-- No pool rows, no links, no deletions, no behaviour change: content_hash is
+-- inert until stage 4 reads it. Undo is
+-- `update public.documents set content_hash = NULL where pooled_document_id is null;`
+--
+-- UNCHANGED BY THE MOVE TO A POOL. The fingerprint is a statement about a
+-- document's own stored text; it does not depend on where the shared copy ends
+-- up living, so nothing in this stage differs from the superseded design except
+-- the name of the column that marks a document as already resolved elsewhere.
 --
 -- WHY THIS IS ITS OWN STAGE
 -- -------------------------
 -- The fingerprint is the answer to "how do you know two textbooks are the same",
--- so everything downstream depends on it - the preview's numbers, the merge, the
--- final pre-delete re-check, and the forward path where a new upload matches an
--- existing book. Computing it once and storing it means:
+-- so everything downstream depends on it - the preview's numbers, the pooling,
+-- the final pre-delete re-check, and the forward path where a new upload matches
+-- the pool. Computing it once and storing it means:
 --   * the preview is a fast read instead of a 380 MB hash, so it can be re-run
 --     and argued about freely;
---   * the merge and the preview cannot disagree, because they read the same
+--   * the plan and the preview cannot disagree, because they read the same
 --     stored value rather than each recomputing one;
---   * new uploads can be matched against the existing corpus at all -
---     find_canonical_document() looks up content_hash, so a document without one
---     can never be re-used and the next student to upload that book stores a
---     fresh 3 MB copy of it.
+--   * new uploads can be matched against the pool at all - find_pooled_document()
+--     looks up content_hash, and the link's foreign key re-checks it, so a
+--     document without one can never be re-used and the next student to upload
+--     that book stores a fresh 3 MB copy of it.
 --
 -- WHAT IT HASHES
 -- --------------
@@ -36,10 +42,10 @@
 --     chunk_index)), builds the document's entire text as one value - megabytes
 --     per row, several alive at once inside a GROUP BY. On a free-tier instance
 --     already at its size ceiling that is a needless risk, so
---     public.document_chunkset_digest() hashes each chunk and then hashes the resulting
---     fixed-width lines. Peak memory is a few KB per document. The result is
---     just as decisive: any difference in any chunk's bytes, order, index or
---     page label changes the digest.
+--     public.document_chunkset_digest() hashes each chunk and then hashes the
+--     resulting fixed-width lines. Peak memory is a few KB per document. The
+--     result is just as decisive: any difference in any chunk's bytes, order,
+--     index or page label changes the digest.
 --
 --   * STATEMENT TIMEOUT. A single UPDATE over every document would run for
 --     minutes and this project has been bitten by that before (see the repo's
@@ -50,9 +56,11 @@
 --     again. Nothing needs to be undone if you stop halfway.
 --
 -- ROLLBACK
---   update public.documents set content_hash = NULL;
---   -- (Only do this before stage 4. After links exist, clearing content_hash
---   -- leaves them intact but makes the guard trigger reject any repair.)
+--   update public.documents set content_hash = NULL where pooled_document_id is null;
+--   -- (Only do this before stage 4. A POOLED document's content_hash is half of
+--   -- the foreign key that authorises its link, so clearing it there would
+--   -- either fail or unlink the student from their own book. The WHERE clause
+--   -- above is what keeps this statement safe to paste at any time.)
 
 
 -- ─── 2a. Optional: give the batches room ──────────────────────────────────────
@@ -94,7 +102,7 @@ SELECT
   count(*) FILTER (WHERE d.content_hash IS NULL)     AS still_unhashed,
   count(*) FILTER (WHERE d.content_hash IS NOT NULL) AS hashed
 FROM public.documents d
-WHERE d.canonical_document_id IS NULL
+WHERE d.pooled_document_id IS NULL
   AND EXISTS (SELECT 1 FROM public.document_chunks dc WHERE dc.document_id = d.id);
 
 
@@ -111,12 +119,12 @@ SELECT
   count(*) - count(DISTINCT d.content_hash) AS redundant_copies_implied
 FROM public.documents d
 WHERE d.content_hash IS NOT NULL
-  AND d.canonical_document_id IS NULL;
+  AND d.pooled_document_id IS NULL;
 
 -- (ii) Documents that share a hash but DISAGREE on file_size, page_count or
 --      chunk count. Should be empty. A row here means the hash considers two
 --      documents identical while their metadata says otherwise - do not proceed;
---      investigate before running any merge.
+--      investigate before pooling anything.
 SELECT
   s.content_hash,
   count(*)                        AS copies,
@@ -133,9 +141,11 @@ HAVING count(*) > 1
      OR count(DISTINCT s.chunk_count) > 1);
 
 -- (iii) What the eligibility rules are holding back, and why. These documents
---       will not merge no matter what their hash says. Read the list: if a real
---       textbook appears here, the reason column says which rule caught it and
---       whether that rule needs adjusting.
+--       will not be pooled no matter what their hash says. Read the list: if a
+--       real textbook appears here, the reason column says which rule caught it
+--       and whether that rule needs adjusting. The same rules are enforced again
+--       inside pool_share_document(), so anything listed here also cannot be
+--       shared by a student from the app.
 SELECT reason, count(*) AS documents, sum(chunk_count) AS chunks
 FROM dedup.ineligible
 GROUP BY reason

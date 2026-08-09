@@ -90,8 +90,8 @@ SELECT
 -- not a new threshold.
 --
 -- WHAT IS EXCLUDED, AND WHY
---   * links (canonical_document_id IS NOT NULL) - they hold no chunks BY DESIGN
---     and read the canonical document's. Marking them would break working books.
+--   * pooled documents (pooled_document_id IS NOT NULL) - they hold no chunks BY
+--     DESIGN and read the G&D pool's. Marking them would break working books.
 --   * anything whose extract_status is already set to something other than
 --     'ready'. A server-OCR document mid-flight is legitimately 'processing' and
 --     under-chunked; a previously-marked failure is already correct. This
@@ -115,7 +115,7 @@ SELECT
   END                          AS reason
 FROM public.documents d
 LEFT JOIN public.document_chunks dc ON dc.document_id = d.id
-WHERE d.canonical_document_id IS NULL
+WHERE d.pooled_document_id IS NULL
   AND (d.extract_status IS NULL OR d.extract_status = 'ready')
   AND d.page_count >= 20
 GROUP BY d.id

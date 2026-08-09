@@ -271,17 +271,20 @@ Deno.serve(async (req: Request) => {
     if (!documentId) return json({ error: "documentId is required." }, 400);
 
     // DEDUP_SCHEMA_APPLIED - keep in step with src/lib/content-hash.ts.
-    // canonical_document_id and content_hash are created by the dedup migration,
-    // which is applied by hand. Naming a column PostgREST cannot find fails the
-    // WHOLE query, so selecting it before the migration runs turns every upload
-    // into "Document not found". Flip this with the migration, not before.
+    // pooled_document_id and content_hash, and the refresh_document_content_hash
+    // function used near the end of this file, are created by the dedup
+    // migration, which is applied by hand. Naming a column PostgREST cannot find
+    // fails the WHOLE query, so selecting it before the migration runs turns
+    // every upload into "Document not found". Flip this with the migration, not
+    // before. This edge function is deployed by hand and separately from the web
+    // app, so flipping it there does not flip it here.
     const DEDUP_SCHEMA_APPLIED = false;
 
     const { data: doc, error: docErr } = await admin
       .from("documents")
       .select(
         DEDUP_SCHEMA_APPLIED
-          ? "id, user_id, file_name, storage_path, canonical_document_id"
+          ? "id, user_id, file_name, storage_path, pooled_document_id"
           : "id, user_id, file_name, storage_path",
       )
       .eq("id", documentId)
@@ -289,11 +292,13 @@ Deno.serve(async (req: Request) => {
       .single();
     if (docErr || !doc) return json({ error: "Document not found." }, 404);
 
-    // This document is a link: another documents row already holds the identical
-    // extracted text and this one reads through it (documents.canonical_document_id).
+    // This document is a link: the G&D pool already holds the identical
+    // extracted text and this row reads through it (documents.pooled_document_id).
     // Re-extracting would burn the work and then write a second copy of chunks
     // that resolution never reads - the exact waste the de-duplication removed.
-    if (DEDUP_SCHEMA_APPLIED && (doc as { canonical_document_id?: string | null }).canonical_document_id) {
+    // (RLS would refuse those chunks anyway; this function runs as the service
+    // role and bypasses RLS, so the check has to be here.)
+    if (DEDUP_SCHEMA_APPLIED && (doc as { pooled_document_id?: string | null }).pooled_document_id) {
       await admin
         .from("documents")
         .update({ extract_status: "ready", extract_error: null })
@@ -476,15 +481,21 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Fingerprint what we just wrote so the NEXT student to upload this book
-    // links to it instead of storing a second copy. The browser upload path
-    // hashes before it writes; here the text only exists after the work, so
-    // the hash is stamped afterwards. Best-effort: a missing hash costs
-    // storage on a future upload, nothing else.
-    const { error: hashErr } = await admin.rpc("refresh_document_content_hash", {
-      p_document_id: doc.id,
-    });
-    if (hashErr) console.error("extract-pdf content hash error:", hashErr);
+    // Fingerprint what we just wrote so this book can be offered to the pool and
+    // the NEXT student to upload it links instead of storing a second copy. The
+    // browser upload path hashes before it writes; here the text only exists
+    // after the work, so the hash is stamped afterwards. Best-effort: a missing
+    // hash costs storage on a future upload, nothing else.
+    //
+    // Gated with the same flag as the column above: calling an RPC that does not
+    // exist yet returns PGRST202 and would log a spurious error on every single
+    // extraction until the migration is applied.
+    if (DEDUP_SCHEMA_APPLIED) {
+      const { error: hashErr } = await admin.rpc("refresh_document_content_hash", {
+        p_document_id: doc.id,
+      });
+      if (hashErr) console.error("extract-pdf content hash error:", hashErr);
+    }
 
     // 8. Embeddings, batched and on whatever wall clock is left.
     //

@@ -22,7 +22,15 @@ import {
   uploadAllowanceLabel,
   uploadsUsedToday,
 } from "@/lib/allowances";
-import { emptyGamificationStats, loadGamificationStats } from "@/lib/gamification";
+import {
+  emptyGamificationStats,
+  loadGamificationStats,
+  recordGamificationEvent,
+} from "@/lib/gamification";
+import {
+  ShareWithGdDialog,
+  type SharePromptFile,
+} from "@/components/share-with-gd-dialog";
 import { toast } from "sonner";
 import {
   Upload,
@@ -216,6 +224,18 @@ export function LibraryPage() {
   const [chosenFolder, setChosenFolder] = useState<string>("");
   const [newFolderName, setNewFolderName] = useState<string>("");
   const [saving, setSaving] = useState(false);
+  // The share-with-G&D prompt. ONE per upload batch, never one per file: a
+  // ten-file folder drop is one gesture and deserves one question, and the
+  // answer applies to everything in it. Non-null means the dialog is up.
+  const [sharePrompt, setSharePrompt] = useState<SharePromptFile[] | null>(null);
+  // "Start Chatting" is deferred, not cancelled, when the prompt is raised: the
+  // student asked to go to the chat, so we take them there the moment they have
+  // answered, rather than dropping the intent or talking over it.
+  const [chatAfterPrompt, setChatAfterPrompt] = useState<string | null>(null);
+  // Is the prompt still on screen? A ref, not the state, because an in-flight
+  // share resolves inside a closure that captured the state as it was when the
+  // request started.
+  const sharePromptOpen = useRef(false);
   // Purely-visual: which folder chip is selected in the new pill-filter bar
   // ("all" | "__none" | a folder id). Replaces the old per-folder accordion
   // as the way documents are scoped on screen.
@@ -783,15 +803,25 @@ export function LibraryPage() {
       const readyNames: string[] = [];
       const brokenFiles: { fileName: string; reason: string }[] = [];
       let dedupedCount = 0;
+      // Files this student could contribute to the pool. A file only qualifies
+      // if it finished as 'ready' with every chunk committed AND it was not
+      // already in the pool - a matched upload cost the pool nothing, so there
+      // is nothing to ask about. A broken extraction must never be offered:
+      // pooled, one bad book becomes everyone's bad book.
+      const shareCandidates: SharePromptFile[] = [];
       for (const item of pendingBatch) {
         const tDoc = performance.now();
 
         // De-duplication. Everybody in a year group uploads the same handful of
         // textbooks, and storing each student a private copy of the same chunks
         // is what filled the database. Fingerprint the extracted text and ask
-        // whether we already hold it; if so this document links to that copy and
-        // writes no chunks at all. Saving also becomes near-instant for the
-        // student, since the chunk inserts were the bulk of the wait.
+        // whether the G&D pool already holds it; if so this document links to
+        // the pool and writes no chunks at all. Saving also becomes near-instant
+        // for the student, since the chunk inserts were the bulk of the wait.
+        //
+        // Linking here COSTS THE STUDENT NOTHING AND GIVES NOTHING AWAY: the
+        // pool already had this content, so no sharing decision arises and the
+        // prompt below is deliberately not raised for these files.
         //
         // Fails soft in every direction: no hash, no match, or an errored lookup
         // all fall through to the normal full-copy path. The cost of getting it
@@ -799,15 +829,15 @@ export function LibraryPage() {
         // re-checks the hash before it will accept the link.
         const tHash = performance.now();
         const contentHash = await chunkSetContentHash(item.chunks);
-        let canonicalId: string | null = null;
+        let pooledId: string | null = null;
         if (DEDUP_SCHEMA_APPLIED && contentHash) {
           const { data: existingId, error: lookupErr } = await supabase.rpc(
-            "find_canonical_document",
+            "find_pooled_document",
             { p_content_hash: contentHash },
           );
           if (lookupErr) console.warn("dedup lookup skipped", lookupErr);
-          else canonicalId = (existingId as string | null) ?? null;
-          mark(`dedup-lookup(${canonicalId ? "hit" : "miss"})`, tHash);
+          else pooledId = (existingId as string | null) ?? null;
+          mark(`dedup-lookup(${pooledId ? "hit" : "miss"})`, tHash);
         }
 
         const { data: doc, error: dbErr } = await supabase
@@ -827,36 +857,39 @@ export function LibraryPage() {
             // contentHash describes the chunk set we are ABOUT to write. Writing
             // it here - as this page used to - means an upload interrupted half
             // way (a failed batch, or a closed tab) leaves a row claiming the
-            // whole book while holding a fraction of it. find_canonical_document
-            // matches on content_hash and only checks that SOME chunk exists; it
-            // does not look at extract_status. The next student to upload that
-            // textbook would link to the broken copy and inherit the failure,
-            // and the one after that, and so on. So a fresh copy is hashed only
-            // after its last chunk commits, in the same UPDATE that marks it
-            // ready - which costs no extra round trip.
+            // whole book while holding a fraction of it. A stale hash on a
+            // broken document is not merely untidy: it is what a later
+            // pool_share_document() would fingerprint, so a fraction of a book
+            // could be offered to the pool under the whole book's name. So a
+            // fresh copy is hashed only after its last chunk commits, in the
+            // same UPDATE that marks it ready - which costs no extra round trip.
             //
             // A LINK is the exception and must carry the hash immediately: the
-            // canonical guard trigger refuses any link whose content_hash does
-            // not already equal its target's. It is also true from the moment
-            // the row exists, because the link owns no chunks to get wrong.
+            // composite foreign key (pooled_document_id, content_hash) ->
+            // pool_documents (id, content_hash) refuses any link whose hash does
+            // not already equal the pool row's, and the CHECK constraint beside
+            // it refuses a link with no hash at all. It is also true from the
+            // moment the row exists, because the link owns no chunks to get
+            // wrong. Both columns must be written in the SAME statement - the
+            // key is checked as a pair.
             // Gated: naming a column PostgREST cannot find rejects the entire
             // insert, so these are omitted until the dedup migration is applied.
             ...(DEDUP_SCHEMA_APPLIED
-              ? { content_hash: canonicalId ? contentHash : null, canonical_document_id: canonicalId }
+              ? { content_hash: pooledId ? contentHash : null, pooled_document_id: pooledId }
               : {}),
             // Written WITH the row, not after it, and never optimistically.
             //
-            // A link needs no chunks of its own - it reads the canonical
-            // document's - so it is complete the moment the row exists, exactly
-            // as extract-pdf's dedup branch decides. Everything else is
-            // 'processing' until its last chunk is committed further down.
+            // A link needs no chunks of its own - it reads the pool's - so it is
+            // complete the moment the row exists, exactly as extract-pdf's dedup
+            // branch decides. Everything else is 'processing' until its last
+            // chunk is committed further down.
             //
             // This page used to leave the column NULL from beginning to end,
             // which is why the seven damaged textbooks looked perfectly normal:
             // every reader treats NULL-with-text as ready, so a document holding
             // 100 chunks of a 2,785-page book was listed, searched, and returned
             // nothing, with no hint that anything was wrong.
-            extract_status: canonicalId ? "ready" : "processing",
+            extract_status: pooledId ? "ready" : "processing",
             extract_error: null,
           })
           .select("id")
@@ -868,9 +901,9 @@ export function LibraryPage() {
           continue;
         }
 
-        if (canonicalId) {
-          // Already stored by someone; this document reads through the link.
-          // Skipping the insert here is the entire point of the feature.
+        if (pooledId) {
+          // Already in the pool; this document reads through the link. Skipping
+          // the insert here is the entire point of the feature.
           dedupedCount += 1;
           readyNames.push(item.fileName);
           if (!firstReadyDocId) firstReadyDocId = doc.id;
@@ -928,8 +961,9 @@ export function LibraryPage() {
             const { error: markErr } = await supabase
               .from("documents")
               // content_hash is deliberately NOT written here - see the insert
-              // above. It is still null, so this broken copy can never be chosen
-              // as the canonical for anyone else's upload.
+              // above. It is still null, so this broken copy can never be
+              // matched by anyone else's upload and can never be shared into the
+              // pool (pool_share_document also refuses anything not 'ready').
               .update({ extract_status: "error", extract_error: message })
               .eq("id", doc.id);
             // If even the marking fails the row stays 'processing' - still not
@@ -970,6 +1004,13 @@ export function LibraryPage() {
 
         readyNames.push(item.fileName);
         if (!firstReadyDocId) firstReadyDocId = doc.id;
+        // Everything above committed and the row says 'ready', so this document
+        // is genuinely offerable. contentHash is required too: it is null
+        // exactly when the content is not safe to de-duplicate on (under 1,000
+        // characters, gappy indexes, no Web Crypto), which is the same set
+        // pool_share_document() would refuse anyway. Better not to ask than to
+        // ask and then explain a refusal.
+        if (contentHash) shareCandidates.push({ id: doc.id, fileName: item.fileName });
       }
 
       const savedCount = readyNames.length;
@@ -1027,7 +1068,31 @@ export function LibraryPage() {
       // Only hand a COMPLETE document to the chat. Opening a conversation
       // grounded on a book that saved 200 of its 1,500 sections is the exact
       // silent failure this whole change exists to remove.
-      if (thenChat && firstReadyDocId && pendingBatch.length === 1) {
+      const wantsChat = Boolean(thenChat && firstReadyDocId && pendingBatch.length === 1);
+
+      // THE SHARE PROMPT. One per batch, raised only when there is something
+      // real to ask about, and never for:
+      //   * a guest - an anonymous session is discarded the moment it is signed
+      //     out, so crediting one is a promise the app cannot keep, and
+      //     anonymous accounts can be minted on demand, which would make the
+      //     daily points cap free to bypass. pool_share_document() refuses them
+      //     independently, so showing the prompt would only be offering an
+      //     action that always errors. Guests upload exactly as they do today;
+      //   * anything that did not finish as 'ready';
+      //   * anything already resolved to the pool - it cost the pool nothing.
+      // Gated on DEDUP_SCHEMA_APPLIED: with the flag off shareCandidates is
+      // never consulted, so no dialog, no RPC and no new column is touched.
+      if (DEDUP_SCHEMA_APPLIED && !isGuestUser(user) && shareCandidates.length > 0) {
+        setChatAfterPrompt(wantsChat ? firstReadyDocId : null);
+        sharePromptOpen.current = true;
+        setSharePrompt(shareCandidates);
+        // Refresh underneath, so answering lands on an up-to-date library
+        // rather than a stale one.
+        await refresh();
+        return;
+      }
+
+      if (wantsChat && firstReadyDocId) {
         // Hand the new document to the chat as its search context and jump
         // straight into a fresh conversation - "upload, then start chatting".
         stageDocForChat(user.id, firstReadyDocId);
@@ -1043,6 +1108,84 @@ export function LibraryPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  // ── The share prompt's two exits ────────────────────────────────────────────
+  //
+  // "Keep for me" writes NOTHING - no row, no flag, no request. That is what
+  // makes a dialog with no X honest rather than a trap: the quiet answer cannot
+  // fail, cannot be offline, and is always one click away even after a share has
+  // just failed. It is also why nothing is persisted about the choice: the
+  // question belongs to this upload, and a student who wants to share later can
+  // upload again or use the card's own share action.
+  const closeSharePrompt = () => {
+    sharePromptOpen.current = false;
+    setSharePrompt(null);
+    const chatDocId = chatAfterPrompt;
+    setChatAfterPrompt(null);
+    if (chatDocId && user) {
+      stageDocForChat(user.id, chatDocId);
+      navigate({ to: "/app/chat", search: {} });
+    }
+  };
+
+  /**
+   * Contribute every file the prompt covers. Returns an error message if any of
+   * them failed, or null when they all landed.
+   *
+   * Per file, not all-or-nothing: pool_share_document() is one transaction per
+   * document, so a batch where the third file is refused still leaves the first
+   * two properly shared. The failures stay in the dialog for a retry; the
+   * successes do not come back a second time and are not paid twice.
+   */
+  const shareBatchWithGandd = async (): Promise<string | null> => {
+    if (!user || !sharePrompt || sharePrompt.length === 0) return null;
+
+    const failures: SharePromptFile[] = [];
+    const problems: string[] = [];
+    let shared = 0;
+
+    for (const file of sharePrompt) {
+      const { error } = await supabase.rpc("pool_share_document", {
+        p_document_id: file.id,
+      });
+      if (error) {
+        console.warn("pool share failed", file.fileName, error);
+        failures.push(file);
+        problems.push(`"${file.fileName}": ${error.message}`);
+      } else {
+        shared += 1;
+      }
+    }
+
+    if (shared > 0) {
+      // One event carrying the count, so the daily cap applies to the whole
+      // gesture exactly as it would to ten separate ones.
+      recordGamificationEvent(user.id, "document_shared", { count: shared });
+      toast.success(
+        shared === 1
+          ? "Thank you — it's in our safe hands now. Deleting your copy won't affect it."
+          : `Thank you — ${shared} files are in our safe hands now.`,
+      );
+      void refresh();
+    }
+
+    if (failures.length > 0) {
+      // The student may have pressed "Keep for me" while this was in flight -
+      // that button is deliberately never disabled. If they did, the dialog is
+      // gone and it must NOT come back: reopening a dialog with no X, after the
+      // student explicitly closed it, would be the trap in its purest form.
+      if (!sharePromptOpen.current) return null;
+      // Narrow the dialog to what is left to try, so a retry is a retry and not
+      // a re-run. Already-shared documents would be no-ops anyway
+      // (pool_share_document is idempotent), but the count on screen has to be
+      // true.
+      setSharePrompt(failures);
+      return problems.join(" ");
+    }
+
+    closeSharePrompt();
+    return null;
   };
 
   const cancelAssign = () => {
@@ -1687,6 +1830,17 @@ export function LibraryPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* The share prompt. Rendered last so it sits above the folder modal, and
+          only ever raised after that modal has closed - the two are never up at
+          the same time. */}
+      {sharePrompt && sharePrompt.length > 0 && (
+        <ShareWithGdDialog
+          files={sharePrompt}
+          onKeep={closeSharePrompt}
+          onShare={shareBatchWithGandd}
+        />
       )}
     </div>
   );

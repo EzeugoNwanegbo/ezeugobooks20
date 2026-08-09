@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { BrainCircuit, ChevronRight, FileText, History, Route, Zap } from "lucide-react";
+import { BrainCircuit, ChevronRight, FileText, History, Play, Route, Zap } from "lucide-react";
 import { StageProgress, type ProgressStage } from "@/components/stage-progress";
+import { ChallengeFriendButton } from "@/components/challenge-friend-button";
+import { friendList, socialEnabled, MAX_CHALLENGE_QUESTIONS } from "@/lib/social";
 import { TimerPicker } from "@/components/timer-picker";
 import { chosenTimerSeconds, timerChoiceBlocker, useTimerChoice } from "@/lib/use-timer-choice";
 import { toast } from "sonner";
@@ -115,12 +117,59 @@ export function StudyBodyPage() {
   // Which real step the build is on, and the failure that stopped it.
   const [stageIndex, setStageIndex] = useState(0);
   const [stageError, setStageError] = useState<string | null>(null);
+  // A set that has just been built and is being OFFERED rather than opened, so
+  // there is somewhere to put "challenge a friend" beside "start practising".
+  // Only ever set when the set is challengeable - see canOfferChallenge below -
+  // so for everyone else this flow still goes straight into the questions.
+  const [builtSet, setBuiltSet] = useState<{
+    planId: string;
+    sessionId: string;
+    title: string;
+  } | null>(null);
+  const [hasFriends, setHasFriends] = useState(false);
 
   const timer = useTimerChoice(straightCount);
   // The clock rides on the sets that keep an elapsed time — the same rule the
   // practice screen uses. A written-answer set has no such clock, so offering a
   // timer there would show a countdown that could never pay out.
   const straightSupportsTimer = straightType !== "essay";
+
+  // Does this student have anyone to challenge? ChallengeFriendButton answers
+  // the same question for itself and renders nothing when the answer is no, so
+  // this is not a gate on the button - it is a gate on the CARD the button sits
+  // in. Without it, a student with no friends would be handed an extra "your set
+  // is ready" click on the way to questions they asked for, in exchange for a
+  // button that renders nothing. friendList() makes no network call at all while
+  // the social flag is off, so this effect is inert rather than merely harmless.
+  useEffect(() => {
+    if (!socialEnabled(user)) {
+      setHasFriends(false);
+      return;
+    }
+    let active = true;
+    void friendList()
+      .then((rows) => {
+        if (active) setHasFriends(rows.length > 0);
+      })
+      .catch(() => {
+        // A friends list that will not load is not a reason to change My Coach.
+        if (active) setHasFriends(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  // Every condition the server enforces on a challenge set, checked before the
+  // offer is made rather than after it is refused (challenge_create raises on
+  // each of these):
+  //   * MCQ only - an essay has no key the server can compare against, so both
+  //     scores could not be settled the same way;
+  //   * at most 12 questions - MAX_CHALLENGE_QUESTIONS, mirrored from the server;
+  //   * the caller's own, in progress and untouched, which a set that was built
+  //     one line ago and not yet opened always is.
+  const canOfferChallenge =
+    straightType === "mcq" && straightCount <= MAX_CHALLENGE_QUESTIONS && hasFriends;
 
   // Default the style to whatever the student last finished a set in, rather
   // than to a number we picked. Silent when there is nothing to go on.
@@ -213,6 +262,7 @@ export function StudyBodyPage() {
 
     setStageIndex(0);
     setStageError(null);
+    setBuiltSet(null);
     setLoading(true);
     try {
       const chosen = docs.filter((doc) => selectedDocIds.includes(doc.id));
@@ -235,6 +285,17 @@ export function StudyBodyPage() {
       });
       setSelectedDocIds([]);
       setPlanTitle("");
+      if (canOfferChallenge) {
+        // Hold here instead of opening the questions. This is the only moment
+        // the set is guaranteed to satisfy everything challenge_create() checks:
+        // it exists, it is the student's own, it is in progress, every question
+        // is an MCQ, and nobody has answered anything - no study_answers rows
+        // and no draftAnswers in feedback, because the practice screen has not
+        // been opened yet. One click later, in Learning mode, the first answer
+        // is graded and the set stops being a contest.
+        setBuiltSet({ planId, sessionId, title });
+        return;
+      }
       navigate({ to: "/app/practice", search: { plan: planId, session: sessionId } });
     } catch (err) {
       // Both: the toast for the student who has scrolled away, and the stopped
@@ -266,6 +327,7 @@ export function StudyBodyPage() {
 
     setStageIndex(0);
     setStageError(null);
+    setBuiltSet(null);
     setLoading(true);
     try {
       // Step 1 of the progress line: retrieval. For a single-topic roadmap we
@@ -391,6 +453,7 @@ export function StudyBodyPage() {
                 onChange={(option) => {
                   setEntry(option);
                   setStageError(null);
+                  setBuiltSet(null);
                 }}
                 getLabel={(option) =>
                   option === "roadmap" ? "Follow a roadmap" : "Go straight in"
@@ -580,6 +643,39 @@ export function StudyBodyPage() {
                 currentIndex={stageIndex}
                 error={loading ? null : stageError}
               />
+            )}
+
+            {/* The freshly-built set, offered rather than opened. Only reached
+                when canOfferChallenge was true, so "Challenge a friend" always
+                has something to render beside "Start practising" here. */}
+            {builtSet && (
+              <div className="mt-3 rounded-xl border border-pop/40 bg-pop/[0.07] p-3.5">
+                <div className="text-sm font-semibold">Your set is ready</div>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  {straightCount} multiple-choice questions on{" "}
+                  <span className="font-medium text-foreground">{builtSet.title}</span>. Practise it
+                  yourself, or send it to a friend and compare scores — they get the same questions.
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() =>
+                      navigate({
+                        to: "/app/practice",
+                        search: { plan: builtSet.planId, session: builtSet.sessionId },
+                      })
+                    }
+                    className="btn-pop inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold"
+                  >
+                    <Play className="h-4 w-4" />
+                    Start practising
+                  </button>
+                  <ChallengeFriendButton sessionId={builtSet.sessionId} title={builtSet.title} />
+                </div>
+                <p className="mt-2.5 text-[11px] leading-relaxed text-muted-foreground">
+                  Send it before you answer anything: once you have seen an answer the set is no
+                  longer a fair contest, and it can no longer be sent.
+                </p>
+              </div>
             )}
           </div>
 

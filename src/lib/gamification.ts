@@ -11,6 +11,10 @@ export type GamificationEvent =
   | "streak_milestone"
   | "roadmap_completed"
   | "streak_broken"
+  // Contributing a document's chunks to the G&D pool, from the prompt raised
+  // after an upload. Not the same thing as "Share with everyone" on a card,
+  // which submits a book to the moderated shared library and pays on approval.
+  | "document_shared"
   // Multiplayer. The constants are defined so the points table is reviewable in
   // one place, but NOTHING records them — see docs/gamification-plan.md. They
   // stay unwired until points are server-authoritative.
@@ -65,6 +69,11 @@ export const EVENT_POINTS: Record<GamificationEvent, number> = {
   streak_milestone: 0, // the real value comes from STREAK_MILESTONES below
   roadmap_completed: 100,
   streak_broken: -5,
+  // Deliberately the same as one correct My Coach answer. Sharing is generous,
+  // not heroic: the student gives up nothing (they keep the file and every
+  // search over it) and the pool saves G&D one stored copy. Pricing it above a
+  // question would turn the upload page into the fastest way to earn points.
+  document_shared: 10,
   pvp_win: 20,
   boss_battle_win: 50,
 };
@@ -80,6 +89,7 @@ const EVENT_LABELS: Record<GamificationEvent, string> = {
   streak_milestone: "Streak milestone",
   roadmap_completed: "Completed roadmap",
   streak_broken: "Streak break",
+  document_shared: "Shared a document with G&D",
   pvp_win: "Won a battle",
   boss_battle_win: "Beat a boss",
 };
@@ -103,6 +113,28 @@ export const DAILY_POINT_CAPS: Partial<Record<GamificationEvent, number>> = {
   coach_beat_timer: 15,
   weekend_mission: 15,
   roadmap_completed: 100,
+  // Three shares a day. The same reasoning as coach_question_correct, and it
+  // bites harder because the action is cheaper: dropping a folder of 50 PDFs is
+  // ONE gesture, and at 10 points each with no cap it would mint 500 points -
+  // two ranks - for a drag and a click. Nor is "one per distinct book" a defence
+  // the client could enforce; changing a single byte of a file changes its
+  // extracted text and therefore its content hash, so the pool would accept it
+  // as new. A cap is the only honest limit, and 30 is roughly what a real day of
+  // adding new material looks like. Past that, the saving is its own reward.
+  //
+  // Note where this is NOT enforced: points are still client-side (see
+  // docs/gamification-plan.md), so this cap is a fairness rail, not a security
+  // boundary. The server-side limit that matters is pool_share_document()
+  // refusing guests and refusing anything not 'ready'.
+  document_shared: 30,
+  // Two wins a day. Unlike every other entry here this one IS enforced
+  // server-side: award_challenge_win() passes exactly this number to
+  // award_points(), which applies it in SQL against point_events. It is listed
+  // here so the points table stays reviewable in one place. The reasoning is
+  // written out in supabase/migrations/20260810120300_award_challenge_win.sql -
+  // in short, a student and a friend can otherwise trade wins all night, and at
+  // 20 apiece that is the cheapest points in the system.
+  pvp_win: 40,
 };
 
 /** Streak lengths that pay a one-off bonus, and what each pays. */
@@ -253,7 +285,9 @@ export function remainingDailyAllowance(stats: GamificationStats, type: Gamifica
  * What a normal day of studying is still worth. Deliberately excludes
  * roadmap_completed: finishing a whole roadmap is not something a student can
  * decide to do this afternoon, and counting it would advertise 300+ points that
- * are not actually on the table.
+ * are not actually on the table. document_shared is excluded for the same
+ * reason and one more: advertising it as points on the table would turn a
+ * generous act into a target, which is precisely what the prompt must not do.
  */
 const DAILY_HEADLINE_EVENTS: GamificationEvent[] = [
   "chat_entered",
@@ -377,6 +411,58 @@ export function recordWeekendMissionIfDue(userId: string) {
 /** Push the locally-stored stats to the shared leaderboard (e.g. on page open). */
 export async function pushGamificationToServer(userId: string) {
   await syncLeaderboard(userId, loadGamificationStats(userId));
+}
+
+/** One award the SERVER granted, as point_events recorded it. */
+export type ServerAward = {
+  /** Stable per award, so the same one is never counted twice. */
+  id: string;
+  /** A GamificationEvent name, but typed loosely: the ledger is not this file. */
+  type: string;
+  points: number;
+  createdAt: string;
+};
+
+/**
+ * Fold awards the server granted into this device's cache.
+ *
+ * Deliberately NOT recordGamificationEvent(): that function decides an amount
+ * from EVENT_POINTS, applies a daily cap, and moves the streak. All three have
+ * already happened on the server for these awards - award_points() applies the
+ * same caps in SQL - and doing any of them again would either halve the award or
+ * pay a streak day for something that was not studied today.
+ *
+ * So this only adds the number, records the line for the "Recent points" panel,
+ * and saves (which pushes the new total to the leaderboard). Caller
+ * de-duplicates by ledger id; see reconcileServerPoints in
+ * src/lib/points-ledger.ts. Returns the points actually added.
+ */
+export function reconcilePointsFromServer(userId: string, awards: ServerAward[]): number {
+  if (!awards.length) return 0;
+  const stats = loadGamificationStats(userId);
+  const seen = new Set(stats.events.map((event) => event.id));
+  let applied = 0;
+
+  for (const award of awards) {
+    if (seen.has(award.id)) continue;
+    if (!Number.isFinite(award.points) || award.points === 0) continue;
+    seen.add(award.id);
+    applied += award.points;
+    stats.events.unshift({
+      id: award.id,
+      type: (award.type as GamificationEvent) ?? "pvp_win",
+      points: award.points,
+      createdAt: award.createdAt,
+      label: EVENT_LABELS[award.type as GamificationEvent] ?? "Points awarded",
+    });
+  }
+
+  if (applied === 0) return 0;
+  stats.points = Math.max(0, stats.points + applied);
+  stats.weeklyPoints = Math.max(0, stats.weeklyPoints + applied);
+  stats.events = stats.events.slice(0, 30);
+  saveGamificationStats(userId, stats);
+  return applied;
 }
 
 /**

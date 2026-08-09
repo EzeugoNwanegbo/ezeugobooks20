@@ -53,6 +53,12 @@ import {
 import { TimerPicker } from "@/components/timer-picker";
 import { chosenTimerSeconds, timerChoiceBlocker, useTimerChoice } from "@/lib/use-timer-choice";
 import { submitChallengeForSession } from "@/lib/social";
+import {
+  gradeMcqOnServer,
+  loadQuestionsWithheld,
+  MCQ_GRADING_APPLIED,
+  type McqGrade,
+} from "@/lib/mcq-grading";
 
 type PracticeSearch = { plan?: string; session?: string; mode?: PracticeMode };
 
@@ -65,8 +71,13 @@ type Flashcard = {
   source_refs: unknown[];
 };
 
-// Local grade for a single question. MCQ grades are computed on-device by
-// comparing against the stored correct option; essays carry the AI grade.
+// Grade for a single question.
+//
+// With MCQ_GRADING_APPLIED, an MCQ's grade is decided by public.study_mcq_grade()
+// from study_questions.correct_answer, which the browser has not been sent - the
+// key only arrives back WITH the grade, at the moment the answer is submitted.
+// Before the migration is applied it is still computed on-device against the
+// stored key, exactly as it always was. Essays carry the AI grade either way.
 type Grade = {
   is_correct: boolean | null;
   score: number | null;
@@ -959,6 +970,10 @@ function SessionView({
 
   // Mode-aware (MCQ / Mixed) practice state.
   const [grades, setGrades] = useState<Record<string, Grade>>({});
+  // Learning-mode MCQs whose answer is with the server and whose grade has not
+  // come back yet. Without this the option buttons stay live across the round
+  // trip and a second tap answers the question twice.
+  const [gradingIds, setGradingIds] = useState<Record<string, true>>({});
   const [examSubmitted, setExamSubmitted] = useState(false);
   const [revealedEssays, setRevealedEssays] = useState<Record<string, boolean>>({});
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -1008,19 +1023,35 @@ function SessionView({
       setSession(sessionRow);
       setCompleted(sessionRow.status === "completed");
 
-      const [{ data: questionData }, { data: topicData }] = await Promise.all([
-        db
+      // The question read. With the withholding migration applied this goes
+      // through study_session_questions(), which returns correct_answer as ""
+      // and explanation as null for any MCQ this student has not yet submitted
+      // an answer to - so the key for an unanswered question never reaches the
+      // browser at all, rather than reaching it and being politely ignored.
+      // Essays and flashcards come back unchanged: an essay's "key" is its model
+      // answer, which Learning mode deliberately offers behind a button and the
+      // AI grader needs sent back to it, and a flashcard's is the back of the
+      // card. Neither can be compared against, so neither decides a contest.
+      const [withheld, { data: topicData }] = await Promise.all([
+        loadQuestionsWithheld(sessionId),
+        db.from("study_topics").select("title").eq("id", sessionRow.topic_id).single(),
+      ]);
+      if (!active) return;
+
+      let rows: QuestionRow[];
+      if (withheld) {
+        rows = withheld;
+      } else {
+        const { data: questionData } = await db
           .from("study_questions")
           .select(
             "id, session_id, question_type, prompt, options, correct_answer, explanation, rubric, source_refs, difficulty, position",
           )
           .eq("session_id", sessionId)
-          .order("position", { ascending: true }),
-        db.from("study_topics").select("title").eq("id", sessionRow.topic_id).single(),
-      ]);
-      if (!active) return;
-
-      const rows = (questionData as QuestionRow[]) ?? [];
+          .order("position", { ascending: true });
+        if (!active) return;
+        rows = (questionData as QuestionRow[]) ?? [];
+      }
       setTopicTitle(((topicData as { title?: string } | null)?.title ?? "").toString());
 
       if (sessionRow.question_type === "flashcard") {
@@ -1080,6 +1111,62 @@ function SessionView({
             if (fb?.draftRevealed && typeof fb.draftRevealed === "object") {
               setRevealedEssays(fb.draftRevealed);
             }
+
+            // Resume-in-place, with the keys withheld: re-submit the MCQs this
+            // sitting has already answered so the server hands their keys back.
+            //
+            // It matters for one case in particular. A Learning-mode set that
+            // was started BEFORE this migration has draftGrades but no
+            // study_answers rows, because the old client only wrote answers on
+            // finish. Without this the student would come back to questions the
+            // page shows as graded, with no correct option highlighted and no
+            // explanation - the drafts say "answered", the server says "not
+            // answered", and the server is the one holding the key.
+            //
+            // For a set started after the migration it is a no-op that costs one
+            // round trip: study_mcq_grade() replaces rather than appends, and
+            // re-grading the same answer against the same key cannot change it.
+            const draftMcq: Record<string, string> = {};
+            for (const row of rows) {
+              if (row.question_type !== "mcq") continue;
+              const answer = fb?.draftAnswers?.[row.id];
+              if (typeof answer === "string" && answer.trim()) draftMcq[row.id] = answer;
+            }
+            if (MCQ_GRADING_APPLIED && Object.keys(draftMcq).length > 0) {
+              try {
+                const results = await gradeMcqOnServer(sessionId, draftMcq);
+                if (!active) return;
+                if (results?.length) {
+                  const keys = new Map(results.map((result) => [result.question_id, result]));
+                  setQuestions((current) =>
+                    current.map((question) => {
+                      const key = keys.get(question.id);
+                      return key
+                        ? {
+                            ...question,
+                            correct_answer: key.correct_answer,
+                            explanation: key.explanation,
+                          }
+                        : question;
+                    }),
+                  );
+                  setGrades((current) => {
+                    const next = { ...current };
+                    for (const result of results) {
+                      next[result.question_id] = {
+                        is_correct: result.is_correct,
+                        score: result.is_correct ? 1 : 0,
+                      };
+                    }
+                    return next;
+                  });
+                }
+              } catch {
+                // The set is still playable; only the already-answered questions
+                // show without their key until the next submit.
+              }
+            }
+
             // Start the timer used by Exam mode for this sitting.
             setStartedAt(Date.now());
           }
@@ -1253,26 +1340,93 @@ function SessionView({
     }
   };
 
+  // The pre-migration path: compare on-device against a key the browser was
+  // sent. Kept, unchanged, because MCQ_GRADING_APPLIED is false until the owner
+  // applies 20260810120000_mcq_server_grading.sql by hand, and a page that
+  // called a function the database does not have would fail outright.
   const gradeMcq = (question: QuestionRow, answer: string | undefined): Grade => {
     const correct = (answer ?? "") === question.correct_answer;
     return { is_correct: correct, score: correct ? 1 : 0 };
   };
 
-  // Learning mode: lock the question and grade it the instant an option is picked.
-  const answerLearningMcq = (question: QuestionRow, optionId: string) => {
-    if (completed || grades[question.id]) return;
-    setAnswers((current) => ({ ...current, [question.id]: optionId }));
-    setGrades((current) => ({ ...current, [question.id]: gradeMcq(question, optionId) }));
+  // Fold what the server returned back into the page: the grade, and the key +
+  // explanation it released along with it. Merging the key into `questions`
+  // rather than into a second map is what keeps AnswerFeedback and the option
+  // colouring below reading `question.correct_answer` exactly as they did.
+  const applyServerGrades = (results: McqGrade[]): Record<string, Grade> => {
+    const map: Record<string, Grade> = {};
+    for (const result of results) {
+      map[result.question_id] = { is_correct: result.is_correct, score: result.is_correct ? 1 : 0 };
+    }
+    const keys = new Map(results.map((result) => [result.question_id, result]));
+    setQuestions((current) =>
+      current.map((question) => {
+        const key = keys.get(question.id);
+        return key
+          ? { ...question, correct_answer: key.correct_answer, explanation: key.explanation }
+          : question;
+      }),
+    );
+    return map;
   };
 
-  // MCQs are graded on-device against the stored key; essays still need the AI.
+  // Learning mode: lock the question and grade it the instant an option is picked.
+  const answerLearningMcq = async (question: QuestionRow, optionId: string) => {
+    if (completed || grades[question.id] || gradingIds[question.id]) return;
+    setAnswers((current) => ({ ...current, [question.id]: optionId }));
+
+    if (!MCQ_GRADING_APPLIED) {
+      setGrades((current) => ({ ...current, [question.id]: gradeMcq(question, optionId) }));
+      return;
+    }
+
+    setGradingIds((current) => ({ ...current, [question.id]: true }));
+    try {
+      const results = await gradeMcqOnServer(session?.id ?? sessionId, {
+        [question.id]: optionId,
+      });
+      const map = applyServerGrades(results ?? []);
+      const grade = map[question.id];
+      if (!grade) throw new Error("That answer was not graded.");
+      setGrades((current) => ({ ...current, [question.id]: grade }));
+    } catch (err) {
+      // Leave the question unanswered rather than showing a grade nobody
+      // computed: the selection is rolled back so the student can pick again.
+      setAnswers((current) => {
+        const next = { ...current };
+        delete next[question.id];
+        return next;
+      });
+      toast.error(err instanceof Error ? err.message : "Could not grade that answer");
+    } finally {
+      setGradingIds((current) => {
+        const next = { ...current };
+        delete next[question.id];
+        return next;
+      });
+    }
+  };
+
+  // MCQs are graded by the server (or, pre-migration, on-device against the
+  // stored key); essays still need the AI.
   const buildGrades = async (): Promise<{
     map: Record<string, Grade>;
     review: StudyReview | null;
   }> => {
-    const map: Record<string, Grade> = {};
-    for (const question of questions) {
-      if (question.question_type === "mcq") {
+    let map: Record<string, Grade> = {};
+    const mcqs = questions.filter((question) => question.question_type === "mcq");
+    if (MCQ_GRADING_APPLIED && mcqs.length) {
+      // One call for the whole set. Safe to re-send questions Learning mode has
+      // already graded: study_mcq_grade() replaces rather than appends, so a
+      // resubmit cannot leave two answer rows for one question.
+      const submitted: Record<string, string> = {};
+      for (const question of mcqs) {
+        const answer = answers[question.id];
+        if (answer) submitted[question.id] = answer;
+      }
+      map = applyServerGrades((await gradeMcqOnServer(session?.id ?? sessionId, submitted)) ?? []);
+    } else {
+      for (const question of mcqs) {
         map[question.id] = gradeMcq(question, answers[question.id]);
       }
     }
@@ -1318,23 +1472,29 @@ function SessionView({
     elapsed: number | null,
   ): Promise<{ mastered: boolean; percentage: number } | undefined> => {
     if (!user || !session) return undefined;
-    const answerRows = questions.map((question) => {
-      const grade = map[question.id] ?? { is_correct: null, score: null };
-      return {
-        user_id: user.id,
-        question_id: question.id,
-        session_id: session.id,
-        answer: answers[question.id] ?? "",
-        is_correct: grade.is_correct,
-        score: grade.score,
-        feedback: grade.feedback ?? "",
-        missing_points: grade.missing_points ?? [],
-      };
-    });
+    // MCQ answer rows are written by study_mcq_grade() as part of grading, so
+    // writing them again here would duplicate every one of them. Essays are
+    // still written from here: their grade is the AI's, not a comparison, and
+    // nothing server-side has recorded it.
+    const answerRows = questions
+      .filter((question) => !(MCQ_GRADING_APPLIED && question.question_type === "mcq"))
+      .map((question) => {
+        const grade = map[question.id] ?? { is_correct: null, score: null };
+        return {
+          user_id: user.id,
+          question_id: question.id,
+          session_id: session.id,
+          answer: answers[question.id] ?? "",
+          is_correct: grade.is_correct,
+          score: grade.score,
+          feedback: grade.feedback ?? "",
+          missing_points: grade.missing_points ?? [],
+        };
+      });
     const points = questions.reduce((sum, question) => sum + gradePoints(map[question.id]), 0);
     const percentage = questions.length ? Math.round((points / questions.length) * 100) : 0;
 
-    await db.from("study_answers").insert(answerRows);
+    if (answerRows.length) await db.from("study_answers").insert(answerRows);
     await db
       .from("study_sessions")
       .update({
@@ -1759,7 +1919,8 @@ function SessionView({
                     {questions.map((question, index) => {
                       const grade = grades[question.id];
                       const isMcq = question.question_type === "mcq";
-                      const locked = mode === "learning" && isMcq && !!grade;
+                      const locked =
+                        mode === "learning" && isMcq && (!!grade || !!gradingIds[question.id]);
                       const showFeedback =
                         mode === "learning" &&
                         (isMcq ? !!grade : !!revealedEssays[question.id] || !!grade);
@@ -1793,14 +1954,16 @@ function SessionView({
                                   <button
                                     key={option.id}
                                     disabled={completed || locked}
-                                    onClick={() =>
-                                      mode === "learning"
-                                        ? answerLearningMcq(question, option.id)
-                                        : setAnswers((current) => ({
-                                            ...current,
-                                            [question.id]: option.id,
-                                          }))
-                                    }
+                                    onClick={() => {
+                                      if (mode === "learning") {
+                                        void answerLearningMcq(question, option.id);
+                                      } else {
+                                        setAnswers((current) => ({
+                                          ...current,
+                                          [question.id]: option.id,
+                                        }));
+                                      }
+                                    }}
                                     className={`flex w-full items-start gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition-colors disabled:cursor-default ${cls}`}
                                   >
                                     <span className="shrink-0 font-semibold">{option.id}</span>

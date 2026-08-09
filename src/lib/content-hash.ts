@@ -2,9 +2,11 @@
 //
 // ── OFF UNTIL THE MIGRATION IS APPLIED ──────────────────────────────────────
 // Everything below depends on schema that does not exist in production yet:
-// documents.content_hash, documents.canonical_document_id, the
-// find_canonical_document() function and the document_chunks_effective view,
-// all created by supabase/migrations/20260808120000_dedup_document_chunks_schema.sql.
+// documents.content_hash, documents.pooled_document_id, the pool_documents /
+// pool_document_chunks tables, the find_pooled_document() and
+// pool_share_document() functions and the document_chunks_effective view, all
+// created by supabase/migrations/20260808120000_dedup_document_chunks_schema.sql
+// and the four staged files after it.
 //
 // That migration is deliberately run by hand, in stages, after previewing what
 // it would merge - so the app must not assume it has run. Naming a column that
@@ -12,13 +14,27 @@
 // down in production once already. Every reference is therefore gated on this
 // flag. Flip it to true in the same change that applies the migration, not
 // before, and not in a separate deploy.
+//
+// THREE OTHER COPIES OF THIS FLAG must be flipped in the same change, because
+// they ship separately and cannot import this one:
+//   supabase/functions/extract-pdf/index.ts   (edge function, deployed by hand)
+//   supabase/functions/ocr-worker/index.ts    (edge function, deployed by hand)
+//   gandd-mobile/lib/studybody-data.ts        (Capacitor app, ships separately)
 export const DEDUP_SCHEMA_APPLIED = false;
 //
 // Several students upload the same textbook. Before this, each upload stored its
 // own full copy of the extracted chunks - 51% of document_chunks was redundant
 // copies, which is what pushed the database past the free-tier ceiling. Now a
-// new upload is fingerprinted first: if the same content is already stored, the
-// documents row links to it (canonical_document_id) and no chunks are written.
+// new upload is fingerprinted first: if the same content is already stored in
+// the G&D pool, the documents row links to it (pooled_document_id) and no chunks
+// are written.
+//
+// THE SHARED COPY BELONGS TO G&D, NOT TO ANOTHER STUDENT. pool_documents rows
+// are owner-less - no user_id, no cascade from auth.users - so one student
+// deleting their file, or their whole account, cannot empty the book for anyone
+// else. That is the promise the share prompt makes ("this document is in our
+// safe hands now - a delete won't affect us") and it is a property of the
+// schema, not of the wording.
 //
 // WHAT IS HASHED, AND WHY IT IS THE EXTRACTED TEXT RATHER THAN THE FILE
 // ---------------------------------------------------------------------
@@ -30,7 +46,8 @@ export const DEDUP_SCHEMA_APPLIED = false;
 // the right direction: a re-saved or re-compressed PDF has different bytes and
 // identical text, and would still de-duplicate.
 //
-// MUST STAY BYTE-COMPATIBLE WITH dedup.chunkset_digest() IN
+// MUST STAY BYTE-COMPATIBLE WITH public.document_chunkset_digest() AND
+// public.pool_chunkset_digest() IN
 // supabase/migrations/20260808120000_dedup_document_chunks_schema.sql.
 // If the two ever disagree, no upload will ever match an existing book again -
 // it fails silently and safely (worse storage, never wrong content), but it

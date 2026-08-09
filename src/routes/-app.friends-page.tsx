@@ -27,6 +27,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { ChallengeFriendDialog } from "@/components/challenge-friend-dialog";
 import { useAuth } from "@/lib/auth-context";
 import { isGuestUser } from "@/lib/guest-session";
+import { reconcileServerPoints } from "@/lib/points-ledger";
 import {
   SOCIAL_SCHEMA_APPLIED,
   USERNAME_PATTERN,
@@ -93,12 +94,18 @@ export function FriendsPage() {
       setFriends(f);
       setRequests(r);
       setChallenges(c);
+      // listChallenges() sweeps first, which is where a finished contest is
+      // actually resolved - and therefore where a win is actually awarded. Pick
+      // the award up straight away so the points appear with the result rather
+      // than the next time the leaderboard is opened. A no-op until the ledger
+      // migration is applied, and it never throws.
+      if (user) await reconcileServerPoints(user.id);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not load your friends.");
     } finally {
       setLoading(false);
     }
-  }, [enabled]);
+  }, [enabled, user]);
 
   useEffect(() => {
     void refresh();

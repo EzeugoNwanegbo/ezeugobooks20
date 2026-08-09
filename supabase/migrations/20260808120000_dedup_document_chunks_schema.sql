@@ -1,10 +1,10 @@
--- Chunk de-duplication, stage 1 of 5: schema, guards, RLS and consumers.
+-- Chunk de-duplication, stage 1 of 5: the G&D pool, RLS, and consumers.
 --
 -- Run order (each file explains itself; nothing here is automatic):
 --   1  20260808120000_dedup_document_chunks_schema.sql     schema + RLS   (safe)
 --   2  20260808120100_dedup_fingerprint.sql                compute hashes (safe)
 --   3  20260808120200_dedup_preview_readonly.sql           look           (read-only)
---   4  20260808120300_dedup_backfill_links.sql             link           (reversible)
+--   4  20260808120300_dedup_backfill_links.sql             pool + link    (reversible)
 --   5  20260808120400_dedup_delete_redundant_chunks.sql    delete         (armed manually)
 --
 -- WHY THIS EXISTS
@@ -16,72 +16,168 @@
 --
 -- The fix is to let several documents rows resolve to ONE set of chunks.
 --
--- WHY canonical_document_id (a self-reference on documents) AND NOT A BLOB TABLE
--- ----------------------------------------------------------------------------
--- The obvious alternative is a `document_content` table holding the chunks, with
--- documents.content_id pointing at it. It is arguably the "purer" model, but it
--- costs far more here:
---   * document_chunks.document_id would have to be repointed to a new parent for
---     all 59,933 rows and its UNIQUE (document_id, chunk_index) rebuilt - a full
---     table rewrite on a database that has no headroom to rewrite anything.
---   * EVERY consumer (two search RPCs, the promote-to-library function, the OCR
---     worker, extract-pdf, the StudyBody span query, the mobile app) selects by
---     document_id today. A blob table renames the join key everywhere at once.
+-- ── THIS FILE REPLACES AN EARLIER DESIGN. READ THIS BEFORE THE SQL. ──────────
+--
+-- The first version of this migration made a student's documents row point at
+-- ANOTHER STUDENT'S document (documents.canonical_document_id). It was never
+-- applied. It is superseded here by the owner's design: the shared copy is
+-- moved into a G&D-OWNED POOL - owner-less rows with no user_id, in the shape of
+-- library_documents / library_document_chunks - and every student's row points
+-- at the pool instead.
+--
+-- The pool is not a stylistic preference. It deletes two whole mechanisms that
+-- the old design could not do without:
+--
+--   1. THE GUARD TRIGGER IS GONE, and with it a SECURITY DEFINER function that
+--      read other users' rows. documents already has a blanket
+--      "Users update own docs" FOR UPDATE policy with no column restriction, so
+--      under the old design a student could point canonical_document_id at any
+--      document id they could guess or learn and inherit read access to that
+--      student's textbook. The old file closed that with a trigger asserting
+--      "your content_hash already equals the target's".
+--
+--      Here the same assertion is a FOREIGN KEY:
+--
+--          FOREIGN KEY (pooled_document_id, content_hash)
+--            REFERENCES public.pool_documents (id, content_hash)
+--          CHECK (pooled_document_id IS NULL OR content_hash IS NOT NULL)
+--
+--      A student may only link to a pool row whose fingerprint they already
+--      hold, and the database enforces it declaratively, on every write path,
+--      including ones nobody has thought of yet. The CHECK is load-bearing and
+--      is not tidiness: without it a row with (some_pool_id, NULL) satisfies the
+--      foreign key without any lookup at all, which would hand the whole hole
+--      straight back. MATCH FULL is the usual fix and cannot be used here - it
+--      would also reject the ordinary (NULL, hash) row that every fingerprinted
+--      but un-pooled document is. See section 2.
+--
+--      Note what CANNOT be reached this way even in principle: a pool row is not
+--      a student's document. Linking to one grants a copy of content the linker
+--      has already proved they possess, and nothing else. There is no longer a
+--      pointer in the schema that can be aimed at private data.
+--
+--   2. THE REPARENT TRIGGER IS GONE. Under the old design the chunks lived under
+--      one student's document, so that student deleting their file would cascade
+--      the chunks away and silently empty the book for everyone linked to it.
+--      documents_reparent_canonical existed to hand the chunks to a surviving
+--      dependent mid-DELETE. A pool row has no owner, appears in no student's
+--      library, and is matched by no ON DELETE CASCADE from auth.users, so
+--      neither deleting a file nor deleting an account can touch it. The failure
+--      mode does not exist, so neither does the machinery for it.
+--
+-- Chains and cycles also stop being possible rather than being forbidden: a
+-- pool row cannot itself be a link, because pool_documents has no link column.
+--
+-- WHAT THE STUDENT IS PROMISED
+-- ----------------------------
+-- "This document is in our safe hands now - a delete won't affect us." That
+-- sentence is a statement about this schema, and every part of it is enforced
+-- here: pool_documents has no user_id, no FK to auth.users on the content path,
+-- and no policy that lets a student write to it. See section 3.
+--
+-- WHY documents.pooled_document_id AND NOT A REPOINTED document_chunks
+-- -------------------------------------------------------------------
+-- Carried over from the old design, and still the deciding argument:
+--   * document_chunks.document_id would have to be repointed for all 59,933 rows
+--     and its UNIQUE (document_id, chunk_index) rebuilt - a full table rewrite on
+--     a database that has no headroom to rewrite anything.
+--   * EVERY consumer selects by document_id today. Renaming the join key
+--     everywhere at once is how a consumer gets missed, and a missed consumer is
+--     a student who silently gets zero results.
 --   * The mobile app ships separately from the web app, so a schema change that
 --     forces a client change is a change we cannot fully roll out.
--- canonical_document_id keeps document_id as the join key, so the resolution is a
--- single COALESCE(d.canonical_document_id, d.id) inside functions the clients
--- already call. Consumers that go through the RPCs need NO code change at all.
+-- pooled_document_id keeps document_id as the join key, so resolution stays a
+-- single decision inside functions the clients already call. Consumers that go
+-- through the RPCs need no code change at all.
 --
--- NULL canonical_document_id means "I am canonical; my chunks live under my id".
--- Non-NULL means "my chunks are the chunks of that other document". Links are
--- exactly one level deep - see the guard trigger below.
+-- NULL pooled_document_id = "my chunks are mine, under my id, in
+-- document_chunks". Non-NULL = "my chunks are the pool's, under that pool id".
 --
--- THIS FILE IS SAFE AND REVERSIBLE. It adds columns, indexes, triggers, views
--- and replaces four functions. It moves no data and deletes nothing. The later
--- stages are separate files, deliberately, so that a schema change and a
--- 30,000-row delete never share a transaction on a database that is over its
--- size ceiling.
+-- THE ONE COST OF A SEPARATE TABLE, STATED HONESTLY
+-- ------------------------------------------------
+-- Moving a chunk set into the pool is an INSERT ... SELECT followed by a DELETE,
+-- not an UPDATE, so the database grows by one copy of the donated book before it
+-- shrinks by all the redundant ones. Stage 3 measures that transient cost
+-- exactly, before anything is written, and stage 4 does the work one book at a
+-- time so the peak is a single textbook rather than the whole corpus. The
+-- alternative - putting owner-less rows in `documents` with user_id NULL - would
+-- avoid the copy, but it puts pool rows and private rows in the SAME table,
+-- which means the foreign key above can no longer tell them apart and the guard
+-- trigger comes straight back. The copy is the price of deleting the trigger.
+--
+-- THIS FILE IS SAFE AND REVERSIBLE. It creates two empty tables, adds two
+-- columns, and replaces four functions. It moves no data and deletes nothing.
 --
 -- ROLLBACK
 -- --------
 --   drop view if exists public.document_chunks_effective;
---   drop trigger if exists documents_canonical_guard on public.documents;
---   drop trigger if exists documents_reparent_canonical on public.documents;
---   drop function if exists public.documents_check_canonical_link();
---   drop function if exists public.documents_reparent_canonical();
---   drop function if exists public.find_canonical_document(text);
+--   drop function if exists public.pool_share_document(uuid);
+--   drop function if exists public.find_pooled_document(text);
+--   drop function if exists public.pool_chunkset_digest(uuid);
 --   drop function if exists public.refresh_document_content_hash(uuid);
 --   drop function if exists public.document_chunkset_digest(uuid);
 --   drop schema if exists dedup cascade;
---   drop policy if exists "Users view own or linked document chunks" on public.document_chunks;
---   create policy "Users view own document chunks" on public.document_chunks
---     for select using (auth.uid() = user_id);
 --   drop policy if exists "Users insert own document chunks" on public.document_chunks;
 --   create policy "Users insert own document chunks" on public.document_chunks
 --     for insert with check (auth.uid() = user_id);
+--   alter table public.documents drop constraint if exists documents_pooled_link_fkey;
+--   alter table public.documents drop constraint if exists documents_pooled_needs_hash;
 --   alter table public.documents
---     drop column if exists canonical_document_id,
+--     drop column if exists pooled_document_id,
 --     drop column if exists content_hash;
+--   drop table if exists public.pool_document_chunks;
+--   drop table if exists public.pool_documents;
 --   -- then re-run 20260608000100_add_chunk_embeddings.sql and
 --   -- 20260719130000_promote_to_library.sql to restore the old function bodies.
--- Rolling this back is only safe BEFORE stage 4 has deleted anything. Once the
--- redundant chunks are gone, dropping canonical_document_id strands the students
--- who link through it.
+-- Rolling this back is only safe BEFORE stage 5 has deleted anything. Once a
+-- student's own chunks are gone, dropping the pool strands them.
 
 
--- ─── 1. Schema ────────────────────────────────────────────────────────────────
+-- ─── 1. The pool ──────────────────────────────────────────────────────────────
+--
+-- Owner-less by construction, exactly like library_documents /
+-- library_document_chunks: no user_id column exists, so there is no value any
+-- cascade could match and no row any student's RLS could claim.
+--
+-- WHAT IT IS NOT: it is not the shared library, and it deliberately does not
+-- reuse those tables. The two look alike and mean opposite things.
+--
+--   library_documents  = REDISTRIBUTION. An admin decided this book may be
+--                        handed to students who never had it. Discipline-scoped,
+--                        moderated, discoverable, searched by everyone.
+--   pool_documents     = DE-DUPLICATION. One stored copy of content that several
+--                        students each already possess. Not discoverable, not
+--                        scoped, searched only by the students who linked to it.
+--
+-- Three concrete reasons the library cannot double as the pool:
+--   * Its RLS reads `status = 'approved'`. Pool rows would have to be approved
+--     to be readable, which would silently redistribute every shared upload to a
+--     whole discipline with no review - the exact decision the library exists to
+--     keep in the owner's hands. Leaving them 'pending' instead makes them
+--     unreadable, so a second policy would be needed anyway, which is this table.
+--   * promote_document_to_library() DELETEs every library_document_chunks row
+--     for a library id before re-inserting. Pointed at a shared table, a
+--     re-promotion would delete the chunk set that hundreds of linked students
+--     are reading through. Separate tables make that class of accident
+--     impossible rather than merely unlikely.
+--   * The library is discipline-scoped; possession is not. Two students in
+--     different disciplines can upload the same book, and the corpus the owner
+--     recently emptied would have taken the pool with it (ON DELETE CASCADE).
+--
+-- WHAT THIS MEANS FOR ADMIN APPROVAL: nothing changes. /app/admin still lists
+-- library_documents submissions, still approves them, and
+-- promote_document_to_library() still copies chunks into
+-- library_document_chunks. The only difference is that the source chunks may now
+-- live in the pool, which section 6 handles inside the function. Sharing into
+-- the pool is NOT a library submission and never appears in the review queue -
+-- it grants no student any content they did not already have, so there is
+-- nothing for an admin to decide. A student who wants their book redistributed
+-- still uses "Share with everyone" on the card, which is unchanged.
+CREATE TABLE IF NOT EXISTS public.pool_documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-ALTER TABLE public.documents
-  -- NULL = "I am canonical". Non-NULL = "read my chunks from that document".
-  -- ON DELETE SET NULL is a backstop only: the reparent trigger below moves the
-  -- chunks to a surviving dependent before the delete happens, so in practice
-  -- this never fires with dependents still attached.
-  ADD COLUMN IF NOT EXISTS canonical_document_id UUID
-    REFERENCES public.documents(id) ON DELETE SET NULL,
-  -- THE IDENTITY KEY. One meaning, always, for both existing rows and future
-  -- uploads: a fingerprint of the EXTRACTED TEXT as it is actually stored, never
-  -- of the file bytes.
+  -- THE IDENTITY KEY. One meaning, always: a fingerprint of the EXTRACTED TEXT
+  -- as it is actually stored, never of the file bytes.
   --
   -- That choice is the whole safety argument. We are not trying to prove two
   -- uploaded PDFs were the same file - we cannot, the files were never stored,
@@ -108,38 +204,254 @@ ALTER TABLE public.documents
   --     giant string_agg of all the content. The result is just as decisive, but
   --     peak memory is a few KB per document instead of the whole book (a 6 MB
   --     textbook materialises a 6 MB text value per row under string_agg, and
-  --     this database has no memory to spare). See public.document_chunkset_digest below.
+  --     this database has no memory to spare). See document_chunkset_digest.
   --   * chunk_index and the page numbers are inside the hash, so a document with
   --     gaps, duplicated indexes or different page labels can never collide with
   --     a cleanly-extracted one even if the prose matches.
   --
   -- 'v1' is a version tag on the algorithm. If the chunker or the format ever
   -- changes, bump it rather than letting old and new hashes mingle.
+  --
+  -- UNIQUE is what makes the pool a pool: one stored copy per distinct content.
+  content_hash TEXT NOT NULL UNIQUE,
+
+  -- Display metadata only. Nothing resolves on these; two students may file the
+  -- same book under different names and every consumer quotes the name on the
+  -- CALLER'S documents row, never this one.
+  file_name  TEXT NOT NULL,
+  file_size  BIGINT,
+  page_count INT,
+  chunk_count INT NOT NULL DEFAULT 0,
+
+  -- Credit, not ownership. ON DELETE SET NULL is the whole point: deleting the
+  -- contributor's account erases who gave it, never what they gave. There is no
+  -- path by which any auth.users row's deletion removes pooled content.
+  contributed_by  UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  contributed_at  TIMESTAMPTZ DEFAULT now(),
+  created_at      TIMESTAMPTZ DEFAULT now(),
+
+  -- Needed for the composite foreign key in section 2. Redundant with the PK
+  -- and the UNIQUE above, and cheap; it exists so the FK has an index to point
+  -- at, which is what lets the constraint be declarative.
+  CONSTRAINT pool_documents_id_hash_key UNIQUE (id, content_hash)
+);
+
+COMMENT ON TABLE public.pool_documents IS
+  'G&D-owned pool of de-duplicated chunk sets. Owner-less: no user_id, no cascade from auth.users. A student links to a row here only by presenting its content_hash, which means possessing its content.';
+
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS public.pool_document_chunks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pool_document_id UUID NOT NULL
+    REFERENCES public.pool_documents(id) ON DELETE CASCADE,
+  chunk_index INT NOT NULL,
+  page_start INT,
+  page_end INT,
+  content TEXT NOT NULL,
+  token_estimate INT,
+  embedding vector(1536),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (pool_document_id, chunk_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pool_chunks_doc
+  ON public.pool_document_chunks(pool_document_id, chunk_index);
+
+CREATE INDEX IF NOT EXISTS idx_pool_chunks_content_trgm
+  ON public.pool_document_chunks USING gin (content gin_trgm_ops);
+
+-- Semantic search over pooled books needs the same ANN index document_chunks
+-- has. It costs space on an instance that has none to spare, which is only
+-- acceptable because the same index on document_chunks gets smaller by more than
+-- this one grows: the vectors move, they are not duplicated.
+CREATE INDEX IF NOT EXISTS idx_pool_chunks_embedding_hnsw
+  ON public.pool_document_chunks USING hnsw (embedding vector_cosine_ops);
+
+
+-- ─── 2. The link, and why it needs no trigger ─────────────────────────────────
+
+ALTER TABLE public.documents
+  -- NULL = "my chunks are mine". Non-NULL = "read my chunks from that pool row".
+  ADD COLUMN IF NOT EXISTS pooled_document_id UUID,
+  -- The caller's own fingerprint. Set when a document's chunk set is complete
+  -- and true of it; it is both the lookup key for "do we already store this?"
+  -- and, below, the proof of possession that authorises the link.
   ADD COLUMN IF NOT EXISTS content_hash TEXT;
 
-COMMENT ON COLUMN public.documents.canonical_document_id IS
-  'NULL = this document owns its chunks. Non-NULL = read chunks from that document instead. One level only; enforced by documents_canonical_guard.';
+COMMENT ON COLUMN public.documents.pooled_document_id IS
+  'NULL = this document owns its chunks in document_chunks. Non-NULL = its chunks are pool_document_chunks under that pool id. Settable only with a matching content_hash - see documents_pooled_link_fkey.';
 COMMENT ON COLUMN public.documents.content_hash IS
-  'chunkset-sha256-v1:<hex>. Fingerprint of the stored extracted text (per-chunk sha256 over chunk_index|page_start|page_end|sha256(content), joined by newlines, hashed again). Never a hash of the file bytes. Identical value = merging is provably invisible to every consumer.';
+  'chunkset-sha256-v1:<hex>. Fingerprint of the stored extracted text. Never a hash of the file bytes. Identical value = substituting one chunk set for the other is provably invisible to every consumer.';
 
--- Lookup path for "is there already a canonical copy of this content?".
+-- THE SECURITY CHECK, AS A CONSTRAINT.
+--
+-- Replaces documents_canonical_guard entirely. To point at a pool row a student
+-- must set content_hash to that row's fingerprint in the same row; the only ways
+-- to know that value are to possess the same file and hash it, or to invert
+-- SHA-256. Possessing the file is precisely the intended feature.
+--
+-- THE HOLE A COMPOSITE FOREIGN KEY LEAVES, AND HOW IT IS CLOSED HERE.
+--
+-- Under the default MATCH SIMPLE, a partially-NULL key skips the lookup
+-- entirely: (pooled_document_id = <guess>, content_hash = NULL) is accepted with
+-- no check at all, and the protection above would be decorative.
+--
+-- MATCH FULL is the textbook answer to that and it is the WRONG one here. MATCH
+-- FULL does not merely check partially-NULL keys - it FORBIDS them outright
+-- ("MATCH FULL does not allow mixing of null and nonnull key values"). The
+-- overwhelmingly common row in this table is a document that owns its chunks and
+-- has been fingerprinted: (NULL, 'chunkset-sha256-v1:...'). That is a mixed key.
+-- MATCH FULL would reject every single row stage 2 writes, and with it the
+-- forward path - the browser stamps content_hash on ordinary uploads so the NEXT
+-- student can match them.
+--
+-- So: MATCH SIMPLE, plus a CHECK that removes the only case MATCH SIMPLE would
+-- have waved through.
+--
+--   pooled_document_id IS NULL OR content_hash IS NOT NULL
+--
+-- With that, a non-NULL pooled_document_id forces a non-NULL content_hash, both
+-- columns are non-NULL together, and MATCH SIMPLE performs the full lookup. The
+-- remaining shapes are exactly the ones we want:
+--
+--   (NULL, NULL)      not fingerprinted yet, owns its chunks   - unchecked, fine
+--   (NULL, hash)      fingerprinted, owns its chunks           - unchecked, fine
+--   (pool_id, hash)   a link                                   - LOOKED UP
+--   (pool_id, NULL)   the attack                               - REJECTED by CHECK
+--
+-- The guarantee is identical to the one the header claims for MATCH FULL, it is
+-- still declarative and still enforced on every write path, and unlike MATCH
+-- FULL it lets an ordinary document carry a fingerprint. Two constraints instead
+-- of one, and still no trigger and no SECURITY DEFINER function reading other
+-- users' rows.
+--
+-- ON DELETE SET NULL: removing a pool row (an owner-only act - a rights
+-- complaint, say) unlinks its readers rather than dangling or blocking. It nulls
+-- BOTH columns of the key, which satisfies the CHECK, so the unlink cannot fail.
+-- Their documents row survives with no chunks, which reads as an empty book
+-- everywhere, and is honest. ON UPDATE CASCADE is inert - neither column is ever
+-- updated in place - and is there so the constraint has no unspecified branch.
+DO $$
+BEGIN
+  -- The CHECK first: it must already hold before the foreign key can be relied
+  -- on, and on an empty-column table both are instant.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'documents_pooled_needs_hash'
+  ) THEN
+    ALTER TABLE public.documents
+      ADD CONSTRAINT documents_pooled_needs_hash
+      CHECK (pooled_document_id IS NULL OR content_hash IS NOT NULL);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'documents_pooled_link_fkey'
+  ) THEN
+    ALTER TABLE public.documents
+      ADD CONSTRAINT documents_pooled_link_fkey
+      FOREIGN KEY (pooled_document_id, content_hash)
+      REFERENCES public.pool_documents (id, content_hash)
+      ON UPDATE CASCADE
+      ON DELETE SET NULL;
+  END IF;
+END
+$$;
+
+-- Lookup path for the backfill's grouping, and for "has this document already
+-- been fingerprinted?". Partial so it stays small.
 CREATE INDEX IF NOT EXISTS idx_documents_content_hash
   ON public.documents(content_hash)
   WHERE content_hash IS NOT NULL;
 
--- Serves the RLS EXISTS() below: given a user, which documents of theirs are
--- links, and to what. Partial so it stays tiny (most documents are canonical).
-CREATE INDEX IF NOT EXISTS idx_documents_user_canonical
-  ON public.documents(user_id, canonical_document_id)
-  WHERE canonical_document_id IS NOT NULL;
-
--- Serves the reparent trigger: "does anyone link to the row being deleted?".
-CREATE INDEX IF NOT EXISTS idx_documents_canonical
-  ON public.documents(canonical_document_id)
-  WHERE canonical_document_id IS NOT NULL;
+-- Serves the pool RLS EXISTS() below and the resolution join: given a user,
+-- which of their documents are pooled, and to what.
+CREATE INDEX IF NOT EXISTS idx_documents_user_pooled
+  ON public.documents(user_id, pooled_document_id)
+  WHERE pooled_document_id IS NOT NULL;
 
 
--- The fingerprint of one document, computed from what is actually stored.
+-- ─── 3. RLS ───────────────────────────────────────────────────────────────────
+
+ALTER TABLE public.pool_documents       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pool_document_chunks ENABLE ROW LEVEL SECURITY;
+
+-- Deny by default and stay that way. No INSERT, UPDATE or DELETE policy exists
+-- on either table, for any role, so RLS refuses every client write outright.
+-- The only writer is pool_share_document() (section 5), which is SECURITY
+-- DEFINER and therefore not subject to these policies - and which validates
+-- everything before it writes. That is the enforcement behind "a delete won't
+-- affect us": there is no statement a student can send that removes or alters
+-- pooled content.
+REVOKE ALL ON public.pool_documents       FROM anon, authenticated;
+REVOKE ALL ON public.pool_document_chunks FROM anon, authenticated;
+GRANT SELECT ON public.pool_documents       TO authenticated;
+GRANT SELECT ON public.pool_document_chunks TO authenticated;
+
+-- You may read a pool row you are linked to, and no other.
+--
+-- Both policies are anchored on `d.user_id = auth.uid()`, so only rows the
+-- caller owns can satisfy them and the caller can never widen the grant by
+-- naming somebody else's document. The set exposed is exactly the pool rows
+-- named by the caller's own documents - and the foreign key in section 2 already
+-- guarantees each of those was named with a fingerprint the caller held.
+--
+-- Note what is deliberately NOT granted: an authenticated student cannot browse
+-- the pool. Reading requires a link, a link requires the hash, and the hash
+-- requires the content. Without that restriction the pool would be a directory
+-- of every textbook every student has ever uploaded, readable by anyone with an
+-- account - which is redistribution, and redistribution is the library's job and
+-- the admin's decision.
+DROP POLICY IF EXISTS "Read pooled documents you link to" ON public.pool_documents;
+CREATE POLICY "Read pooled documents you link to"
+  ON public.pool_documents FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM public.documents d
+    WHERE d.user_id = auth.uid()
+      AND d.pooled_document_id = pool_documents.id
+  ));
+
+DROP POLICY IF EXISTS "Read pooled chunks you link to" ON public.pool_document_chunks;
+CREATE POLICY "Read pooled chunks you link to"
+  ON public.pool_document_chunks FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM public.documents d
+    WHERE d.user_id = auth.uid()
+      AND d.pooled_document_id = pool_document_chunks.pool_document_id
+  ));
+
+-- document_chunks' SELECT policy is deliberately UNCHANGED at
+-- `auth.uid() = user_id`. This is a real simplification over the superseded
+-- design, which had to widen it to "own OR the chunks of the document I link
+-- to" - a cross-user read branch on the app's largest table. Pooled content
+-- does not live in document_chunks, so the branch is not needed and the old
+-- policy is exactly right.
+--
+-- INSERT is tightened, not loosened: you may still only insert chunks you own,
+-- and now only onto a document that is yours AND is not pooled. Writing chunks
+-- onto a pooled document is always a bug - they would be invisible (resolution
+-- reads the pool) and would waste exactly the space this migration reclaims.
+-- extract-pdf and ocr-worker use the service role and bypass RLS entirely; this
+-- constrains the browser upload path in src/routes/-app.library-page.tsx.
+DROP POLICY IF EXISTS "Users insert own document chunks" ON public.document_chunks;
+CREATE POLICY "Users insert own document chunks"
+  ON public.document_chunks FOR INSERT
+  WITH CHECK (
+    user_id = auth.uid()
+    AND EXISTS (
+      SELECT 1
+      FROM public.documents d
+      WHERE d.id = document_chunks.document_id
+        AND d.user_id = auth.uid()
+        AND d.pooled_document_id IS NULL
+    )
+  );
+
+-- UPDATE and DELETE on document_chunks keep `auth.uid() = user_id`. A student
+-- deleting their own chunk rows now harms only themselves: the shared copy is in
+-- the pool, which they cannot write to at all.
+
+
+-- ─── 4. Fingerprint helpers ───────────────────────────────────────────────────
 --
 -- Deliberately NOT md5(string_agg(content, '' ORDER BY chunk_index)). That form
 -- is the obvious one and it is correct, but it materialises a document's entire
@@ -156,12 +468,8 @@ CREATE INDEX IF NOT EXISTS idx_documents_canonical
 -- are not: ocr-worker deletes and re-inserts by page range, so a job that never
 -- completed can leave a hole. dedup.plan excludes those outright as well.)
 --
--- Lives in public rather than the dedup schema because the delete-path trigger
--- below depends on it, and dedup is a scratch schema the owner is invited to
--- drop once the migration is finished. Not granted to clients: it is an internal
--- helper, not an API.
---
--- Must produce the same hex string as src/lib/content-hash.ts.
+-- Not granted to clients: internal helpers, not an API. Both must produce the
+-- same hex string as src/lib/content-hash.ts.
 CREATE OR REPLACE FUNCTION public.document_chunkset_digest(p_document_id UUID)
 RETURNS TEXT
 LANGUAGE sql
@@ -191,331 +499,351 @@ $$;
 
 REVOKE ALL ON FUNCTION public.document_chunkset_digest(UUID) FROM PUBLIC, anon, authenticated;
 
+-- The same digest over a pool row. Used to prove a copy landed byte-for-byte
+-- before the source is deleted - the check that makes pooling safe rather than
+-- merely plausible.
+CREATE OR REPLACE FUNCTION public.pool_chunkset_digest(p_pool_document_id UUID)
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT encode(
+    sha256(
+      convert_to(
+        COALESCE(
+          string_agg(
+            pc.chunk_index::text || '|'
+              || COALESCE(pc.page_start::text, '') || '|'
+              || COALESCE(pc.page_end::text, '') || '|'
+              || encode(sha256(convert_to(pc.content, 'UTF8')), 'hex'),
+            E'\n' ORDER BY pc.chunk_index
+          ),
+          ''
+        ),
+        'UTF8'
+      )
+    ),
+    'hex'
+  )
+  FROM public.pool_document_chunks pc
+  WHERE pc.pool_document_id = p_pool_document_id;
+$$;
 
--- ─── 2. The write guard on canonical_document_id ──────────────────────────────
+REVOKE ALL ON FUNCTION public.pool_chunkset_digest(UUID) FROM PUBLIC, anon, authenticated;
+
+-- Stamp a document's fingerprint from what is actually stored under it.
 --
--- This is the load-bearing part of the security story and it must be read
--- together with the RLS policy in section 3.
+-- The browser upload path hashes chunks itself (src/lib/content-hash.ts) before
+-- it writes them, so it can check the pool first and skip the insert entirely.
+-- extract-pdf and ocr-worker cannot: they discover the text only after doing the
+-- work, and ocr-worker assembles a document from many part-jobs. For those, the
+-- chunks are written first and this stamps the fingerprint afterwards so the
+-- NEXT student to upload that book can link to the pool.
 --
--- documents already has "Users update own docs" FOR UPDATE USING (auth.uid() =
--- user_id) with no column restriction. So without this trigger a student could
--- run:
---     update documents set canonical_document_id = '<some other student's doc>'
---     where id = '<my doc>';
--- ...and the new RLS policy would then hand them that student's entire textbook.
--- The trigger closes exactly that hole: a link may only be created when the
--- linking row's content_hash already equals the target's content_hash.
---
--- Why that is enough: content_hash is a SHA-256 of the target's chunk contents.
--- To set your row's content_hash to the victim's value you must already know
--- that value, and the only ways to know it are (a) to possess the same file and
--- hash it yourself, or (b) to invert SHA-256. In case (a) the "attack" gains the
--- attacker a copy of a book they already have - which is precisely the intended
--- feature. content_hash is not readable across users (documents RLS is
--- auth.uid() = user_id), so it cannot be copied off another row.
---
--- The function is SECURITY DEFINER because it must read the TARGET document row,
--- which belongs to another user and is invisible under the caller's RLS.
-CREATE OR REPLACE FUNCTION public.documents_check_canonical_link()
-RETURNS TRIGGER
+-- Not granted to authenticated: the hash is a claim about content, and only the
+-- server, which just wrote that content, has any business asserting it.
+CREATE OR REPLACE FUNCTION public.refresh_document_content_hash(p_document_id UUID)
+RETURNS TEXT
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_target_hash      TEXT;
-  v_target_canonical UUID;
-  v_target_exists    BOOLEAN;
+  v_hash TEXT;
 BEGIN
-  -- Unlinking is always allowed (it can only reduce what you can read).
-  IF NEW.canonical_document_id IS NULL THEN
-    RETURN NEW;
+  -- A pooled document owns no chunks; hashing it would store a fingerprint of
+  -- nothing, and overwriting its content_hash would violate the link FK.
+  IF EXISTS (
+    SELECT 1 FROM public.documents
+    WHERE id = p_document_id AND pooled_document_id IS NOT NULL
+  ) THEN
+    RETURN NULL;
   END IF;
 
-  IF TG_OP = 'UPDATE'
-     AND NEW.canonical_document_id IS NOT DISTINCT FROM OLD.canonical_document_id THEN
-    RETURN NEW; -- unchanged; nothing to re-check
+  IF NOT EXISTS (
+    SELECT 1 FROM public.document_chunks WHERE document_id = p_document_id
+  ) THEN
+    RETURN NULL;
   END IF;
 
-  -- No end-user JWT means this is a migration, the SQL editor, a service_role
-  -- request or one of our own SECURITY DEFINER helpers (the reparent trigger).
-  -- Those are trusted; the anon role cannot reach here because documents' own
-  -- RLS (auth.uid() = user_id) rejects the row before the trigger fires.
-  IF auth.uid() IS NULL THEN
-    RETURN NEW;
-  END IF;
+  v_hash := 'chunkset-sha256-v1:' || public.document_chunkset_digest(p_document_id);
 
-  IF NEW.canonical_document_id = NEW.id THEN
-    RAISE EXCEPTION 'a document cannot be its own canonical copy';
-  END IF;
+  UPDATE public.documents
+  SET content_hash = v_hash
+  WHERE id = p_document_id;
 
-  SELECT TRUE, d.content_hash, d.canonical_document_id
-    INTO v_target_exists, v_target_hash, v_target_canonical
-  FROM public.documents d
-  WHERE d.id = NEW.canonical_document_id;
-
-  IF NOT COALESCE(v_target_exists, FALSE) THEN
-    RAISE EXCEPTION 'canonical document % does not exist', NEW.canonical_document_id;
-  END IF;
-
-  -- One level only. Chains would need recursive resolution in every consumer and
-  -- would make a cycle possible; both are avoidable by simply forbidding them.
-  IF v_target_canonical IS NOT NULL THEN
-    RAISE EXCEPTION 'cannot link to a document that is itself a link';
-  END IF;
-
-  -- ...and this row must not already be someone else's canonical, or their
-  -- chunks would disappear behind a second hop.
-  IF EXISTS (SELECT 1 FROM public.documents d WHERE d.canonical_document_id = NEW.id) THEN
-    RAISE EXCEPTION 'this document is the canonical copy for other documents and cannot become a link';
-  END IF;
-
-  IF NEW.content_hash IS NULL
-     OR v_target_hash IS NULL
-     OR NEW.content_hash <> v_target_hash THEN
-    RAISE EXCEPTION 'content_hash must match the canonical document to link to it';
-  END IF;
-
-  RETURN NEW;
+  RETURN v_hash;
 END;
 $$;
 
-DROP TRIGGER IF EXISTS documents_canonical_guard ON public.documents;
-CREATE TRIGGER documents_canonical_guard
-  BEFORE INSERT OR UPDATE OF canonical_document_id, content_hash ON public.documents
-  FOR EACH ROW EXECUTE FUNCTION public.documents_check_canonical_link();
+REVOKE ALL ON FUNCTION public.refresh_document_content_hash(UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.refresh_document_content_hash(UUID) TO service_role;
 
 
--- ─── 3. Deleting a canonical copy must not take everyone else's book ──────────
+-- ─── 5. Finding the pool, and joining it ──────────────────────────────────────
+
+-- "Do we already store this content?" for the upload path.
 --
--- Sharing chunks creates a new failure mode that did not exist before: if the
--- student who happens to own the canonical copy deletes their file, the FK
--- cascade would delete the chunks and every student linked to it silently loses
--- their textbook. Refusing the delete (ON DELETE RESTRICT) would be a bug from
--- the owner's point of view - it is *their* file.
+-- SECURITY DEFINER because pool_documents is unreadable until you are linked to
+-- it, and this is the call that tells you whether to link. Safe to expose: the
+-- caller must already hold the full chunk-set hash, which means they already
+-- hold the content. The uuid alone grants nothing - reading the chunks still
+-- requires the link, and the link's foreign key re-checks the same hash.
 --
--- So instead we hand the chunks over. Before the row goes away we promote the
--- oldest dependent to canonical, move the chunk rows onto it (updating user_id
--- so "own chunks" stays coherent and that student's embedding backfill can still
--- reach them) and re-point the remaining dependents at the new canonical.
-CREATE OR REPLACE FUNCTION public.documents_reparent_canonical()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_heir_id   UUID;
-  v_heir_user UUID;
-  v_heir_hash TEXT;
-BEGIN
-  -- Fast path for the overwhelmingly common case (nobody links to this row).
-  SELECT d.id, d.user_id INTO v_heir_id, v_heir_user
-  FROM public.documents d
-  WHERE d.canonical_document_id = OLD.id
-  ORDER BY d.created_at ASC, d.id ASC
-  LIMIT 1;
-
-  IF v_heir_id IS NULL THEN
-    RETURN OLD;
-  END IF;
-
-  -- The heir is a link, so by construction it holds no chunks of its own. Clear
-  -- defensively anyway: UNIQUE (document_id, chunk_index) would abort the move.
-  DELETE FROM public.document_chunks WHERE document_id = v_heir_id;
-
-  -- Promote first, so the guard trigger sees a valid (canonical, same-hash)
-  -- target when the remaining dependents are re-pointed below.
-  UPDATE public.documents SET canonical_document_id = NULL WHERE id = v_heir_id;
-
-  UPDATE public.document_chunks
-  SET document_id = v_heir_id,
-      user_id     = v_heir_user
-  WHERE document_id = OLD.id;
-
-  -- The heir now owns the content, so its fingerprint must describe it. This is
-  -- also what keeps the guard trigger from rejecting the re-pointing below: the
-  -- guard insists a link's content_hash equals its canonical's, and it fires
-  -- here too (auth.uid() is the deleting student, not NULL). Rather than teach
-  -- the guard an exception - a bypass flag would be a way around the security
-  -- check - we simply make the data satisfy it.
-  UPDATE public.documents
-  SET content_hash = 'chunkset-sha256-v1:' || public.document_chunkset_digest(v_heir_id)
-  WHERE id = v_heir_id
-  RETURNING content_hash INTO v_heir_hash;
-
-  UPDATE public.documents
-  SET canonical_document_id = v_heir_id,
-      content_hash          = v_heir_hash
-  WHERE canonical_document_id = OLD.id
-    AND id <> v_heir_id;
-
-  RETURN OLD;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS documents_reparent_canonical ON public.documents;
-CREATE TRIGGER documents_reparent_canonical
-  BEFORE DELETE ON public.documents
-  FOR EACH ROW EXECUTE FUNCTION public.documents_reparent_canonical();
-
-
--- ─── 4. RLS ───────────────────────────────────────────────────────────────────
---
--- SELECT. The old policy was `auth.uid() = user_id`. After de-duplication a
--- linked student owns no chunk rows at all, so that policy would return zero
--- results for them - i.e. their textbook would vanish. The new policy adds
--- exactly one thing: the chunks of the document THEY link to.
---
--- Why this cannot over-grant:
---   * The added branch is an EXISTS anchored on `d.user_id = auth.uid()`. Only
---     rows the caller owns can ever satisfy it, so the caller can never widen
---     the grant by referring to somebody else's document row.
---   * The extra chunks exposed are precisely those whose document_id appears in
---     canonical_document_id on one of the caller's own documents. That is a set
---     the caller controls the size of - at most one canonical per document they
---     own - not an open-ended join.
---   * The caller cannot aim that pointer at arbitrary content:
---     documents_canonical_guard (section 2) refuses any link whose content_hash
---     does not already equal the target's. Possessing the hash means possessing
---     the content. Without that trigger this policy WOULD over-grant, which is
---     why the two must never be applied separately.
---   * The branch grants SELECT only. INSERT/UPDATE/DELETE stay owner-only below,
---     so a linked student can read the shared chunks but can neither modify nor
---     destroy another student's rows.
-DROP POLICY IF EXISTS "Users view own document chunks" ON public.document_chunks;
-DROP POLICY IF EXISTS "Users view own or linked document chunks" ON public.document_chunks;
-CREATE POLICY "Users view own or linked document chunks"
-  ON public.document_chunks FOR SELECT
-  USING (
-    user_id = auth.uid()
-    OR EXISTS (
-      SELECT 1
-      FROM public.documents d
-      WHERE d.user_id = auth.uid()
-        AND d.canonical_document_id = document_chunks.document_id
-    )
-  );
-
--- INSERT is tightened, not loosened: you may still only insert chunks you own,
--- and now only onto a document that is yours AND is canonical. Writing chunks
--- onto a link is always a bug (they would be invisible - resolution reads the
--- canonical - and would waste exactly the space this migration is reclaiming).
--- extract-pdf and ocr-worker use the service role and bypass RLS entirely; this
--- constrains the browser upload path in src/routes/-app.library-page.tsx.
-DROP POLICY IF EXISTS "Users insert own document chunks" ON public.document_chunks;
-CREATE POLICY "Users insert own document chunks"
-  ON public.document_chunks FOR INSERT
-  WITH CHECK (
-    user_id = auth.uid()
-    AND EXISTS (
-      SELECT 1
-      FROM public.documents d
-      WHERE d.id = document_chunks.document_id
-        AND d.user_id = auth.uid()
-        AND d.canonical_document_id IS NULL
-    )
-  );
-
--- UPDATE and DELETE deliberately keep `auth.uid() = user_id`. Note the
--- consequence: a canonical owner can still DELETE their own chunk rows directly
--- and that would empty the book for everyone linked to it. Nothing in the app
--- does that (only extract-pdf/ocr-worker delete chunks, both via the service
--- role, and only for a document they are re-extracting), and the document-level
--- delete path is covered by the reparent trigger in section 3.
-
-
--- ─── 5. Resolution helper + the effective-chunks view ─────────────────────────
-
--- Canonical lookup for the upload path: "do we already store this content?".
--- SECURITY DEFINER because the answer usually lives in another user's row.
--- Safe to expose: the caller must already hold the full chunk-set hash, which
--- means they already hold the content. Returning the uuid alone grants nothing -
--- reading the chunks still requires creating a link, and the guard trigger only
--- permits that when the hashes match.
-CREATE OR REPLACE FUNCTION public.find_canonical_document(p_content_hash TEXT)
+-- Linking here is a READ, not a contribution: it costs the student nothing, adds
+-- nothing to the pool, and is why the share prompt is only ever raised for a
+-- document that did NOT match.
+CREATE OR REPLACE FUNCTION public.find_pooled_document(p_content_hash TEXT)
 RETURNS UUID
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT d.id
-  FROM public.documents d
+  SELECT p.id
+  FROM public.pool_documents p
   WHERE p_content_hash IS NOT NULL
     AND length(p_content_hash) >= 32          -- never match on '' or a stub
-    AND d.content_hash = p_content_hash
-    AND d.canonical_document_id IS NULL
-    AND EXISTS (SELECT 1 FROM public.document_chunks dc WHERE dc.document_id = d.id)
-  -- Prefer the copy that will give the linking student the best experience:
-  -- most embedded chunks first (semantic search actually works), then oldest.
-  ORDER BY
-    (SELECT count(dc.embedding) FROM public.document_chunks dc WHERE dc.document_id = d.id) DESC,
-    d.created_at ASC,
-    d.id ASC
+    AND p.content_hash = p_content_hash
+    AND EXISTS (
+      SELECT 1 FROM public.pool_document_chunks pc WHERE pc.pool_document_id = p.id
+    )
   LIMIT 1;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.find_canonical_document(TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.find_pooled_document(TEXT) TO authenticated;
 
--- Some consumers read chunks straight off the table by document_id rather than
--- through an RPC (StudyBody's whole-document span sampler, web and mobile). For
--- those, this view is a drop-in rename: it presents the CALLER'S document id
--- while serving the CANONICAL document's chunk rows, so `.in("document_id", ids)`
--- and the per-document grouping downstream keep working unchanged.
+-- Contribute a document's chunk set to the pool, and link to it.
 --
--- security_invoker = true is essential. Without it the view would run as its
--- owner and bypass RLS on both tables, turning a convenience view into a full
--- cross-tenant leak. With it, the documents join is filtered to the caller's own
--- rows and the chunk rows are filtered by the SELECT policy above - two
--- independent restrictions that both have to hold.
-DO $$
+-- THE ONLY WRITE PATH INTO THE POOL. Everything a student is told when they
+-- press "Share with G&D" is decided here, not in the browser: eligibility, the
+-- byte-for-byte verification, the link, and the removal of their now-redundant
+-- private copy.
+--
+-- Returns one row: (pool_id, chunks_pooled, created_pool). The output columns are
+-- named so none of them collides with a column of any table this function
+-- touches - in plpgsql a RETURNS TABLE column is a variable, and an unqualified
+-- name that also exists as a column is a silent bug waiting for a refactor.
+--   created_pool = true  -> this student's copy became the stored one.
+--   created_pool = false -> the pool already had it; the student is now linked
+--                           and their private duplicate is gone. Still a saving,
+--                           still counts as sharing.
+--
+-- ELIGIBILITY. A broken extraction must never enter the pool: today a failed
+-- extraction hurts one student, but pooled it hands the same empty book to
+-- everyone who uploads that title afterwards. There are seven such books in
+-- production already. So the rules below are the same ones dedup.plan applies to
+-- the historical backfill, asserted again for every live share:
+--   * extract_status is exactly 'ready'. Not "'ready' or NULL" - NULL means
+--     "unknown", and unknown is not a state anything gets pooled from;
+--   * at least one chunk, and chunk_index runs 0..n-1 with no gaps (a
+--     half-finished OCR run leaves holes);
+--   * at least 1,000 characters of text. Two different scanned books that both
+--     extracted to nothing but "Scanned by CamScanner" would hash identically.
+--     Near-empty documents are exactly where a content hash stops discriminating;
+--   * not grossly under-extracted: for 20+ pages, at least one chunk per 20
+--     pages. Real chunks hold ~6,000 characters, so a healthy book clears this by
+--     an order of magnitude and only a truncated extraction trips it.
+--
+-- GUESTS are refused. A guest is a real Supabase ANONYMOUS auth user with a
+-- genuine auth.uid(), so nothing about RLS stops them on its own. They are
+-- refused because an anonymous session is discarded the moment it is signed out
+-- - contributed_by would point at an account that no longer means anything - and
+-- because anonymous accounts can be minted on demand, which would make the
+-- client's daily points cap free to bypass. The claim is read from the JWT
+-- directly rather than through public.is_guest_account(), which is created by a
+-- LATER, also-unapplied migration; depending on it would make the order these
+-- two are applied in matter.
+CREATE OR REPLACE FUNCTION public.pool_share_document(p_document_id UUID)
+RETURNS TABLE (pool_id UUID, chunks_pooled INT, created_pool BOOLEAN)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_uid          UUID := auth.uid();
+  v_doc          RECORD;
+  v_chunks       INT;
+  v_min_index    INT;
+  v_max_index    INT;
+  v_text_chars   BIGINT;
+  v_hash         TEXT;
+  v_pool_id      UUID;
+  v_created      BOOLEAN := FALSE;
+  v_pool_digest  TEXT;
 BEGIN
-  IF current_setting('server_version_num')::int < 150000 THEN
-    RAISE EXCEPTION
-      'document_chunks_effective needs PostgreSQL 15+ for security_invoker views. On 14 or older, replace this view with a SECURITY DEFINER RPC that filters on documents.user_id = auth.uid().';
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'You need to be signed in to share a document.';
   END IF;
-END
+
+  IF COALESCE((auth.jwt() ->> 'is_anonymous')::BOOLEAN, FALSE) THEN
+    RAISE EXCEPTION 'Create a free account to share documents with G&D.';
+  END IF;
+
+  SELECT d.id, d.user_id, d.file_name, d.file_size, d.page_count,
+         d.extract_status, d.pooled_document_id
+    INTO v_doc
+  FROM public.documents d
+  WHERE d.id = p_document_id
+    AND d.user_id = v_uid
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'That document could not be found.';
+  END IF;
+
+  IF v_doc.pooled_document_id IS NOT NULL THEN
+    -- Already shared. Idempotent rather than an error: a retried save after a
+    -- dropped response must not look like a failure to the student.
+    RETURN QUERY
+      SELECT v_doc.pooled_document_id,
+             (SELECT count(*)::INT FROM public.pool_document_chunks pc
+               WHERE pc.pool_document_id = v_doc.pooled_document_id),
+             FALSE;
+    RETURN;
+  END IF;
+
+  IF v_doc.extract_status IS DISTINCT FROM 'ready' THEN
+    RAISE EXCEPTION 'This file has not finished processing, so it cannot be shared yet.';
+  END IF;
+
+  SELECT count(*)::INT, min(dc.chunk_index), max(dc.chunk_index),
+         COALESCE(sum(length(dc.content)), 0)
+    INTO v_chunks, v_min_index, v_max_index, v_text_chars
+  FROM public.document_chunks dc
+  WHERE dc.document_id = p_document_id;
+
+  IF v_chunks = 0 THEN
+    RAISE EXCEPTION 'There is no searchable text stored for this file.';
+  END IF;
+  IF v_min_index <> 0 OR v_max_index <> v_chunks - 1 THEN
+    RAISE EXCEPTION 'This file is missing sections, so it cannot be shared.';
+  END IF;
+  IF v_text_chars < 1000 THEN
+    RAISE EXCEPTION 'There is too little text in this file to share it.';
+  END IF;
+  IF v_doc.page_count IS NOT NULL
+     AND v_doc.page_count >= 20
+     AND v_chunks < v_doc.page_count / 20.0 THEN
+    RAISE EXCEPTION 'Only part of this file was read, so it cannot be shared.';
+  END IF;
+
+  v_hash := 'chunkset-sha256-v1:' || public.document_chunkset_digest(p_document_id);
+
+  -- Claim-or-join, in one statement, because two students can press Share on the
+  -- same textbook at the same second. ON CONFLICT makes the UNIQUE index the
+  -- arbiter instead of a read-then-write race: the loser gets no row back from
+  -- the INSERT and falls through to the SELECT, which now finds the winner's.
+  INSERT INTO public.pool_documents
+    (content_hash, file_name, file_size, page_count, chunk_count, contributed_by)
+  VALUES
+    (v_hash, v_doc.file_name, v_doc.file_size, v_doc.page_count, v_chunks, v_uid)
+  ON CONFLICT (content_hash) DO NOTHING
+  RETURNING id INTO v_pool_id;
+
+  IF v_pool_id IS NULL THEN
+    SELECT p.id INTO v_pool_id
+    FROM public.pool_documents p
+    WHERE p.content_hash = v_hash;
+    IF v_pool_id IS NULL THEN
+      RAISE EXCEPTION 'Could not reach the shared copy just now. Please try again.';
+    END IF;
+  ELSE
+    -- The embedding comes across with the text. This matters more than it
+    -- looks: a pooled chunk has no owner, so the client-side backfill
+    -- (src/lib/embeddings.ts, which selects `user_id = me`) can never reach it.
+    -- Whatever vectors exist at the moment of sharing are the vectors the pool
+    -- keeps, which is why the historical backfill donates the copy with the MOST
+    -- embedded chunks and why sharing is offered after the client has had a
+    -- chance to embed.
+    INSERT INTO public.pool_document_chunks
+      (pool_document_id, chunk_index, page_start, page_end, content, token_estimate, embedding)
+    SELECT v_pool_id, dc.chunk_index, dc.page_start, dc.page_end,
+           dc.content, dc.token_estimate, dc.embedding
+    FROM public.document_chunks dc
+    WHERE dc.document_id = p_document_id;
+
+    v_created := TRUE;
+  END IF;
+
+  -- PROVE THE COPY BEFORE TRUSTING IT. Recomputed from the pool rows, not read
+  -- back from a column, so a bad copy cannot certify itself. This runs on the
+  -- pre-existing branch too: it is also the check that the row we are about to
+  -- hand this student is the content they actually uploaded.
+  v_pool_digest := 'chunkset-sha256-v1:' || public.pool_chunkset_digest(v_pool_id);
+  IF v_pool_digest IS DISTINCT FROM v_hash THEN
+    RAISE EXCEPTION 'Could not verify the shared copy, so nothing was changed.';
+  END IF;
+
+  -- Both columns in one statement: the composite foreign key is checked as a
+  -- pair, and setting only one of them would fail.
+  UPDATE public.documents
+  SET pooled_document_id = v_pool_id,
+      content_hash       = v_hash
+  WHERE id = p_document_id;
+
+  -- The private copy is now redundant. This is the whole saving, and it is safe
+  -- exactly because the digest above matched: the student reads the same bytes
+  -- through the pool, and the pool cannot be deleted by them or by anyone whose
+  -- account goes away.
+  DELETE FROM public.document_chunks WHERE document_id = p_document_id;
+
+  RETURN QUERY SELECT v_pool_id, v_chunks, v_created;
+END;
 $$;
 
-DROP VIEW IF EXISTS public.document_chunks_effective;
-CREATE VIEW public.document_chunks_effective
-WITH (security_invoker = true) AS
-SELECT
-  dc.id,
-  d.id                                        AS document_id,   -- the caller's document
-  COALESCE(d.canonical_document_id, d.id)     AS source_document_id,
-  d.user_id                                   AS document_user_id,
-  dc.chunk_index,
-  dc.page_start,
-  dc.page_end,
-  dc.content,
-  dc.token_estimate,
-  dc.created_at
-FROM public.documents d
-JOIN public.document_chunks dc
-  ON dc.document_id = COALESCE(d.canonical_document_id, d.id);
-
-REVOKE ALL ON public.document_chunks_effective FROM anon, authenticated;
-GRANT SELECT ON public.document_chunks_effective TO authenticated;
+GRANT EXECUTE ON FUNCTION public.pool_share_document(UUID) TO authenticated;
 
 
--- ─── 6. Consumers that resolve document_id server-side ────────────────────────
+-- ─── 6. Consumers ─────────────────────────────────────────────────────────────
+--
+-- Every reader of chunk content, and how each resolves a pooled copy. A missed
+-- one is a student who silently gets zero results, so the list is exhaustive:
+--
+--   search_document_chunks          rewritten below (union of own + pooled)
+--   search_document_chunks_hybrid   rewritten below (union of own + pooled)
+--   promote_document_to_library     rewritten below (reads whichever holds it)
+--   document_chunks_effective       new view below; used by
+--                                     src/lib/studybody-data.ts and
+--                                     gandd-mobile/lib/studybody-data.ts
+--   supabase/functions/extract-pdf  skips a pooled document entirely (it already
+--                                     has the text); code-side, gated
+--   supabase/functions/ocr-worker   only ever finalises a document it OCR'd, and
+--                                     a document is pooled only after it is
+--                                     ready, so it never meets one; its
+--                                     refresh_document_content_hash() call
+--                                     returns NULL for a pooled row (section 4)
+--   src/lib/embeddings.ts           unchanged and correct: it backfills the
+--                                     caller's OWN chunks, and a pooled document
+--                                     has none, so it no-ops instead of failing
+--   src/routes/-app.chat-page.tsx   goes through search_document_chunks_hybrid;
+--                                     its documents.extracted_text read is
+--                                     untouched (pooling does not clear it)
+--   gandd-mobile/lib/chat-client.ts goes through search_document_chunks_hybrid
+--   gandd-mobile/app/(app)/coach.tsx goes through gandd-mobile/lib/studybody-data
+--   scripts/ingest-library.mjs      writes library_document_chunks only
+--   scripts/repair-extractions.mjs  owner-run repair; skips pooled documents (it
+--                                     would write a private copy nothing reads)
+--                                     and re-stamps the hash after re-extracting
+--   supabase/repairs/mark-partial-extractions.sql
+--                                   owner-run; excludes pooled documents, which
+--                                     hold no chunks by design and would
+--                                     otherwise all be marked broken
 --
 -- Both search RPCs used to start from `document_chunks WHERE user_id =
--- auth.uid()`. That is now wrong twice over: a linked student owns no chunks,
--- and match_document_ids carries THEIR document ids, which no chunk row
--- references. Both are rewritten to start from the caller's documents, resolve
--- each to its canonical, and join chunks from there.
+-- auth.uid()`. That is wrong twice over once pooling exists: a linked student
+-- owns no chunks, and match_document_ids carries THEIR document ids, which no
+-- pooled chunk row references. Both start from the caller's documents instead,
+-- and take each document's chunks from whichever table holds them.
 --
 -- The security filter moves from "the chunk is mine" to "the document is mine",
 -- which is the same guarantee expressed one hop earlier - and it is the only
--- form that survives de-duplication. Both functions stay SECURITY DEFINER, so
--- the WHERE clause below IS the access control; it is not backed up by RLS.
+-- form that survives de-duplication. Both stay SECURITY DEFINER, so the WHERE
+-- clause below IS the access control; it is not backed up by RLS.
 --
--- Note that file_name/folder come from the CALLER'S document row, not the
--- canonical's. Two students may file the same book under different names, and a
--- citation must quote the name the student sees.
+-- file_name/folder come from the CALLER'S document row, never the pool's. Two
+-- students may file the same book under different names, and a citation must
+-- quote the name the student sees.
 
 CREATE OR REPLACE FUNCTION public.search_document_chunks(
   query_terms TEXT[],
@@ -548,10 +876,10 @@ AS $$
   ),
   my_documents AS (
     SELECT
-      d.id                                    AS doc_id,
-      COALESCE(d.canonical_document_id, d.id) AS source_id,
+      d.id                 AS doc_id,
+      d.pooled_document_id AS pool_id,
       d.file_name,
-      f.name                                  AS folder
+      f.name               AS folder
     FROM public.documents d
     LEFT JOIN public.folders f ON f.id = d.folder_id
     WHERE d.user_id = auth.uid()
@@ -562,17 +890,17 @@ AS $$
       )
   ),
   scoped_chunks AS (
-    SELECT
-      dc.id,
-      md.doc_id AS document_id,
-      md.file_name,
-      md.folder,
-      dc.chunk_index,
-      dc.page_start,
-      dc.page_end,
-      dc.content
+    SELECT dc.id, md.doc_id AS document_id, md.file_name, md.folder,
+           dc.chunk_index, dc.page_start, dc.page_end, dc.content
     FROM my_documents md
-    JOIN public.document_chunks dc ON dc.document_id = md.source_id
+    JOIN public.document_chunks dc ON dc.document_id = md.doc_id
+    WHERE md.pool_id IS NULL
+    UNION ALL
+    SELECT pc.id, md.doc_id AS document_id, md.file_name, md.folder,
+           pc.chunk_index, pc.page_start, pc.page_end, pc.content
+    FROM my_documents md
+    JOIN public.pool_document_chunks pc ON pc.pool_document_id = md.pool_id
+    WHERE md.pool_id IS NOT NULL
   ),
   matching_terms AS (
     SELECT
@@ -685,10 +1013,10 @@ AS $$
   ),
   my_documents AS (
     SELECT
-      d.id                                    AS doc_id,
-      COALESCE(d.canonical_document_id, d.id) AS source_id,
+      d.id                 AS doc_id,
+      d.pooled_document_id AS pool_id,
       d.file_name,
-      f.name                                  AS folder
+      f.name               AS folder
     FROM public.documents d
     LEFT JOIN public.folders f ON f.id = d.folder_id
     WHERE d.user_id = auth.uid()
@@ -699,18 +1027,17 @@ AS $$
       )
   ),
   scoped_chunks AS (
-    SELECT
-      dc.id,
-      md.doc_id AS document_id,
-      md.file_name,
-      md.folder,
-      dc.chunk_index,
-      dc.page_start,
-      dc.page_end,
-      dc.content,
-      dc.embedding
+    SELECT dc.id, md.doc_id AS document_id, md.file_name, md.folder,
+           dc.chunk_index, dc.page_start, dc.page_end, dc.content, dc.embedding
     FROM my_documents md
-    JOIN public.document_chunks dc ON dc.document_id = md.source_id
+    JOIN public.document_chunks dc ON dc.document_id = md.doc_id
+    WHERE md.pool_id IS NULL
+    UNION ALL
+    SELECT pc.id, md.doc_id AS document_id, md.file_name, md.folder,
+           pc.chunk_index, pc.page_start, pc.page_end, pc.content, pc.embedding
+    FROM my_documents md
+    JOIN public.pool_document_chunks pc ON pc.pool_document_id = md.pool_id
+    WHERE md.pool_id IS NOT NULL
   ),
   scored AS (
     SELECT
@@ -768,10 +1095,14 @@ GRANT EXECUTE ON FUNCTION public.search_document_chunks_hybrid(TEXT[], TEXT, UUI
 
 
 -- promote_document_to_library copies a student's chunks into the shared library.
--- If an admin promotes a document that is a link, `where dc.document_id =
--- p_source_document_id` matches nothing and the library book is silently added
--- with zero chunks. Resolve to the canonical first. Body is otherwise unchanged
--- from 20260719130000_promote_to_library.sql.
+-- If an admin promotes a pooled document, `where dc.document_id = <the student's
+-- id>` matches nothing and the library book is silently added with zero chunks.
+-- Read from whichever table actually holds the content. Body is otherwise
+-- unchanged from 20260719130000_promote_to_library.sql.
+--
+-- Promotion still COPIES rather than links. The library is a separate, moderated
+-- corpus with its own lifecycle - an admin re-promoting or deleting a library
+-- book must never reach into the pool that live students are reading through.
 CREATE OR REPLACE FUNCTION public.promote_document_to_library(
   p_library_id uuid,
   p_source_document_id uuid
@@ -783,18 +1114,19 @@ SET search_path = public
 AS $$
 declare
   v_discipline text;
-  v_source_id  uuid;
+  v_pool_id    uuid;
+  v_found      boolean;
   v_count int;
 begin
   if not public.is_admin() then
     raise exception 'not authorized';
   end if;
 
-  select coalesce(d.canonical_document_id, d.id) into v_source_id
+  select true, d.pooled_document_id into v_found, v_pool_id
   from public.documents d
   where d.id = p_source_document_id;
 
-  if v_source_id is null then
+  if not coalesce(v_found, false) then
     raise exception 'source document % not found', p_source_document_id;
   end if;
 
@@ -806,14 +1138,25 @@ begin
   delete from public.library_document_chunks
   where library_document_id = p_library_id;
 
-  insert into public.library_document_chunks
-    (library_document_id, discipline, chunk_index, page_start, page_end,
-     content, token_estimate, embedding)
-  select
-    p_library_id, v_discipline, dc.chunk_index, dc.page_start, dc.page_end,
-    dc.content, dc.token_estimate, dc.embedding
-  from public.document_chunks dc
-  where dc.document_id = v_source_id;
+  if v_pool_id is null then
+    insert into public.library_document_chunks
+      (library_document_id, discipline, chunk_index, page_start, page_end,
+       content, token_estimate, embedding)
+    select
+      p_library_id, v_discipline, dc.chunk_index, dc.page_start, dc.page_end,
+      dc.content, dc.token_estimate, dc.embedding
+    from public.document_chunks dc
+    where dc.document_id = p_source_document_id;
+  else
+    insert into public.library_document_chunks
+      (library_document_id, discipline, chunk_index, page_start, page_end,
+       content, token_estimate, embedding)
+    select
+      p_library_id, v_discipline, pc.chunk_index, pc.page_start, pc.page_end,
+      pc.content, pc.token_estimate, pc.embedding
+    from public.pool_document_chunks pc
+    where pc.pool_document_id = v_pool_id;
+  end if;
 
   get diagnostics v_count = row_count;
   return v_count;
@@ -821,6 +1164,64 @@ end;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.promote_document_to_library(uuid, uuid) TO authenticated;
+
+
+-- Some consumers read chunks straight off the table by document_id rather than
+-- through an RPC (StudyBody's whole-document span sampler, web and mobile). For
+-- those, this view is a drop-in rename: it presents the CALLER'S document id
+-- while serving whichever chunk rows that document resolves to, so
+-- `.in("document_id", ids)` and the per-document grouping downstream keep
+-- working unchanged.
+--
+-- security_invoker = true is essential. Without it the view would run as its
+-- owner and bypass RLS on every table it touches, turning a convenience view
+-- into a full cross-tenant leak. With it, the documents join is filtered to the
+-- caller's own rows and the chunk rows are filtered by their own SELECT policies
+-- - two independent restrictions that both have to hold.
+DO $$
+BEGIN
+  IF current_setting('server_version_num')::int < 150000 THEN
+    RAISE EXCEPTION
+      'document_chunks_effective needs PostgreSQL 15+ for security_invoker views. On 14 or older, replace this view with a SECURITY DEFINER RPC that filters on documents.user_id = auth.uid().';
+  END IF;
+END
+$$;
+
+DROP VIEW IF EXISTS public.document_chunks_effective;
+CREATE VIEW public.document_chunks_effective
+WITH (security_invoker = true) AS
+  SELECT
+    dc.id,
+    d.id        AS document_id,      -- the caller's document
+    d.user_id   AS document_user_id,
+    NULL::uuid  AS pool_document_id,
+    dc.chunk_index,
+    dc.page_start,
+    dc.page_end,
+    dc.content,
+    dc.token_estimate,
+    dc.created_at
+  FROM public.documents d
+  JOIN public.document_chunks dc ON dc.document_id = d.id
+  WHERE d.pooled_document_id IS NULL
+UNION ALL
+  SELECT
+    pc.id,
+    d.id        AS document_id,
+    d.user_id   AS document_user_id,
+    d.pooled_document_id AS pool_document_id,
+    pc.chunk_index,
+    pc.page_start,
+    pc.page_end,
+    pc.content,
+    pc.token_estimate,
+    pc.created_at
+  FROM public.documents d
+  JOIN public.pool_document_chunks pc ON pc.pool_document_id = d.pooled_document_id
+  WHERE d.pooled_document_id IS NOT NULL;
+
+REVOKE ALL ON public.document_chunks_effective FROM anon, authenticated;
+GRANT SELECT ON public.document_chunks_effective TO authenticated;
 
 
 -- ─── 7. Planning views (owner-only; used by stages 2-4) ───────────────────────
@@ -855,7 +1256,7 @@ BEGIN
     SELECT d2.id
     FROM public.documents d2
     WHERE d2.content_hash IS NULL
-      AND d2.canonical_document_id IS NULL
+      AND d2.pooled_document_id IS NULL
       AND EXISTS (SELECT 1 FROM public.document_chunks dc WHERE dc.document_id = d2.id)
     ORDER BY d2.created_at
     LIMIT GREATEST(p_limit, 1)
@@ -865,7 +1266,7 @@ BEGIN
 END;
 $$;
 
--- One row per canonical document that actually holds chunks, with everything the
+-- One row per un-pooled document that actually holds chunks, with everything the
 -- merge decision needs. Bytes are estimated from the stored column widths; treat
 -- them as "what the heap rows weigh", not as an exact on-disk figure (indexes
 -- and TOAST compression both move the real number).
@@ -893,7 +1294,7 @@ SELECT
    + COALESCE(sum(pg_column_size(dc.embedding)), 0))::bigint AS bytes
 FROM public.documents d
 JOIN public.document_chunks dc ON dc.document_id = d.id
-WHERE d.canonical_document_id IS NULL
+WHERE d.pooled_document_id IS NULL
 GROUP BY d.id;
 
 -- Documents that hold chunks but are NOT allowed to take part in a merge, with
@@ -939,7 +1340,7 @@ WHERE s.content_hash IS NULL
 --       find candidate groups quickly.
 --
 --   ELIGIBILITY (a document must be trustworthy before it may merge at all)
---     * it holds at least one chunk, and is not already a link;
+--     * it holds at least one chunk, and is not already pooled;
 --     * chunk_index runs 0..n-1 with no gaps - a half-finished OCR run leaves
 --       holes, and a document assembled from a partial page range is not a copy
 --       of anything;
@@ -966,10 +1367,17 @@ WHERE s.content_hash IS NULL
 -- 125 MB instead of 130 MB costs nothing. The asymmetry justifies every extra
 -- condition above.
 --
--- Canonical selection: MOST EMBEDDED CHUNKS WINS, not oldest. 36,695 of 59,933
--- chunks have a NULL embedding, so "oldest" would routinely keep an unembedded
--- copy and demote the whole group to keyword-only search. Ties break on oldest,
--- then id, so the choice is stable across runs.
+-- DONOR selection: MOST EMBEDDED CHUNKS WINS, not oldest. 36,695 of 59,933
+-- chunks have a NULL embedding, so "oldest" would routinely donate an unembedded
+-- copy and demote the whole group to keyword-only search - permanently, because
+-- a pooled chunk has no owner and the client backfill only ever touches its
+-- caller's own rows. Ties break on oldest, then id, so the choice is stable
+-- across runs.
+--
+-- Note the difference from the superseded design: the donor is not "the one that
+-- keeps its chunks". Its copy is what SEEDS the pool, and then it becomes a link
+-- like everyone else and loses its own chunks too. Every document in a group
+-- ends up pooled; nobody is left holding the group's only copy.
 CREATE OR REPLACE VIEW dedup.plan AS
 WITH eligible AS (
   SELECT s.*
@@ -995,7 +1403,7 @@ candidates AS (
 ranked AS (
   SELECT
     c.*,
-    first_value(c.id) OVER w AS canonical_id,
+    first_value(c.id) OVER w AS donor_id,
     row_number()      OVER w AS rn,
     count(*) OVER (PARTITION BY c.content_hash, c.chunk_count, c.file_name,
                                 c.file_size, c.page_count) AS group_size
@@ -1016,61 +1424,11 @@ SELECT
   r.text_chars,
   r.bytes,
   r.content_hash AS digest,
-  r.canonical_id,
-  (r.rn = 1)     AS is_canonical,
+  r.donor_id,
+  (r.rn = 1)     AS is_donor,
   r.group_size
 FROM ranked r
 WHERE r.group_size > 1;
 
 COMMENT ON VIEW dedup.plan IS
-  'One row per document in a provably-identical group. is_canonical = keep its chunks; false = its chunks are redundant and its documents row should link to canonical_id.';
-
-
--- ─── 8. Fingerprinting the server-side extraction paths ───────────────────────
---
--- The browser upload path hashes chunks itself (src/lib/content-hash.ts) before
--- it writes them, so it can check for an existing copy and skip the insert
--- entirely. extract-pdf and ocr-worker cannot: they discover the text only after
--- doing the work, and ocr-worker assembles a document from many part-jobs. For
--- those, the chunks are written first and this stamps the fingerprint afterwards
--- so the NEXT student to upload that book can link to it.
---
--- Not granted to authenticated: a student could otherwise overwrite their own
--- document's hash with a value copied from... nothing they can read, so it is
--- not a live hole - but the hash is a claim about content, and only the server,
--- which just wrote that content, has any business asserting it.
-CREATE OR REPLACE FUNCTION public.refresh_document_content_hash(p_document_id UUID)
-RETURNS TEXT
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_hash TEXT;
-BEGIN
-  -- Links never own chunks; hashing them would store a fingerprint of nothing.
-  IF EXISTS (
-    SELECT 1 FROM public.documents
-    WHERE id = p_document_id AND canonical_document_id IS NOT NULL
-  ) THEN
-    RETURN NULL;
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM public.document_chunks WHERE document_id = p_document_id
-  ) THEN
-    RETURN NULL;
-  END IF;
-
-  v_hash := 'chunkset-sha256-v1:' || public.document_chunkset_digest(p_document_id);
-
-  UPDATE public.documents
-  SET content_hash = v_hash
-  WHERE id = p_document_id;
-
-  RETURN v_hash;
-END;
-$$;
-
-REVOKE ALL ON FUNCTION public.refresh_document_content_hash(UUID) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.refresh_document_content_hash(UUID) TO service_role;
+  'One row per document in a provably-identical group. is_donor = its chunks seed the pool row; every row in the group (donor included) then links to that pool row and gives up its own chunks.';
