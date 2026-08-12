@@ -1255,11 +1255,26 @@ export function ChatPage() {
     };
   }, [conversationId, sessionReady, user]);
 
+  // The reveal loop appends a slice every 12ms, so `messages` changes identity
+  // ~83x a second while an answer streams. A `behavior: "smooth"` scroll is an
+  // easing ANIMATION: asking for it again that often cancels the one in flight
+  // and re-eases from wherever it got to, toward a target that has already
+  // moved. It never converges, and the transcript judders for the whole
+  // response — this is the "glitching" students were reporting.
+  //
+  // Mid-stream we jump instead, which is what "follow the text" should look
+  // like anyway, and only animate for the discrete arrival of a message.
   useEffect(() => {
-    scrollerRef.current?.scrollTo({
-      top: scrollerRef.current.scrollHeight,
-      behavior: "smooth",
-    });
+    const el = scrollerRef.current;
+    if (!el) return;
+    if (streaming) {
+      // Never yank back a student who scrolled up to re-read something.
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (distanceFromBottom > 120) return;
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages, streaming]);
 
   // Keep the message list's bottom padding in sync with the composer's actual
@@ -2079,11 +2094,18 @@ export function ChatPage() {
     setMessages([]);
   };
 
+  // `newChat` is rebuilt every render, which is why this listener used to carry
+  // no dependency array — the only way to keep the handler current. That also
+  // meant an add+remove pair on window ~83x a second while an answer streams.
+  // The ref holds the latest closure instead, so the listener is registered
+  // once and still calls today's newChat.
+  const newChatRef = useRef(newChat);
+  newChatRef.current = newChat;
   useEffect(() => {
-    const handleNewChat = () => newChat();
+    const handleNewChat = () => newChatRef.current();
     window.addEventListener("gd:new-chat", handleNewChat);
     return () => window.removeEventListener("gd:new-chat", handleNewChat);
-  });
+  }, []);
 
   // ChatGPT-style edit: rewrite a sent question and rerun its answer. The old
   // answer (and its question) is kept as a browsable version rather than
