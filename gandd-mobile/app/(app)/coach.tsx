@@ -26,7 +26,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Button, EmptyState, Field, ProgressBar, Tag } from "@/components/ui";
+import { Button, EmptyState, Field, PresetOrCustom, ProgressBar, Tag } from "@/components/ui";
 import { toast } from "@/components/toast";
 import { useAuth } from "@/lib/auth";
 import {
@@ -36,14 +36,22 @@ import {
   difficultyFromScore,
   finalizeTopicMastery,
   folderName,
+  formatClock,
   loadStudyDocuments,
   loadStudyDocumentsSpanning,
+  MAX_TIMER_MINUTES,
+  MIN_TIMER_MINUTES,
+  parseQuestionCount,
+  parseTimerMinutes,
   type PlanRow,
   type PracticeMode,
+  QUESTION_COUNT_MAX,
+  QUESTION_COUNT_MIN,
   QUESTION_COUNTS,
   type QuestionRow,
   type SessionRow,
   sourceText,
+  timerPresetMinutes,
   type TopicRow,
 } from "@/lib/studybody-data";
 import {
@@ -57,6 +65,7 @@ import {
   type StudyRoadmapTopic,
   type StudyReview,
 } from "@/lib/studybody-client";
+import { submitChallengeForSession } from "@/lib/social";
 import { colors, fonts, radius } from "@/lib/theme";
 import { BOTTOM_NAV_HEIGHT, MainTabContainer, ScreenContainer, TopBar, useDrawer, useHaptics } from "@/platform";
 
@@ -78,12 +87,6 @@ type ViewMode = "config" | "session";
 
 function correctionMode(preferred: string | null | undefined): "Simplified" | "Detailed" | "Storytelling" {
   return preferred === "Detailed" ? "Detailed" : preferred === "Storytelling" ? "Storytelling" : "Simplified";
-}
-
-function formatElapsed(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 export default function CoachScreen() {
@@ -109,8 +112,23 @@ export default function CoachScreen() {
   const [questionType, setQuestionType] = useState<StudyQuestionType>("mcq");
   const [difficulty, setDifficulty] = useState<DifficultyLevel>("medium");
   const [mode, setMode] = useState<PracticeMode>("learning");
-  const [questionCount, setQuestionCount] = useState(5);
+  // 10 replaces the old default of 5 now that 3 and 5 are gone from the
+  // presets — it's the new floor, so "just start" lands on the smallest set
+  // rather than defaulting into the middle of the new, bigger range.
+  const [questionCount, setQuestionCount] = useState<number>(QUESTION_COUNTS[0]);
+  const [isCustomCount, setIsCustomCount] = useState(false);
+  const [customCountText, setCustomCountText] = useState("");
   const [resumable, setResumable] = useState<SessionRow | null>(null);
+
+  // Exam-mode duration. examMinutes holds the active preset while not on
+  // Custom (kept re-priced to the set size, same as the web picker); the
+  // duration actually running a session is snapshotted into
+  // activeDurationSeconds at start/resume time so editing the config screen
+  // never reaches into a session that's already underway.
+  const [examMinutes, setExamMinutes] = useState(0);
+  const [isCustomTimer, setIsCustomTimer] = useState(false);
+  const [customTimerText, setCustomTimerText] = useState("");
+  const [activeDurationSeconds, setActiveDurationSeconds] = useState(0);
 
   // Session state
   const [starting, setStarting] = useState(false);
@@ -149,6 +167,29 @@ export default function CoachScreen() {
     () => topics.filter((t) => t.status === "mastered").length,
     [topics],
   );
+
+  // The count actually in effect: the picked preset, or the typed Custom
+  // value once it parses. Never silently clamped — an invalid Custom value
+  // resolves to null + an error string so the start buttons can block instead
+  // of quietly sending a different number than what's on screen.
+  const countResult = isCustomCount ? parseQuestionCount(customCountText) : { ok: true as const, count: questionCount };
+  const resolvedCount = countResult.ok ? countResult.count : null;
+  const countError = countResult.ok ? null : countResult.error;
+
+  // Timer presets re-price off the count in effect (falling back to the last
+  // preset while Custom count is mid-edit/invalid) so "suggested pace" always
+  // reflects the set actually being built.
+  const timerPresets = useMemo(
+    () => timerPresetMinutes(resolvedCount ?? questionCount),
+    [resolvedCount, questionCount],
+  );
+  useEffect(() => {
+    setExamMinutes((current) => (timerPresets.includes(current) ? current : timerPresets[1] ?? timerPresets[0] ?? 0));
+  }, [timerPresets]);
+
+  const timerResult = isCustomTimer ? parseTimerMinutes(customTimerText) : { ok: true as const, seconds: examMinutes * 60 };
+  const resolvedTimerSeconds = timerResult.ok ? timerResult.seconds : null;
+  const timerError = timerResult.ok ? null : timerResult.error;
 
   // ─── Data loading ──────────────────────────────────────────────────────────
 
@@ -285,6 +326,7 @@ export default function CoachScreen() {
     setRevealed([]);
     setReview(null);
     setElapsed(0);
+    setActiveDurationSeconds(0);
     setFlashcards([]);
     setFlashIndex(0);
     setFlashFlipped(false);
@@ -390,8 +432,21 @@ export default function CoachScreen() {
       return;
     }
 
+    // Validate BEFORE calling the generation edge function — a bad count or
+    // timer must never reach it, both because a huge count is slow and costs
+    // real money per set, and because a rejected number should say why
+    // instead of silently starting with something else.
+    if (resolvedCount == null) {
+      toast.error(countError ?? "Fix the question count first.");
+      return;
+    }
+    if (mode === "exam" && questionType !== "flashcard" && resolvedTimerSeconds == null) {
+      toast.error(timerError ?? "Fix the timer first.");
+      return;
+    }
+
     if (questionType === "flashcard") {
-      return startFlashcards(topic, ids);
+      return startFlashcards(topic, ids, resolvedCount);
     }
 
     setStarting(true);
@@ -403,13 +458,13 @@ export default function CoachScreen() {
       const exclude = askedByTopicRef.current[topic.id] ?? [];
       const mixedSplit =
         questionType === "mixed"
-          ? { mcqCount: Math.ceil(questionCount / 2), essayCount: Math.floor(questionCount / 2) }
+          ? { mcqCount: Math.ceil(resolvedCount / 2), essayCount: Math.floor(resolvedCount / 2) }
           : {};
       const generated = await generateStudyQuestions({
         profile,
         topic,
         questionType,
-        count: questionCount,
+        count: resolvedCount,
         ...mixedSplit,
         documents: studyDocs,
         excludePrompts: exclude,
@@ -421,7 +476,8 @@ export default function CoachScreen() {
         return;
       }
 
-      feedbackBaseRef.current = { mode, questionType, difficulty };
+      const timerSeconds = mode === "exam" ? (resolvedTimerSeconds ?? 0) : 0;
+      feedbackBaseRef.current = { mode, questionType, difficulty, timerSeconds };
       const { data: sessionData, error: sessionErr } = await db
         .from("study_sessions")
         .insert({
@@ -429,7 +485,7 @@ export default function CoachScreen() {
           plan_id: activePlan.id,
           topic_id: topic.id,
           question_type: questionType,
-          requested_count: questionCount,
+          requested_count: resolvedCount,
           total_questions: generated.questions.length,
           feedback: feedbackBaseRef.current,
         })
@@ -481,6 +537,7 @@ export default function CoachScreen() {
       setQuestions((savedQuestions as QuestionRow[]) ?? []);
       sessionStartRef.current = Date.now();
       setElapsed(0);
+      setActiveDurationSeconds(timerSeconds);
       setResumable(null);
       setView("session");
       haptics.success();
@@ -491,7 +548,7 @@ export default function CoachScreen() {
     }
   };
 
-  const startFlashcards = async (topic: TopicRow, ids: string[]) => {
+  const startFlashcards = async (topic: TopicRow, ids: string[], count: number) => {
     if (!profile) return;
     setStarting(true);
     try {
@@ -499,7 +556,7 @@ export default function CoachScreen() {
       const generated = await generateFlashcards({
         profile,
         topic,
-        count: questionCount,
+        count,
         documents: studyDocs,
       });
       if (!generated.flashcards.length) {
@@ -530,22 +587,28 @@ export default function CoachScreen() {
         .eq("session_id", session.id)
         .order("position", { ascending: true });
       if (error) throw error;
-      const fb = session.feedback ?? {};
+      const fb = (session.feedback ?? {}) as SessionRow["feedback"] & { timerSeconds?: number };
+      const timerSeconds = typeof fb?.timerSeconds === "number" ? fb.timerSeconds : 0;
       feedbackBaseRef.current = {
-        mode: fb.mode ?? "learning",
-        questionType: fb.questionType ?? session.question_type,
-        difficulty: fb.difficulty ?? "medium",
+        mode: fb?.mode ?? "learning",
+        questionType: fb?.questionType ?? session.question_type,
+        difficulty: fb?.difficulty ?? "medium",
+        timerSeconds,
       };
-      setMode((fb.mode as PracticeMode) ?? "learning");
+      setMode((fb?.mode as PracticeMode) ?? "learning");
       setQuestionType(session.question_type);
-      if (fb.difficulty) setDifficulty(fb.difficulty);
+      if (fb?.difficulty) setDifficulty(fb.difficulty);
       setActiveSession(session);
       setQuestions((data as QuestionRow[]) ?? []);
-      setAnswers(fb.draftAnswers ?? {});
-      setRevealed(fb.revealed ?? []);
+      setAnswers(fb?.draftAnswers ?? {});
+      setRevealed(fb?.revealed ?? []);
       setReview(null);
       sessionStartRef.current = Date.now();
       setElapsed(0);
+      // A session saved before this feature shipped has no timerSeconds in its
+      // feedback JSONB — 0 falls back to the old plain elapsed stopwatch below,
+      // which is exactly what that session was already showing.
+      setActiveDurationSeconds(timerSeconds);
       setView("session");
       haptics.medium();
     } catch (err) {
@@ -625,6 +688,14 @@ export default function CoachScreen() {
           completed_at: new Date().toISOString(),
         })
         .eq("id", activeSession.id);
+
+      // If this set is half of a friend challenge, tell the server it is
+      // finished now. Immediately after the status update, never before it: the
+      // RPC reads the completed session back. Without this call a student could
+      // accept a challenge, play it through, and have their score never register
+      // — the contest would sit open forever and the friend on the other side
+      // would wait on a result that was never coming.
+      await submitChallengeForSession(activeSession.id);
 
       const mastered = await finalizeTopicMastery(activeTopic.id, percentage);
       await db.from("study_preferences").upsert({
@@ -903,22 +974,49 @@ export default function CoachScreen() {
                         ? "Instant feedback after each question."
                         : "Timed — graded when you submit."}
                     </Text>
+
+                    {mode === "exam" ? (
+                      <>
+                        <Text style={styles.configLabel}>TIME LIMIT</Text>
+                        <PresetOrCustom
+                          options={timerPresets}
+                          isCustom={isCustomTimer}
+                          activeValue={examMinutes}
+                          customText={customTimerText}
+                          onPreset={(value) => {
+                            setIsCustomTimer(false);
+                            setExamMinutes(value);
+                          }}
+                          onCustom={() => setIsCustomTimer(true)}
+                          onCustomText={setCustomTimerText}
+                          suffix=" min"
+                          placeholder={`Minutes (${MIN_TIMER_MINUTES}-${MAX_TIMER_MINUTES})`}
+                          error={timerError}
+                          hint={`Up to ${MAX_TIMER_MINUTES} minutes. Running out doesn't submit for you — the set stays open.`}
+                        />
+                      </>
+                    ) : null}
                   </>
                 ) : null}
 
                 <Text style={styles.configLabel}>
                   {questionType === "flashcard" ? "CARDS" : "QUESTIONS"}
                 </Text>
-                <View style={styles.pillRow}>
-                  {QUESTION_COUNTS.map((c) => (
-                    <Pill
-                      key={c}
-                      label={c.toString()}
-                      active={questionCount === c}
-                      onPress={() => setQuestionCount(c)}
-                    />
-                  ))}
-                </View>
+                <PresetOrCustom
+                  options={QUESTION_COUNTS}
+                  isCustom={isCustomCount}
+                  activeValue={questionCount}
+                  customText={customCountText}
+                  onPreset={(value) => {
+                    setIsCustomCount(false);
+                    setQuestionCount(value);
+                  }}
+                  onCustom={() => setIsCustomCount(true)}
+                  onCustomText={setCustomCountText}
+                  placeholder={`Count (${QUESTION_COUNT_MIN}-${QUESTION_COUNT_MAX})`}
+                  error={countError}
+                  hint={`Pick ${QUESTION_COUNT_MIN}-${QUESTION_COUNT_MAX}.`}
+                />
 
                 {resumable && questionType !== "flashcard" ? (
                   <Button
@@ -935,6 +1033,10 @@ export default function CoachScreen() {
                   label={resumable && questionType !== "flashcard" ? "Start a new set" : "Start practice"}
                   onPress={() => startPractice(activeTopic)}
                   loading={starting}
+                  disabled={
+                    resolvedCount == null ||
+                    (mode === "exam" && questionType !== "flashcard" && resolvedTimerSeconds == null)
+                  }
                   icon={<Play size={16} color={colors.primaryFg} />}
                   style={{ marginTop: 12 }}
                 />
@@ -957,7 +1059,20 @@ export default function CoachScreen() {
               </View>
               {mode === "exam" && !review ? (
                 <View style={styles.timerPill}>
-                  <Text style={styles.timerText}>{formatElapsed(elapsed)}</Text>
+                  <Text style={styles.timerText}>
+                    {activeDurationSeconds > 0
+                      ? // Counts DOWN from the chosen duration. Hitting zero costs
+                        // nothing but the "on the clock" feel — it does not submit
+                        // for the student, the set just keeps running untimed from
+                        // here (same rule the web's "Race the clock" uses).
+                        elapsed >= activeDurationSeconds
+                        ? "Time up"
+                        : formatClock(activeDurationSeconds - elapsed)
+                      : // Legacy sessions saved before custom timers existed have no
+                        // stored duration — fall back to the plain stopwatch they
+                        // were already showing.
+                        formatClock(elapsed)}
+                  </Text>
                 </View>
               ) : null}
             </View>
@@ -1338,7 +1453,7 @@ const styles = StyleSheet.create({
   warnTag: { flexDirection: "row", gap: 6, marginTop: 10, borderRadius: radius.sm, backgroundColor: colors.warningSoft, paddingVertical: 6, paddingHorizontal: 9 },
   warnTagText: { flex: 1, color: colors.warning, fontSize: 12, fontFamily: fonts.bodyMedium },
   optionRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, borderRadius: radius.md, borderWidth: 1, paddingVertical: 11, paddingHorizontal: 12 },
-  optionCorrect: { borderColor: colors.success, backgroundColor: "rgba(143,209,158,0.14)" },
+  optionCorrect: { borderColor: colors.success, backgroundColor: colors.successSoft },
   optionWrong: { borderColor: colors.danger, backgroundColor: colors.dangerSoft },
   optionId: { color: colors.text, fontSize: 14, fontFamily: fonts.bodySemibold, textTransform: "uppercase" },
   optionText: { flex: 1, color: colors.text, fontSize: 14, fontFamily: fonts.body },

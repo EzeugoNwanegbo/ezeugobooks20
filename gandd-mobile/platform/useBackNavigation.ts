@@ -6,7 +6,10 @@ import { useModal } from "./modal-context";
 
 // The four primary tabs (Chat is the root). Anything else under (app) is a
 // "secondary" screen reached via the drawer and gets a normal back.
-const MAIN_ROUTES = ["/chat", "/library", "/last-minute", "/coach"];
+// Battle Royale replaced Last Minute here — kept in step with BottomNav.tsx's
+// TABS and tab-transition.ts's TAB_ROUTES, which must all agree on this same
+// four or the bottom bar disappears on whichever route is out of sync.
+const MAIN_ROUTES = ["/chat", "/library", "/battle-royale", "/coach"];
 
 export function isMainRoute(pathname: string) {
   return MAIN_ROUTES.includes(pathname);

@@ -55,6 +55,10 @@ export default function LinksScreen() {
   const [synthesizing, setSynthesizing] = useState(false);
   const [synth, setSynth] = useState<SynthesisResult | null>(null);
   const [synthDocs, setSynthDocs] = useState<Record<string, string>>({});
+  // The concept graph below measures its own width so the satellite-node ring
+  // radius and node size scale to fit — at a fixed radius they overflowed the
+  // card on a 320-360dp phone (the ring's diameter was wider than the screen).
+  const [graphWidth, setGraphWidth] = useState(0);
 
   const readyDocs = useMemo(() => docs.filter((d) => d.extract_status === "ready"), [docs]);
 
@@ -169,6 +173,18 @@ export default function LinksScreen() {
   );
 
   const nodes = (synth?.nodes ?? []).slice(0, 5);
+
+  // Derived, not stored: node/core diameters and ring radius, scaled down
+  // together once the graph card reports its real width (0 before first
+  // layout, so the numbers fall back to the original fixed design values).
+  const graphSize = useMemo(() => {
+    if (!graphWidth) return { nodeSize: 84, coreSize: 132, radius: 96, height: 250 };
+    const nodeSize = Math.max(56, Math.min(84, graphWidth * 0.24));
+    const coreSize = Math.max(84, Math.min(132, graphWidth * 0.38));
+    const radius = Math.max(46, Math.min(96, graphWidth / 2 - nodeSize / 2 - 8));
+    const height = Math.min(250, Math.max(200, radius * 2 + nodeSize + 24));
+    return { nodeSize, coreSize, radius, height };
+  }, [graphWidth]);
 
   return (
     <ScreenContainer swipeBack onBack={() => router.back()}>
@@ -304,30 +320,49 @@ export default function LinksScreen() {
                 </Text>
               </View>
 
-              <View style={styles.graph}>
+              {/* The satellite nodes ring around the core at a radius sized off the
+                  MEASURED card width, not a fixed 96dp — at a fixed radius the ring's
+                  diameter (2×96 + node width) was wider than the whole card on a
+                  320-360dp phone, running the outer nodes off both edges. */}
+              <View
+                style={[styles.graph, graphSize.height ? { height: graphSize.height } : null]}
+                onLayout={(e) => setGraphWidth(e.nativeEvent.layout.width)}
+              >
                 {nodes.map((node, i) => {
                   const angle = (i / Math.max(nodes.length, 1)) * Math.PI * 2 - Math.PI / 2;
-                  const r = 96;
-                  const x = Math.cos(angle) * r;
-                  const y = Math.sin(angle) * r;
+                  const x = Math.cos(angle) * graphSize.radius;
+                  const y = Math.sin(angle) * graphSize.radius;
                   return (
                     <View
                       key={`${node.label}-${i}`}
                       style={[
                         styles.node,
                         styles.nodeSm,
-                        { transform: [{ translateX: x }, { translateY: y }] },
+                        {
+                          width: graphSize.nodeSize,
+                          height: graphSize.nodeSize,
+                          transform: [{ translateX: x }, { translateY: y }],
+                        },
                       ]}
                     >
-                      <Text style={styles.nodeSmText} numberOfLines={2}>
+                      <Text
+                        style={styles.nodeSmText}
+                        numberOfLines={2}
+                        maxFontSizeMultiplier={1.3}
+                      >
                         {node.label}
                       </Text>
                     </View>
                   );
                 })}
-                <View style={styles.nodeCore}>
+                <View
+                  style={[
+                    styles.nodeCore,
+                    { width: graphSize.coreSize, height: graphSize.coreSize },
+                  ]}
+                >
                   <Eyebrow style={{ color: colors.primaryFg, opacity: 0.7 }}>Core Theme</Eyebrow>
-                  <Text style={styles.nodeCoreText} numberOfLines={2}>
+                  <Text style={styles.nodeCoreText} numberOfLines={2} maxFontSizeMultiplier={1.3}>
                     {synth.coreTheme ?? "Synthesis"}
                   </Text>
                 </View>

@@ -1,3 +1,4 @@
+import { router } from "expo-router";
 import { Check, FileText, RefreshCw, Share2, Sparkles, User, Zap } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -25,10 +26,15 @@ import {
   LM_PROGRESS_STEPS,
 } from "@/lib/last-minute-client";
 import { colors, fonts, radius } from "@/lib/theme";
-import { BOTTOM_NAV_HEIGHT, haptics, MainTabContainer, TopBar, useDrawer } from "@/platform";
+import { haptics, ScreenContainer, TopBar } from "@/platform";
 
+// Reached from the drawer, not the bottom bar, since Battle Royale took Last
+// Minute's tab slot (2026-08-13) — see platform/Drawer.tsx and
+// platform/tab-transition.ts. Nothing below this line changed: same screen,
+// same behaviour, just a ScreenContainer + back chevron instead of the main-tab
+// wrapper, matching every other drawer destination (friends.tsx, settings.tsx,
+// history.tsx…) now that this isn't one of the four persistent tabs.
 export default function LastMinuteScreen() {
-  const { open } = useDrawer();
   const insets = useSafeAreaInsets();
 
   const [docs, setDocs] = useState<LibraryDoc[]>([]);
@@ -116,9 +122,9 @@ export default function LastMinuteScreen() {
   }, []);
 
   return (
-    <MainTabContainer>
+    <ScreenContainer swipeBack onBack={() => router.back()}>
       <TopBar
-        onMenu={open}
+        onBack={() => router.back()}
         right={
           <View style={styles.avatar}>
             <User size={18} color={colors.muted} />
@@ -127,10 +133,7 @@ export default function LastMinuteScreen() {
       />
 
       <ScrollView
-        contentContainerStyle={[
-          styles.scroll,
-          { paddingBottom: BOTTOM_NAV_HEIGHT + insets.bottom + 24 },
-        ]}
+        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 24 }]}
         showsVerticalScrollIndicator={false}
       >
         <Eyebrow>Exam Mode · Master Note</Eyebrow>
@@ -255,7 +258,7 @@ export default function LastMinuteScreen() {
           </>
         )}
       </ScrollView>
-    </MainTabContainer>
+    </ScreenContainer>
   );
 }
 

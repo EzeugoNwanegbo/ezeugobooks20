@@ -17,6 +17,7 @@ import { BrandText, Button, Card, Field } from "@/components/ui";
 import { Splash } from "@/components/splash";
 import { toast } from "@/components/toast";
 import { colors, radius } from "@/lib/theme";
+import { useKeyboardHeight } from "@/platform";
 
 const STEPS = ["About you", "Your studies", "Your exams", "Your style"] as const;
 const YEARS = ["Year 1", "Year 2", "Year 3", "Year 4", "Year 5", "Other"];
@@ -35,6 +36,12 @@ export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, profile, loading, refreshProfile } = useAuth();
+  // KeyboardAvoidingView's "padding" behavior only does anything on iOS
+  // (behavior is undefined on Android below) — this app runs edge-to-edge on
+  // Android, where the window doesn't resize for the keyboard, so the field
+  // on step 0 (autoFocus) and the Continue button need a manual scroll
+  // allowance or the keyboard just sits on top of them.
+  const keyboardHeight = useKeyboardHeight();
 
   const [started, setStarted] = useState(false);
   const [step, setStep] = useState(0);
@@ -118,7 +125,13 @@ export default function OnboardingScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 24 }]}
+        contentContainerStyle={[
+          styles.scroll,
+          {
+            paddingBottom:
+              insets.bottom + 24 + (Platform.OS === "android" ? keyboardHeight : 0),
+          },
+        ]}
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.progressRow}>

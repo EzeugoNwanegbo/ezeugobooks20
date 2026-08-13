@@ -15,7 +15,11 @@ import type { Profile } from "./auth";
 const CHAT_URL = `${SUPABASE_URL_VALUE}/functions/v1/chat`;
 const CHAT_TIMEOUT_MS = 160_000;
 
-export type ChatMode = "Simplified" | "Detailed" | "Storytelling" | "Visuals";
+// Mirrors the website's ChatMode. "Detailed+" is the long, expensive answer
+// (deep model tier plus a full set of notes) and is capped per day by the chat
+// screen; "Visuals" is retired from the picker but stays in the union so an old
+// persisted session that still names it keeps parsing.
+export type ChatMode = "Simplified" | "Detailed" | "Detailed+" | "Storytelling" | "Visuals";
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 // `image` is the source's og:image when the server found one — used to render a
 // preview thumbnail, falling back to a favicon chip when absent.

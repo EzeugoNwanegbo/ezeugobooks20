@@ -116,7 +116,92 @@ export type ChunkRow = {
 export type PracticeMode = "learning" | "exam";
 export type DifficultyLevel = "easy" | "medium" | "hard";
 
-export const QUESTION_COUNTS = [3, 5, 10] as const;
+// The owner's picks (2026-08-13): 3/5 read as low, so the fast-tap presets
+// moved up to 10/20/30. QUESTION_COUNTS keeps its name and `as const` array
+// shape — Battle Royale imports it directly — only the values changed.
+export const QUESTION_COUNTS = [10, 20, 30] as const;
+
+// Bounds for the free-typed "Custom" count. The floor is the obvious "a set
+// needs at least one question"; the ceiling is NOT arbitrary — it mirrors the
+// edge function's own clamp (supabase/functions/studybody/index.ts caps
+// count, and each half of a mixed set, at 60). Anything past that gets
+// silently truncated server-side anyway, and a client that let students type
+// past 60 would show them a number they never actually get charged or tested
+// on. Keeping the two caps equal means "accepted here" == "honoured there".
+export const QUESTION_COUNT_MIN = 1;
+export const QUESTION_COUNT_MAX = 60;
+
+/** Parses a typed question count, rejecting anything that isn't a whole
+ * number inside [QUESTION_COUNT_MIN, QUESTION_COUNT_MAX]. Returns the
+ * validated count or an error string to show under the field — never a
+ * silently clamped value, so a student who types "5000" learns why it didn't
+ * take instead of unknowingly getting 60. */
+export function parseQuestionCount(raw: string): { ok: true; count: number } | { ok: false; error: string } {
+  const text = raw.trim();
+  if (!text) return { ok: false, error: "Type a number of questions." };
+  const n = Number(text);
+  if (!Number.isFinite(n) || !Number.isInteger(n)) {
+    return { ok: false, error: "Whole numbers only." };
+  }
+  if (n < QUESTION_COUNT_MIN || n > QUESTION_COUNT_MAX) {
+    return { ok: false, error: `Pick ${QUESTION_COUNT_MIN}-${QUESTION_COUNT_MAX}.` };
+  }
+  return { ok: true, count: n };
+}
+
+// ─── Exam-mode timer ────────────────────────────────────────────────────────
+//
+// Mirrors the web's "Race the clock" vocabulary and math (src/lib/timed-
+// challenge.ts) so the two apps don't grow two different timer languages —
+// but this app ships separately (see the DEDUP_SCHEMA_APPLIED note below) and
+// has no bonus-scoring path yet, so only the duration picking + countdown
+// piece is ported, not the speed-bonus accounting.
+//
+// Used to SUGGEST a duration from the size of the set — never a hard limit.
+const DEFAULT_TIMER_SECONDS_PER_QUESTION = 45;
+
+// The ceiling is 4 hours, same reasoning as the web: the largest set this
+// screen can request is QUESTION_COUNT_MAX (60), and the most generous
+// suggested pace for 60 questions is (60*45/60)*1.5 ≈ 68 minutes — 240
+// minutes clears that with a lot of room while still refusing an obvious typo
+// (e.g. "2400"). The floor of 1 minute is the shortest span a countdown can
+// meaningfully show.
+export const MIN_TIMER_MINUTES = 1;
+export const MAX_TIMER_MINUTES = 240;
+
+/** Turns what the student typed (in MINUTES) into whole seconds, or an error
+ * to show under the field. Deliberately not a silent clamp — same reasoning
+ * as parseQuestionCount: a rejected number should say why, not get rounded
+ * into a duration the student never chose. */
+export function parseTimerMinutes(raw: string): { ok: true; seconds: number } | { ok: false; error: string } {
+  const text = raw.trim();
+  if (!text) return { ok: false, error: "Type how many minutes you want." };
+  const minutes = Number(text);
+  if (!Number.isFinite(minutes)) {
+    return { ok: false, error: "Minutes only — a number like 25." };
+  }
+  if (minutes < MIN_TIMER_MINUTES || minutes > MAX_TIMER_MINUTES) {
+    return { ok: false, error: `Pick ${MIN_TIMER_MINUTES}-${MAX_TIMER_MINUTES} minutes.` };
+  }
+  return { ok: true, seconds: Math.round(minutes * 60) };
+}
+
+/** The three offered durations for a set of `count` questions: tight, the
+ * suggested pace, and generous — in whole minutes, de-duplicated (small sets
+ * can collapse all three onto the same minute). */
+export function timerPresetMinutes(count: number): number[] {
+  const safeCount = Math.max(1, Math.round(count || 1));
+  const suggested = Math.max(1, Math.round((safeCount * DEFAULT_TIMER_SECONDS_PER_QUESTION) / 60));
+  const presets = [Math.max(1, Math.round(suggested * 0.7)), suggested, Math.round(suggested * 1.5)];
+  return [...new Set(presets)];
+}
+
+export function formatClock(seconds: number): string {
+  const safe = Math.max(0, Math.round(seconds));
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
+}
 
 // A topic is only "mastered" after two recent practice sets both clear this
 // bar — one lucky set will not flip the roadmap to done.

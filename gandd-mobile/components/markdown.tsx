@@ -11,7 +11,7 @@
 //     the OS menu). Chat also disables its tab-swipe so the drag isn't stolen.
 
 import { Fragment, type ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { colors, fonts, radius } from "@/lib/theme";
 
 // Inline spans: **bold** / __bold__, *italic* / _italic_, `code`.
@@ -203,9 +203,19 @@ export function Markdown({
       const inner = part.replace(/^```[^\n]*\n?/, "").replace(/```\s*$/, "");
       blocks.push(
         <View key={`c${pi}`} style={styles.codeBlock}>
-          <Text selectable={selectable} style={styles.codeBlockText}>
-            {inner.trim()}
-          </Text>
+          {/* Code can't reflow like prose — a long line (or an unbroken token
+              RN's word-wrap can't break) must scroll sideways INSIDE the block
+              instead of pushing the whole chat transcript into horizontal
+              scroll. minWidth: "100%" keeps a short snippet from collapsing to
+              its own width and losing the block's padding on the right. */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <Text
+              selectable={selectable}
+              style={[styles.codeBlockText, { minWidth: "100%" }]}
+            >
+              {inner.trim()}
+            </Text>
+          </ScrollView>
         </View>,
       );
       return;

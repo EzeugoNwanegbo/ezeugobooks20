@@ -145,6 +145,7 @@ export default function LibraryScreen() {
           styles.scroll,
           { paddingBottom: BOTTOM_NAV_HEIGHT + insets.bottom + 24 },
         ]}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.h1}>Document Library</Text>

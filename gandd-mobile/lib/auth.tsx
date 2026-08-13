@@ -2,18 +2,39 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase, SUPABASE_ANON_KEY_VALUE, SUPABASE_URL_VALUE } from "./supabase";
 
+// Mirrors the website's Profile (src/lib/auth-context.tsx). The row is loaded
+// with select("*"), so every column already arrives over the wire — these
+// fields were simply invisible to the native app, which is why mobile students
+// got no discipline framework, no admin surface and no social layer.
 export type Profile = {
   id: string;
   name: string | null;
   university: string | null;
   year: string | null;
   course: string | null;
+  discipline: "medicine" | "law" | null;
+  study_track: string | null;
   curriculum: string | null;
+  personalization_background: string | null;
   exam_format: "MCQ" | "SAQ" | "OSCE" | "Viva" | null;
   preferred_mode: "Simplified" | "Detailed" | null;
   weak_areas: string[] | null;
   recent_topics: string[] | null;
   onboarded: boolean | null;
+  is_admin: boolean | null;
+  // Gamification, as the web app syncs it onto the profile row (see
+  // syncLeaderboard in src/lib/gamification.ts). The native app READS these for
+  // the rank badge, progress bar and streak; it does not yet award points
+  // itself, so a number here is always the server's, never a local guess.
+  points?: number | null;
+  weekly_points?: number | null;
+  current_streak?: number | null;
+  // Social layer. OPTIONAL on purpose: select("*") never names a column, so
+  // these arrive as undefined against a database without the social migration.
+  // `| null` would have lied about that — see the same note on the web type.
+  username?: string | null;
+  username_set_at?: string | null;
+  discoverable_by?: string | null;
 };
 
 type AuthContextValue = {

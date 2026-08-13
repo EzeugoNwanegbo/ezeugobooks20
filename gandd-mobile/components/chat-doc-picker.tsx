@@ -13,6 +13,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import {
@@ -47,6 +48,13 @@ export function ChatDocPicker({
   // Seed from the current state: the sheet can open while the keyboard is
   // already up, in which case no show event will fire.
   const [keyboardShown, setKeyboardShown] = useState(() => Keyboard.isVisible());
+  const { height: winHeight } = useWindowDimensions();
+  // A fixed 320/220 max-height (the old values) is comfortable on a mainstream
+  // phone but can be most of a 320x640 budget device's screen on its own,
+  // before the title/search/upload rows and the Attach/Clear row are even
+  // counted — the sheet as a whole would run past the top of the screen. Scale
+  // the list against the actual window instead.
+  const listMaxHeight = Math.min(keyboardShown ? 200 : 320, winHeight * (keyboardShown ? 0.24 : 0.38));
 
   // The modal container lifts the whole sheet above the keyboard; here we just
   // shrink the scrollable list while the search keyboard is up so the full sheet
@@ -137,7 +145,7 @@ export function ChatDocPicker({
       </Pressable>
 
       <ScrollView
-        style={[styles.list, keyboardShown && { maxHeight: 220 }]}
+        style={[styles.list, { maxHeight: listMaxHeight }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >

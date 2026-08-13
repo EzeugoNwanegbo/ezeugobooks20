@@ -46,6 +46,8 @@ import {
 } from "@/lib/conversations";
 import { type LinkDocument, listDocuments } from "@/lib/links-client";
 import { detectKeyTerms } from "@/lib/term-lookup";
+import { supabase } from "@/lib/supabase";
+import { toast } from "@/components/toast";
 import { colors, fonts, radius } from "@/lib/theme";
 import {
   BOTTOM_NAV_HEIGHT,
@@ -58,7 +60,30 @@ import {
   useModal,
 } from "@/platform";
 
-const MODES: ChatMode[] = ["Detailed", "Simplified", "Storytelling", "Visuals"];
+// The website's CHAT_MODES, in its order. "Visuals" is retired there and is
+// retired here; the type keeps it only so old saved sessions still parse.
+const MODES: ChatMode[] = ["Simplified", "Detailed", "Detailed+", "Storytelling"];
+
+// Detailed+ answers are the long, expensive ones, so each student gets a couple
+// a day. Counted from their OWN saved messages — the same query the web page
+// runs — so the cap follows the account across devices instead of being a
+// second, per-phone allowance that would double it.
+const NOTES_DAILY_LIMIT = 2;
+
+// Short labels for the segmented selector — four full mode names do not fit
+// across a phone. Same abbreviations the website uses for its collapsed picker.
+const MODE_SHORT: Record<ChatMode, string> = {
+  Simplified: "Simple",
+  Detailed: "Detailed",
+  "Detailed+": "Detailed+",
+  Storytelling: "Story",
+  Visuals: "Visuals",
+};
+
+function startOfTodayIso(): string {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+}
 
 // Shown above the answer whenever the user asks a real question without attaching
 // a file — tells them to add one for a grounded answer, then the AI's own answer
@@ -85,10 +110,12 @@ export default function ChatScreen() {
   const { open } = useDrawer();
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const { present } = useModal();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [mode, setMode] = useState<ChatMode>("Detailed");
+  // Detailed+ answers already had today, against NOTES_DAILY_LIMIT.
+  const [notesUsedToday, setNotesUsedToday] = useState(0);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [libraryDocs, setLibraryDocs] = useState<LinkDocument[]>([]);
@@ -99,6 +126,34 @@ export default function ChatScreen() {
   const abortRef = useRef<AbortController | null>(null);
   const conversationIdRef = useRef<string | null>(null);
   const { openId, clearOpen } = useConversation();
+
+  // How many Detailed+ answers this student has already had today, counted from
+  // their saved messages. On error the count stays at 0 rather than locking
+  // someone out of the feature over a failed query.
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    (async () => {
+      const { count, error } = await supabase
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("role", "assistant")
+        .eq("mode", "Detailed+")
+        .gte("created_at", startOfTodayIso());
+      if (!active) return;
+      if (error) {
+        console.warn("[chat] notes quota lookup", error);
+        return;
+      }
+      setNotesUsedToday(count ?? 0);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  const notesLeftToday = Math.max(0, NOTES_DAILY_LIMIT - notesUsedToday);
 
   // Composer auto-hide: collapse the input away when the user scrolls down
   // through an answer (more reading room), restore it on scroll-up. Disabled
@@ -245,6 +300,17 @@ export default function ChatScreen() {
     }
     haptics.medium();
 
+    // Out of Detailed+ for today: answer in Detailed rather than refusing. The
+    // student still gets the depth, just not the notes format — and is told why
+    // instead of silently receiving a different kind of answer.
+    let effectiveMode = mode;
+    if (mode === "Detailed+" && notesLeftToday <= 0) {
+      effectiveMode = "Detailed";
+      toast.message(
+        `You get ${NOTES_DAILY_LIMIT} sets of full notes a day. Answering in Detailed instead — it resets at midnight.`,
+      );
+    }
+
     // Build the history the function sees from the finalized turns so far.
     const history: ChatTurn[] = messages
       .filter((m) => m.text.trim().length > 0)
@@ -258,7 +324,7 @@ export default function ChatScreen() {
       {
         id: assistantId,
         role: "assistant",
-        mode: `${mode} Mode`,
+        mode: `${effectiveMode} Mode`,
         text: "",
         sources: [],
         streaming: true,
@@ -312,7 +378,7 @@ export default function ChatScreen() {
     await streamChat({
       messages: history,
       profile,
-      mode,
+      mode: effectiveMode,
       documents,
       documentMode,
       signal: controller.signal,
@@ -340,16 +406,25 @@ export default function ChatScreen() {
     scrollToEnd();
 
     // Persist the assistant's answer and float the conversation to the top.
+    // The saved `mode` is the one actually ANSWERED IN, not the one requested —
+    // the daily Detailed+ count is a query over exactly this column, so writing
+    // the requested mode after a downgrade would bill the student for notes
+    // they never received.
     const cid = await cidPromise;
     if (cid && finalText.trim()) {
       void saveMessage({
         conversationId: cid,
         role: "assistant",
         content: finalText,
-        mode,
+        mode: effectiveMode,
         sources: finalSources,
       }).catch((err) => console.warn("[chat] failed to save assistant message", err));
       void touchConversation(cid).catch(() => {});
+    }
+    // Spend the allowance locally too, so a second Detailed+ in the same
+    // session is counted without waiting for the next reload to re-query.
+    if (effectiveMode === "Detailed+" && finalText.trim()) {
+      setNotesUsedToday((n) => n + 1);
     }
   };
 
@@ -459,7 +534,7 @@ export default function ChatScreen() {
               { paddingBottom: keyboardShown ? 4 : BOTTOM_NAV_HEIGHT + insets.bottom + 8 },
             ]}
           >
-            <ModeSelector value={mode} onChange={setMode} />
+            <ModeSelector value={mode} onChange={setMode} notesLeft={notesLeftToday} />
 
             {attachedDocs.length > 0 ? (
               <View style={styles.chipRow}>
@@ -501,6 +576,7 @@ export default function ChatScreen() {
               <Pressable
                 onPress={sending ? stopStreaming : send}
                 disabled={!sending && draft.trim().length === 0}
+                hitSlop={6}
                 style={[styles.sendBtn, !sending && draft.trim().length === 0 && { opacity: 0.5 }]}
               >
                 {sending ? (
@@ -520,7 +596,15 @@ export default function ChatScreen() {
 // The four answer styles, with an indicator pill that slides to the active one
 // instead of a hard colour swap. The row measures itself so the segment width
 // (and the slide distance) stays correct on any device width.
-function ModeSelector({ value, onChange }: { value: ChatMode; onChange: (m: ChatMode) => void }) {
+function ModeSelector({
+  value,
+  onChange,
+  notesLeft,
+}: {
+  value: ChatMode;
+  onChange: (m: ChatMode) => void;
+  notesLeft?: number;
+}) {
   const haptics = useHaptics();
   const [rowWidth, setRowWidth] = useState(0);
   const gap = 6;
@@ -556,9 +640,22 @@ function ModeSelector({ value, onChange }: { value: ChatMode; onChange: (m: Chat
           >
             <Text
               style={[styles.modeLabel, { color: active ? colors.primaryFg : colors.mutedDim }]}
+              numberOfLines={1}
             >
-              {mm}
+              {MODE_SHORT[mm]}
             </Text>
+            {/* Detailed+ is rationed, so the segment says how many are left
+                rather than letting a student find out by being downgraded. */}
+            {mm === "Detailed+" && notesLeft != null ? (
+              <Text
+                style={[
+                  styles.modeQuota,
+                  { color: active ? colors.primaryFg : colors.mutedDim },
+                ]}
+              >
+                {notesLeft}/{NOTES_DAILY_LIMIT}
+              </Text>
+            ) : null}
           </Pressable>
         );
       })}
@@ -810,9 +907,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   modeLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    letterSpacing: 0.1,
+  },
+  modeQuota: {
     fontFamily: fonts.mono,
-    fontSize: 10,
-    letterSpacing: 0.3,
+    fontSize: 8.5,
+    marginTop: 1,
+    opacity: 0.75,
   },
   chipRow: {
     flexDirection: "row",

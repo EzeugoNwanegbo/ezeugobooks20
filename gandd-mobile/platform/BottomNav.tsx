@@ -1,5 +1,5 @@
 import { router, usePathname } from "expo-router";
-import { BookOpen, type LucideIcon, MessageSquare, NotebookPen, Zap } from "lucide-react-native";
+import { BookOpen, BrainCircuit, type LucideIcon, MessageSquare, Swords } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, fonts, radius } from "@/lib/theme";
@@ -9,11 +9,14 @@ import { setPendingDir, tabIndex } from "./tab-transition";
 
 export const BOTTOM_NAV_HEIGHT = 62;
 
-const TABS: { key: string; label: string; icon: LucideIcon; route: string }[] = [
+// Battle Royale took Last Minute's slot here (2026-08-13) — Last Minute is not
+// gone, it moved to the drawer (see platform/Drawer.tsx) and still works
+// exactly as before, it just isn't one of the four persistent tabs any more.
+const TABS: { key: string; label: string; icon: LucideIcon; route: string; tint?: string }[] = [
   { key: "chat", label: "Chat", icon: MessageSquare, route: "/chat" },
   { key: "library", label: "Library", icon: BookOpen, route: "/library" },
-  { key: "last-minute", label: "Last Min", icon: Zap, route: "/last-minute" },
-  { key: "coach", label: "Coach", icon: NotebookPen, route: "/coach" },
+  { key: "coach", label: "Coach", icon: BrainCircuit, route: "/coach" },
+  { key: "battle-royale", label: "Battle", icon: Swords, route: "/battle-royale" },
 ];
 
 // Persistent 4-tab bar shared across the main screens; hidden on secondary
@@ -31,7 +34,7 @@ export function BottomNav() {
         { height: BOTTOM_NAV_HEIGHT + insets.bottom, paddingBottom: insets.bottom },
       ]}
     >
-      {TABS.map(({ key, label, icon: Icon, route }) => {
+      {TABS.map(({ key, label, icon: Icon, route, tint }) => {
         const active = pathname === route;
         return (
           <Pressable
@@ -46,7 +49,7 @@ export function BottomNav() {
             }}
           >
             <View style={[styles.pill, active && styles.pillActive]}>
-              <Icon size={20} color={active ? colors.primaryFg : colors.mutedDim} />
+              <Icon size={20} color={active ? colors.primary : (tint ?? colors.mutedDim)} />
             </View>
             <Text style={[styles.label, { color: active ? colors.text : colors.mutedDim }]}>
               {label}
@@ -65,7 +68,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     flexDirection: "row",
-    backgroundColor: colors.surfaceLowest,
+    backgroundColor: colors.bg,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
     paddingTop: 6,
@@ -76,17 +79,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 2,
   },
+  // The active tab is a copper TINT with a copper icon, not a solid copper
+  // slab. Depth in this system comes from the surface ramp; a filled capsule
+  // was the loudest thing on the screen and the site never does that.
   pill: {
     paddingHorizontal: 18,
-    paddingVertical: 4,
-    borderRadius: radius.full,
+    paddingVertical: 5,
+    borderRadius: radius.sm,
   },
   pillActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.accentSoft,
   },
   label: {
-    fontFamily: fonts.mono,
-    fontSize: 10,
-    letterSpacing: 0.5,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 10.5,
+    letterSpacing: 0.2,
   },
 });

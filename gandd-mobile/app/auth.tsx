@@ -10,6 +10,7 @@ import { BrandText, Button, Card, Field } from "@/components/ui";
 import { Splash } from "@/components/splash";
 import { toast } from "@/components/toast";
 import { colors, radius } from "@/lib/theme";
+import { useKeyboardHeight } from "@/platform";
 
 const EMAIL_CONFIRM_NOTICE =
   "Account created. A confirmation email has been sent. Please confirm your email, then come back here to sign in.";
@@ -17,6 +18,11 @@ const EMAIL_CONFIRM_NOTICE =
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const { user, profile, loading } = useAuth();
+  // automaticallyAdjustKeyboardInsets covers iOS; this app runs edge-to-edge
+  // on Android where the window doesn't resize for the keyboard (see
+  // platform/useKeyboardHeight.ts), so without this the keyboard can cover
+  // the password field / sign-in button with no way to scroll them into view.
+  const keyboardHeight = useKeyboardHeight();
   const [isSignup, setIsSignup] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -92,7 +98,11 @@ export default function AuthScreen() {
         style={styles.flex}
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 32 },
+          {
+            paddingTop: insets.top + 24,
+            paddingBottom:
+              insets.bottom + 32 + (Platform.OS === "android" ? keyboardHeight : 0),
+          },
         ]}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"

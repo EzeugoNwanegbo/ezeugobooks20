@@ -1,18 +1,23 @@
 import { useState } from "react";
 import { router } from "expo-router";
 import { Heart, Send, Star } from "lucide-react-native";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { toast } from "@/components/toast";
 import { Eyebrow } from "@/components/ui";
 import { colors, fonts, radius } from "@/lib/theme";
-import { ScreenContainer, TopBar, useHaptics } from "@/platform";
+import { ScreenContainer, TopBar, useHaptics, useKeyboardHeight } from "@/platform";
 
 const TOPICS = ["Accuracy", "Speed", "Design", "Features", "Bug"];
 
 export default function FeedbackScreen() {
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
+  // No KeyboardAvoidingView here — this screen is one scroll column, so
+  // rather than shrink the whole layout we just give the ScrollView enough
+  // extra bottom room (on Android, where the keyboard doesn't resize the
+  // window) to scroll the message field and Send button clear of it.
+  const keyboardHeight = useKeyboardHeight();
   const [rating, setRating] = useState(0);
   const [topic, setTopic] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -34,7 +39,13 @@ export default function FeedbackScreen() {
       <TopBar title="Feedback" onBack={() => router.back()} />
 
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 24 }]}
+        contentContainerStyle={[
+          styles.scroll,
+          {
+            paddingBottom:
+              insets.bottom + 24 + (Platform.OS === "android" ? keyboardHeight : 0),
+          },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >

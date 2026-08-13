@@ -49,13 +49,19 @@ function AppShell() {
             itself does no transition (avoids a fade fighting the slide). */}
         <Stack.Screen name="chat" options={{ animation: "none" }} />
         <Stack.Screen name="library" options={{ animation: "none" }} />
-        <Stack.Screen name="last-minute" options={{ animation: "none" }} />
+        <Stack.Screen name="battle-royale" options={{ animation: "none" }} />
         <Stack.Screen name="coach" options={{ animation: "none" }} />
-        {/* Secondary (drawer) screens — slide in, swipe-back to return. */}
+        {/* Secondary (drawer) screens — slide in, swipe-back to return. Last
+            Minute moved here from the main tab row: Battle Royale took its spot
+            in the bottom bar, but the screen itself is unchanged and still
+            works exactly as it did — it's just reached from the drawer now. */}
+        <Stack.Screen name="last-minute" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="links" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="history" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="settings" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="feedback" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="friends" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="leaderboard" options={{ animation: "slide_from_right" }} />
         {/* Legacy route kept so old links don't 404; redirects to coach. */}
         <Stack.Screen name="studybody" options={{ animation: "fade" }} />
       </Stack>

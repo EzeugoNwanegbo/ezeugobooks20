@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Keyboard, Platform, Pressable, StyleSheet, View } from "react-native";
+import { Keyboard, Platform, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   Easing,
@@ -109,6 +109,7 @@ function SheetContainer({
   onClosed: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { height: winHeight } = useWindowDimensions();
   const ty = useSharedValue(HIDDEN);
   const height = useSharedValue(HIDDEN);
   // How far to lift the sheet so the keyboard doesn't cover it. Driven by JS
@@ -188,7 +189,18 @@ function SheetContainer({
           onLayout={(e) => {
             height.value = e.nativeEvent.layout.height;
           }}
-          style={[styles.panel, { paddingBottom: insets.bottom + 16 }, panelStyle]}
+          style={[
+            styles.panel,
+            {
+              paddingBottom: insets.bottom + 16,
+              // Never let a tall sheet (long doc list, long lookup answer)
+              // run off the TOP of a short device — leave room for the status
+              // bar/notch. Individual sheets cap their own scrollable list
+              // sections; this is the backstop for the sheet as a whole.
+              maxHeight: winHeight - insets.top - 24,
+            },
+            panelStyle,
+          ]}
         >
           <View style={styles.grabber} />
           {children(animateClose)}
@@ -214,6 +226,11 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.xl,
     paddingTop: 10,
     paddingHorizontal: 18,
+    // Pairs with the maxHeight set inline: without this, content taller than
+    // the cap doesn't scroll away, it just paints past the panel's box (up
+    // through the status bar on a short device) since RN's default overflow
+    // is visible.
+    overflow: "hidden",
   },
   grabber: {
     alignSelf: "center",
