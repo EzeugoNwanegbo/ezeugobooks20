@@ -129,7 +129,7 @@ export const QUESTION_COUNTS = [10, 20, 30] as const;
 // past 60 would show them a number they never actually get charged or tested
 // on. Keeping the two caps equal means "accepted here" == "honoured there".
 export const QUESTION_COUNT_MIN = 1;
-export const QUESTION_COUNT_MAX = 60;
+export const QUESTION_COUNT_MAX = 100;
 
 /** Parses a typed question count, rejecting anything that isn't a whole
  * number inside [QUESTION_COUNT_MIN, QUESTION_COUNT_MAX]. Returns the

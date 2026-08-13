@@ -47,9 +47,12 @@
 -- feedback from section 2, which is the copy that actually governs their sitting.
 -- A later migration can widen the list function when something needs it there.
 --
--- Series CREATION is likewise absent. Generating N question sets is client work
--- and costs AI spend per set; the server owns the parent row, the links, the
--- access rules and the resolution, and nothing else.
+-- Series ROUND GENERATION is absent. Generating N question sets costs real AI
+-- spend per set and has to be interruptible and visible to the student, so it
+-- stays client work. The server owns the parent row (challenge_series_create),
+-- the links, the access rules and the resolution — the parts a client must not
+-- be trusted with, since a client that could write its own series row could
+-- name itself the winner.
 --
 --
 -- SAFETY
@@ -105,18 +108,24 @@ END
 $$;
 
 
--- ═══ 1. THE QUESTION CAP: 12 → 60 ════════════════════════════════════════════
+-- ═══ 1. THE QUESTION CAP: 12 → 100 ═══════════════════════════════════════════
 --
--- 60 is not a taste. supabase/functions/studybody/index.ts clamps every
--- generation path at 60 (Math.min(..., 60) on count, mcqCount and essayCount,
--- with a floor of 1), so 60 is the largest set the server will ever actually
--- produce. Allowing more here would let a client ask for a number the generator
--- silently refuses to reach, and then a challenge would be created against a
--- set smaller than both players were told.
+-- 100 is the owner's number, and it is only safe because the generator was
+-- raised to match IN THE SAME CHANGE: supabase/functions/studybody/index.ts
+-- clamps every generation path (count, mcqCount, essayCount) and was 60 until
+-- now. Those two numbers must move together or the cap becomes a lie - a client
+-- would ask for 100, the generator would quietly return 60, and the challenge
+-- would be created against a set smaller than both players were told.
+--
+-- THAT EDGE FUNCTION MUST BE REDEPLOYED. Editing its source changes nothing in
+-- production until `supabase functions deploy studybody` has run. If this
+-- migration is applied first, a 100-question battle fails on the old clamp.
 --
 -- The original 12 was justified by storage - challenge_begin() duplicates the
 -- question set for the opponent, so every question costs twice - and that
--- reasoning still holds, it is simply now bounded at 60 instead. The two purge
+-- reasoning still holds, it is simply now bounded at 100 instead - and at 100 a
+-- single battle stores 200 question rows once the opponent's copy exists. The
+-- two purge
 -- functions at the foot of the social migration
 -- (purge_old_challenges, purge_challenge_question_copies) are what keep that
 -- bounded over time and are unaffected by this change.
@@ -137,7 +146,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.challenges
       ADD CONSTRAINT challenges_question_count_check
-      CHECK (question_count BETWEEN 1 AND 60);
+      CHECK (question_count BETWEEN 1 AND 100);
   END IF;
 END
 $$;
@@ -150,8 +159,8 @@ $$;
 -- and inventing one for it retroactively would change a contest already in play.
 --
 -- 240 minutes is the ceiling for the same reason the client uses it: the largest
--- set (60 questions) at a generous ~45s per question is about 68 minutes, so 240
--- leaves room for a slow reader while still rejecting an obvious typo.
+-- set (100 questions) at a generous ~45s per question is about 75 minutes, so
+-- 240 still leaves room for a slow reader while rejecting an obvious typo.
 
 ALTER TABLE public.challenges
   ADD COLUMN IF NOT EXISTS time_limit_minutes SMALLINT;
@@ -199,7 +208,9 @@ DROP FUNCTION IF EXISTS public.challenge_create(TEXT, UUID);
 CREATE OR REPLACE FUNCTION public.challenge_create(
   p_opponent_username  TEXT,
   p_session_id         UUID,
-  p_time_limit_minutes INT DEFAULT NULL
+  p_time_limit_minutes INT DEFAULT NULL,
+  p_series_id          UUID DEFAULT NULL,
+  p_round_index        INT DEFAULT NULL
 )
 RETURNS UUID
 LANGUAGE plpgsql
@@ -217,6 +228,7 @@ DECLARE
   v_status  TEXT;
   v_id      UUID;
   v_limit   SMALLINT;
+  v_series  public.challenge_series%ROWTYPE;
 BEGIN
   IF v_me IS NULL THEN
     RAISE EXCEPTION 'Sign in first.';
@@ -264,11 +276,13 @@ BEGIN
   IF v_nonmcq > 0 THEN
     RAISE EXCEPTION 'Challenges use multiple-choice questions only, so both scores are settled the same way.';
   END IF;
-  IF v_count > 60 THEN
+  IF v_count > 100 THEN
     -- Bounds the copied set (see challenge_begin) and therefore bounds the whole
-    -- feature's storage. 60 is where the studybody edge function clamps
-    -- generation, so it is also the largest set that can actually be built.
-    RAISE EXCEPTION 'Challenges are up to 60 questions.';
+    -- feature's storage - and that bound is now looser than it was: at 100
+    -- questions a single battle stores 200 rows once challenge_begin() has
+    -- copied the set for the opponent. The two purge functions at the foot of
+    -- the social migration are what keep that from accumulating.
+    RAISE EXCEPTION 'Challenges are up to 100 questions.';
   END IF;
 
   SELECT count(*) INTO v_answers
@@ -296,14 +310,49 @@ BEGIN
     RAISE EXCEPTION 'That set has already been sent as a challenge.';
   END IF;
 
+  -- A round of a series, if one was named. Validated before it is used: a caller
+  -- who could pass any series id could otherwise staple their own round onto
+  -- somebody else's contest.
+  IF (p_series_id IS NULL) <> (p_round_index IS NULL) THEN
+    RAISE EXCEPTION 'A series round needs both a series and a position in it.';
+  END IF;
+
+  IF p_series_id IS NOT NULL THEN
+    SELECT * INTO v_series FROM public.challenge_series WHERE id = p_series_id;
+    IF v_series.id IS NULL THEN
+      RAISE EXCEPTION 'That series could not be found.';
+    END IF;
+    IF v_series.challenger <> v_me THEN
+      RAISE EXCEPTION 'Only the student who started a series can add rounds to it.';
+    END IF;
+    IF v_series.opponent <> v_them THEN
+      -- Otherwise one series could accumulate rounds against different people
+      -- and "who won the most rounds" would stop meaning anything.
+      RAISE EXCEPTION 'That series is against a different friend.';
+    END IF;
+    IF v_series.status <> 'active' THEN
+      RAISE EXCEPTION 'That series is already over.';
+    END IF;
+  END IF;
+
   -- Bounds spam AND storage in one rule: at most 3 unresolved challenges from
   -- this student to this friend at a time.
-  SELECT count(*) INTO v_open
-  FROM public.challenges c
-  WHERE c.challenger = v_me AND c.opponent = v_them
-    AND c.status IN ('pending', 'active');
-  IF v_open >= 3 THEN
-    RAISE EXCEPTION 'You already have 3 challenges waiting with this friend.';
+  --
+  -- SERIES ROUNDS ARE EXEMPT, and must be: a roadmap battle creates one round
+  -- per roadmap topic, and a roadmap of more than three topics - which is most
+  -- of them - would trip this on round 4 and leave the student with a series
+  -- that is half sent. The series is the thing being rate-limited, not its
+  -- rounds, so the count below only sees ordinary one-off battles and the check
+  -- is skipped entirely for a round.
+  IF p_series_id IS NULL THEN
+    SELECT count(*) INTO v_open
+    FROM public.challenges c
+    WHERE c.challenger = v_me AND c.opponent = v_them
+      AND c.series_id IS NULL
+      AND c.status IN ('pending', 'active');
+    IF v_open >= 3 THEN
+      RAISE EXCEPTION 'You already have 3 challenges waiting with this friend.';
+    END IF;
   END IF;
 
   SELECT left(coalesce(nullif(btrim(t.title), ''), 'Challenge'), 80) INTO v_title
@@ -313,10 +362,10 @@ BEGIN
 
   INSERT INTO public.challenges
     (challenger, opponent, title, question_count, source_session_id, status,
-     time_limit_minutes, expires_at)
+     time_limit_minutes, series_id, round_index, expires_at)
   VALUES
     (v_me, v_them, coalesce(v_title, 'Challenge'), v_count, p_session_id, 'pending',
-     v_limit,
+     v_limit, p_series_id, p_round_index::SMALLINT,
      -- Seven days. The plan is right that abandonment, not cheating, is what
      -- kills this feature; a deadline plus the sweep below is the difference
      -- between a feature and a graveyard of pending invitations.
@@ -345,8 +394,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.challenge_create(TEXT, UUID, INT) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.challenge_create(TEXT, UUID, INT) TO authenticated;
+REVOKE ALL ON FUNCTION public.challenge_create(TEXT, UUID, INT, UUID, INT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.challenge_create(TEXT, UUID, INT, UUID, INT) TO authenticated;
 
 
 -- 2b. challenge_begin() carries the limit onto the opponent's copy.
@@ -570,7 +619,88 @@ CREATE UNIQUE INDEX IF NOT EXISTS challenges_series_round_uniq
   WHERE series_id IS NOT NULL;
 
 
--- 3b. Resolution. Counts round wins and settles the series.
+-- 3b. Creating the parent row.
+--
+-- This function has to exist. The table above has no INSERT policy - by design,
+-- since a client that could write its own series row could name itself the
+-- winner - which also means no client can create one directly. Without a
+-- SECURITY DEFINER door, challenge_series would be a table nothing on earth
+-- could put a row in.
+--
+-- It creates ONLY the parent. The rounds are then made one at a time by
+-- challenge_create(..., p_series_id, p_round_index), because each round needs a
+-- generated question set and that is client work costing real AI spend per
+-- round. A half-built series is therefore possible and is deliberately allowed:
+-- it shows as a series with fewer rounds than intended rather than failing the
+-- whole roadmap because round 6 of 9 timed out. challenge_series_resolve()
+-- settles whatever rounds actually exist.
+CREATE OR REPLACE FUNCTION public.challenge_series_create(
+  p_opponent_username TEXT,
+  p_title             TEXT,
+  p_plan_id           UUID DEFAULT NULL
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_me    UUID := auth.uid();
+  v_them  UUID;
+  v_open  INT;
+  v_id    UUID;
+BEGIN
+  IF v_me IS NULL THEN
+    RAISE EXCEPTION 'Sign in first.';
+  END IF;
+  IF public.is_guest_account(v_me) THEN
+    RAISE EXCEPTION 'Create a free account to challenge a friend.';
+  END IF;
+
+  SELECT s.user_id INTO v_them FROM public.find_student(p_opponent_username) s;
+  IF v_them IS NULL OR v_them = v_me THEN
+    RAISE EXCEPTION 'No student found with that handle.';
+  END IF;
+  -- Friends-only, for exactly the reason challenge_create gives: an unsolicited
+  -- challenge from a stranger is a notification channel, and a notification
+  -- channel is a spam channel. A series is that times N.
+  IF NOT public.are_friends(v_me, v_them) THEN
+    RAISE EXCEPTION 'You can only challenge students on your friends list.';
+  END IF;
+
+  -- The rate limit that the exempted rounds no longer carry has to live
+  -- somewhere, so it lives here: one unresolved series per friend at a time. A
+  -- series is a much bigger object than a single battle - N generated sets, 2N
+  -- stored question rows - so the ceiling is lower than the 3 allowed for
+  -- one-off battles, not higher.
+  SELECT count(*) INTO v_open
+  FROM public.challenge_series s
+  WHERE s.challenger = v_me AND s.opponent = v_them AND s.status = 'active';
+  IF v_open >= 1 THEN
+    RAISE EXCEPTION 'You already have a roadmap battle running with this friend.';
+  END IF;
+
+  IF p_plan_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.study_plans p WHERE p.id = p_plan_id AND p.user_id = v_me
+  ) THEN
+    RAISE EXCEPTION 'That roadmap could not be found.';
+  END IF;
+
+  INSERT INTO public.challenge_series (challenger, opponent, title, source_plan_id)
+  VALUES (v_me, v_them,
+          left(coalesce(nullif(btrim(p_title), ''), 'Roadmap battle'), 80),
+          p_plan_id)
+  RETURNING id INTO v_id;
+
+  RETURN v_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.challenge_series_create(TEXT, TEXT, UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.challenge_series_create(TEXT, TEXT, UUID) TO authenticated;
+
+
+-- 3c. Resolution. Counts round wins and settles the series.
 --
 -- Only once EVERY round has finished, in the challenges sense of finished:
 -- 'complete' or 'expired'. A series settled while a round is still playable

@@ -334,8 +334,8 @@ async function generateQuestions(body: Body, deepSeekKey: string) {
   const seedExclude = (body.excludePrompts || []).filter((p) => typeof p === "string" && p.trim());
 
   if (type === "mixed") {
-    const mcqTarget = Math.min(Math.max(body.mcqCount || 0, 0), 60);
-    const essayTarget = Math.min(Math.max(body.essayCount || 0, 0), 60);
+    const mcqTarget = Math.min(Math.max(body.mcqCount || 0, 0), 100);
+    const essayTarget = Math.min(Math.max(body.essayCount || 0, 0), 100);
     const mcqs = await generateOneType(body, deepSeekKey, "mcq", mcqTarget, seedExclude);
     const essayExclude = [
       ...seedExclude,
@@ -345,7 +345,7 @@ async function generateQuestions(body: Body, deepSeekKey: string) {
     return { questions: [...mcqs, ...essays] };
   }
 
-  const target = Math.min(Math.max(body.count || 5, 1), 60);
+  const target = Math.min(Math.max(body.count || 5, 1), 100);
   const onlyType = type === "essay" ? "essay" : "mcq";
   const questions = await generateOneType(body, deepSeekKey, onlyType, target, seedExclude);
   return { questions };
@@ -361,7 +361,7 @@ Hard rules:
 Return strict JSON only.`;
 
 async function generateFlashcards(body: Body, deepSeekKey: string) {
-  const target = Math.min(Math.max(body.count || 10, 1), 60);
+  const target = Math.min(Math.max(body.count || 10, 1), 100);
   const batchSize = 30;
   const maxBatches = Math.ceil(target / batchSize) + 1;
   const collected: Record<string, unknown>[] = [];
