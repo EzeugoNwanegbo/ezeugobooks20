@@ -55,7 +55,7 @@ export { folderName, type DocRow };
  * back with 60 questions. Flip this flag only once BOTH have happened and been
  * verified.
  */
-export const BATTLE_SCHEMA_APPLIED = false;
+export const BATTLE_SCHEMA_APPLIED = true;
 
 // Server hard cap. Two numbers, and which one is live depends on the flag above:
 //   flag off — challenges.question_count CHECK (BETWEEN 1 AND 12) plus

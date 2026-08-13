@@ -29,18 +29,23 @@ export const SOCIAL_SCHEMA_APPLIED = true;
  * FALSE until it has been run BY HAND — same contract as SOCIAL_SCHEMA_APPLIED
  * above, and it can only ever be flipped once that one already is (the file
  * itself refuses to apply otherwise). That migration raises the challenge cap
- * from 12 to 60, adds challenges.time_limit_minutes (carried onto the
- * opponent's copy by a rewritten challenge_begin()), and adds
- * challenge_series for roadmap battles. Until this is true, Battle Royale
- * (src/routes/-app.battle-royale-page.tsx) must not reference any of that —
- * not the wider cap, not a third argument to createChallenge() below, not a
- * series table or column.
+ * from 12 to 100 (matched by a redeploy of the studybody edge function, which
+ * clamped generation at 60 — both have to move together or the cap becomes a
+ * lie), adds challenges.time_limit_minutes (carried onto the opponent's copy
+ * by a rewritten challenge_begin()), and adds challenge_series for roadmap
+ * battles: a table plus challenge_series_create() / challenge_series_resolve(),
+ * and a series_id/round_index pair of columns on challenges consumed by a
+ * five-argument overload of challenge_create(). Until this is true, Battle
+ * Royale (src/routes/-app.battle-royale-page.tsx and
+ * src/lib/battle-royale-client.ts) must not reference any of that — not the
+ * wider cap, not a third argument to createChallenge() below, not a series
+ * table or column.
  *
  * Flip it in the SAME commit that applies the migration, and only alongside
  * mobile's copy of this flag (gandd-mobile/lib/battle-royale-client.ts) —
  * both apps hit the same schema.
  */
-export const BATTLE_SCHEMA_APPLIED = false;
+export const BATTLE_SCHEMA_APPLIED = true;
 
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
