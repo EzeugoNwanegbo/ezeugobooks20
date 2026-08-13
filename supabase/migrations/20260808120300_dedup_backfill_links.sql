@@ -100,6 +100,57 @@
 --
 -- Note that EVERY member is logged, donors included. Under the superseded design
 -- the canonical was excluded because it kept its chunks; here it does not.
+--
+-- SUPERSESSION GUARD. The superseded version of this file created merge_log with
+-- a different shape: `canonical_id UUID NOT NULL`, and none of pool_id,
+-- pooled_at or is_donor. `CREATE TABLE IF NOT EXISTS` matches on the NAME only,
+-- so against an old table it would silently keep it and then fail on the INSERT
+-- below with "column is_donor of relation merge_log does not exist" - the same
+-- class of failure as the 42P16 that dedup.plan raised, and just as confusing.
+--
+-- Stage 1 section 0c already drops the whole dedup schema, so on any database
+-- that has applied the current stage 1 there is nothing here to find. This is a
+-- second line of defence for the case where the two files are applied out of
+-- order or stage 1 is re-run from an older copy, and it is a no-op on a virgin
+-- database and on one already carrying the new shape.
+--
+-- It refuses rather than drops if the old table records completed work.
+--
+-- An earlier version of this comment argued that it cannot hold completed work,
+-- because completing any would have set documents.canonical_document_id and
+-- "stage 1 would not have been able to drop that column if any row had one".
+-- That was wrong about Postgres: ALTER TABLE ... DROP COLUMN discards data
+-- without complaint, so a successful stage 1 proved nothing about the column's
+-- contents. Stage 1 section 8 now opens with a DO block that counts non-NULL
+-- canonical_document_id and raises if it finds any, so the guarantee is real -
+-- but it is stage 1's guard that establishes it, not the drop itself, and this
+-- check stands on its own for the out-of-order case regardless.
+DO $$
+DECLARE
+  v_done INT;
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'dedup'
+      AND table_name   = 'merge_log'
+      AND column_name  = 'canonical_id'
+  ) THEN
+    SELECT count(*) INTO v_done
+    FROM dedup.merge_log
+    WHERE linked_at IS NOT NULL OR chunks_deleted_at IS NOT NULL;
+
+    IF v_done > 0 THEN
+      RAISE EXCEPTION
+        'dedup.merge_log is in the superseded canonical-link shape and records % rows of completed work. Nothing has been changed. Reconcile it by hand before running this file.', v_done;
+    END IF;
+
+    -- Holds nothing but a frozen copy of dedup.plan, which 4a re-freezes below.
+    DROP TABLE dedup.merge_log;
+    RAISE NOTICE 'Dropped the superseded dedup.merge_log (canonical-link shape); it is re-frozen from dedup.plan below.';
+  END IF;
+END
+$$;
+
 CREATE TABLE IF NOT EXISTS dedup.merge_log (
   document_id        UUID PRIMARY KEY,
   digest             TEXT NOT NULL,

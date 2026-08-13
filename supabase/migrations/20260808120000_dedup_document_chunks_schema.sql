@@ -19,8 +19,21 @@
 -- ── THIS FILE REPLACES AN EARLIER DESIGN. READ THIS BEFORE THE SQL. ──────────
 --
 -- The first version of this migration made a student's documents row point at
--- ANOTHER STUDENT'S document (documents.canonical_document_id). It was never
--- applied. It is superseded here by the owner's design: the shared copy is
+-- ANOTHER STUDENT'S document (documents.canonical_document_id). IT IS APPLIED IN
+-- PRODUCTION - it was run before this redesign existed - so this file cannot
+-- assume a clean slate, and did not survive contact with one: the new dedup.plan
+-- renames two output columns, `CREATE OR REPLACE VIEW` cannot do that, and the
+-- migration aborted with
+--
+--     ERROR: 42P16: cannot change name of view column "canonical_id" to "donor_id"
+--
+-- Section 0 and section 8 remove the superseded design, between them and in that
+-- order for the reason section 0 sets out. Everything in between is the new
+-- design and is unchanged by any of it. Both sections are no-ops on a database
+-- that has never seen the old file, so this migration now applies cleanly from
+-- either state.
+--
+-- It is superseded here by the owner's design: the shared copy is
 -- moved into a G&D-OWNED POOL - owner-less rows with no user_id, in the shape of
 -- library_documents / library_document_chunks - and every student's row points
 -- at the pool instead.
@@ -105,8 +118,16 @@
 -- which means the foreign key above can no longer tell them apart and the guard
 -- trigger comes straight back. The copy is the price of deleting the trigger.
 --
--- THIS FILE IS SAFE AND REVERSIBLE. It creates two empty tables, adds two
--- columns, and replaces four functions. It moves no data and deletes nothing.
+-- THIS FILE IS SAFE AND REVERSIBLE. It creates two empty tables, adds a column,
+-- and replaces four functions. It moves no data and deletes no chunk, document
+-- or user row.
+--
+-- The one exception to "deletes nothing" is the supersession in sections 0 and
+-- 8, which removes the earlier design's schema objects: a column that is NULL on
+-- every row, two triggers, three functions, one policy (replaced by the original
+-- it had itself replaced) and a scratch schema of views. No student-visible data
+-- passes through any of them, and documents.content_hash - the only column of
+-- the old design that holds anything - is explicitly kept (0d).
 --
 -- ROLLBACK
 -- --------
@@ -122,15 +143,219 @@
 --     for insert with check (auth.uid() = user_id);
 --   alter table public.documents drop constraint if exists documents_pooled_link_fkey;
 --   alter table public.documents drop constraint if exists documents_pooled_needs_hash;
---   alter table public.documents
---     drop column if exists pooled_document_id,
---     drop column if exists content_hash;
+--   alter table public.documents drop column if exists pooled_document_id;
+--   -- content_hash: LEAVE IT. Both designs write the identical value into it
+--   -- (see section 0d), so it is the one artefact worth keeping whichever design
+--   -- wins, and re-deriving it means streaming ~380 MB of chunk text again. Drop
+--   -- it only if you are abandoning de-duplication altogether:
+--   --   alter table public.documents drop column if exists content_hash;
+--   --   drop index if exists public.idx_documents_content_hash;
 --   drop table if exists public.pool_document_chunks;
 --   drop table if exists public.pool_documents;
---   -- then re-run 20260608000100_add_chunk_embeddings.sql and
---   -- 20260719130000_promote_to_library.sql to restore the old function bodies.
+--   -- then re-run 20260503000100_optimize_document_chunk_search.sql,
+--   -- 20260608000100_add_chunk_embeddings.sql and
+--   -- 20260719130000_promote_to_library.sql to restore the pre-dedup function
+--   -- bodies. document_chunks' SELECT policy needs nothing: section 0a already
+--   -- restored it to the original `auth.uid() = user_id`, which is what the
+--   -- pre-dedup app expects.
 -- Rolling this back is only safe BEFORE stage 5 has deleted anything. Once a
 -- student's own chunks are gone, dropping the pool strands them.
+--
+-- SECTIONS 0 AND 8 ARE NOT ROLLED BACK BY ANY OF THE ABOVE, deliberately. They
+-- remove a superseded design rather than anything this file introduces, and the
+-- statements above land you on the pre-dedup schema, which is where the
+-- superseded design started from too. If you genuinely need it back, it is in
+-- git:
+--   git show 53ccde1:supabase/migrations/20260808120000_dedup_document_chunks_schema.sql
+
+
+-- ─── 0. SUPERSESSION, PART 1 OF 2: undo the canonical-link design ─────────────
+--
+-- SAFE TO RUN ON A VIRGIN DATABASE AND ON ONE CARRYING THE OLD DESIGN, and safe
+-- to run twice. Every removal below is `IF EXISTS`, so on a database that never
+-- saw the superseded stage 1 this section does nothing at all except re-state
+-- document_chunks' SELECT policy in exactly the words
+-- 20260430002000_add_document_chunks.sql used - which is a no-op there too.
+--
+-- WHAT THE OLD DESIGN LEFT BEHIND, AND WHERE EACH PIECE IS DEALT WITH.
+-- Read off the superseded file itself, not off a sample of the live catalogue:
+--   git show 53ccde1:supabase/migrations/20260808120000_dedup_document_chunks_schema.sql
+--
+--   documents.canonical_document_id, its self-FK, idx_documents_user_canonical
+--     and idx_documents_canonical .................... section 8
+--   documents.content_hash ......................... KEPT, untouched - see 0d
+--   idx_documents_content_hash ..................... KEPT - byte-identical
+--                                                    definition in both designs
+--   public.document_chunkset_digest(uuid) .......... kept; section 4 replaces it
+--                                                    in place with a
+--                                                    byte-identical body
+--   public.documents_check_canonical_link() ........ section 8
+--   trigger documents_canonical_guard .............. section 8
+--   public.documents_reparent_canonical() .......... section 8
+--   trigger documents_reparent_canonical ........... section 8
+--   policy "Users view own or linked document chunks" ......... HERE, 0a
+--   policy "Users insert own document chunks", canonical form . section 3
+--   public.find_canonical_document(text) ........... HERE, 0b
+--   schema dedup, and everything in it ............. HERE, 0c
+--   public.refresh_document_content_hash(uuid) ..... section 4 replaces in place
+--   view public.document_chunks_effective .......... section 6 drops + recreates
+--   public.search_document_chunks(text[],uuid[],int) .......... section 6
+--   public.search_document_chunks_hybrid(text[],text,uuid[],int) section 6
+--   public.promote_document_to_library(uuid,uuid) .. section 6
+--
+-- Everything in that list marked "section 4/6" is replaced IN PLACE rather than
+-- dropped, and can be: name, argument types and return type are identical in the
+-- two designs, so CREATE OR REPLACE FUNCTION is legal. Only two objects in the
+-- whole migration have a shape `CREATE OR REPLACE` cannot reach -
+-- public.document_chunks_effective (its column list changed) and dedup.plan
+-- (canonical_id -> donor_id, is_canonical -> is_donor). The first is already
+-- handled where it is created, by an explicit DROP VIEW; the second is what
+-- raised the 42P16, and 0c is its fix.
+--
+-- WHY THE REMOVAL IS SPLIT ACROSS SECTIONS 0 AND 8 RATHER THAN ALL DONE HERE
+-- -------------------------------------------------------------------------
+-- This is the part that would break retrieval for every student if it were got
+-- wrong, so it is spelled out rather than assumed.
+--
+-- A SQL-language or plpgsql function body is not resolved when the function is
+-- created; it is resolved when it runs. So dropping
+-- documents.canonical_document_id does not error and does not invalidate
+-- anything - it silently arms three live functions to fail on their next call.
+-- In production right now, public.search_document_chunks,
+-- public.search_document_chunks_hybrid and public.promote_document_to_library
+-- are the OLD bodies, which resolve COALESCE(d.canonical_document_id, d.id), and
+-- public.document_chunks_effective is the old view, which selects it. Chat
+-- retrieval on web and on mobile goes through search_document_chunks_hybrid.
+--
+-- Sections 4 to 6 replace every one of those with a body that names no such
+-- column. So the column must not go until they have. Two ways to guarantee that:
+--
+--   (a) drop the column here, and restore the pre-dedup bodies
+--       (20260503000100 / 20260608000100 / 20260719130000) here as well, so that
+--       every function is valid at every instant; or
+--   (b) drop the column after sections 4 to 6 have run.
+--
+-- (b) is what this file does. It is the same guarantee without a third copy of
+-- two 120-line search functions living in the repo, and it buys one thing (a)
+-- does not: documents_canonical_guard stays alive for exactly as long as the
+-- column and the old function bodies do.
+--
+-- That last point is not tidiness. documents carries a blanket "Users update own
+-- docs" FOR UPDATE policy with no column restriction. Drop the guard trigger
+-- while the old search bodies are still live and a student can point
+-- canonical_document_id at another student's document id and have
+-- search_document_chunks_hybrid - SECURITY DEFINER, so RLS does not save us -
+-- hand them that student's textbook. Retiring the guard in the same section as
+-- the column, after the last old body is gone, means that window is never
+-- opened rather than merely being kept short.
+--
+-- So the intermediate state, between section 0 and section 8, is: the old
+-- column, the old guard trigger and the old function bodies, all still agreeing
+-- with each other and all still returning exactly what they return today (no
+-- documents row has canonical_document_id set, so COALESCE(canonical, id) = id
+-- for every row) - plus the new pool objects, which nothing points at yet. Every
+-- statement boundary is coherent. And if the file runs as one transaction, which
+-- it does through the Supabase SQL editor and through `supabase db push`, none
+-- of it is observable from outside at all.
+
+
+-- 0a. RLS on document_chunks.
+--
+--     The old design DROPPED the original "Users view own document chunks" and
+--     replaced it with an "own OR linked" policy whose EXISTS() reads
+--     documents.canonical_document_id.
+--
+--     This file creates NO SELECT policy on document_chunks - section 3 argues
+--     that the original one is exactly right for the pool design and leaves it
+--     alone. So if the old policy were merely dropped along with the column,
+--     document_chunks would be left with no SELECT policy whatsoever, and under
+--     RLS that denies every read: src/lib/embeddings.ts' backfill and the
+--     library page's per-document chunk counts would go silently empty for
+--     everybody. The original is therefore restored here, verbatim from
+--     20260430002000_add_document_chunks.sql.
+--
+--     This narrows, never widens. No documents row has canonical_document_id
+--     set, so the branch being removed matches nothing today.
+--
+--     END STATE on document_chunks: exactly one SELECT policy (own rows only),
+--     the INSERT policy section 3 rewrites, and the untouched UPDATE and DELETE
+--     policies - four in total, the same four the table had before any of this
+--     started.
+DROP POLICY IF EXISTS "Users view own or linked document chunks" ON public.document_chunks;
+DROP POLICY IF EXISTS "Users view own document chunks" ON public.document_chunks;
+CREATE POLICY "Users view own document chunks"
+  ON public.document_chunks FOR SELECT
+  USING (auth.uid() = user_id);
+
+
+-- 0b. The old canonical lookup, superseded by find_pooled_document() in section
+--     5, which answers the same question against the pool. Nothing calls it -
+--     src/routes/-app.library-page.tsx calls find_pooled_document and is gated
+--     on DEDUP_SCHEMA_APPLIED, still false - but it is GRANTed to authenticated
+--     and its body reads canonical_document_id, so leaving it behind would leave
+--     a broken function callable over the API. Dropped by exact signature; there
+--     has only ever been the one.
+DROP FUNCTION IF EXISTS public.find_canonical_document(TEXT);
+
+
+-- 0c. The dedup schema, whole. THIS IS THE FIX FOR THE 42P16.
+--
+--     dedup.plan is the view that raised it: CREATE OR REPLACE VIEW cannot
+--     rename canonical_id to donor_id or is_canonical to is_donor.
+--     dedup.doc_stats and dedup.ineligible would in fact have replaced cleanly -
+--     their column lists are identical in both designs - but doc_stats' WHERE
+--     clause reads canonical_document_id, which would block section 8's column
+--     drop, and dedup.plan cannot be dropped without doc_stats going too.
+--     Dropping the schema is also exactly what the superseded file's own
+--     ROLLBACK note prescribes.
+--
+--     WHAT CASCADE TAKES, AND WHY EACH IS FINE:
+--       dedup.doc_stats, dedup.ineligible, dedup.plan - recreated in section 7.
+--       dedup.fingerprint_batch(int) - recreated in section 7.
+--       dedup.merge_log, if the superseded stage 4 was ever run. Its old shape
+--         is canonical_id NOT NULL with no pool columns, and stage 4's
+--         CREATE TABLE IF NOT EXISTS would silently keep it and then fail on the
+--         INSERT - the same class of bug as this one. It holds nothing but a
+--         frozen copy of dedup.plan, which stage 4 re-freezes; it cannot hold
+--         completed work, because completing any would have set
+--         canonical_document_id on a documents row and no row has one set.
+--         20260808120300 checks for the old shape itself as well.
+--       dedup.partial_extractions, if supabase/repairs/mark-partial-extractions.sql
+--         was ever run. Owner-run diagnostic view; its old version also reads
+--         canonical_document_id, and re-running that file recreates it against
+--         pooled_document_id. Nothing depends on it.
+--     Nothing outside the dedup schema depends on anything inside it - no public
+--     view, function, policy or constraint names dedup.* - so the cascade cannot
+--     reach further than that list.
+DROP SCHEMA IF EXISTS dedup CASCADE;
+
+
+-- 0d. documents.content_hash IS DELIBERATELY NOT TOUCHED: not dropped, not
+--     cleared, not recomputed.
+--
+--     THE TWO DESIGNS DEFINE IT IDENTICALLY. The stored value is
+--     'chunkset-sha256-v1:' || public.document_chunkset_digest(id) in both, and
+--     document_chunkset_digest's body is byte-for-byte the same text in the
+--     superseded file and in section 4 of this one: per-chunk SHA-256 over
+--     chunk_index|page_start|page_end|sha256(content), joined by newlines,
+--     hashed again, over public.document_chunks ordered by chunk_index. Same
+--     source rows, same algorithm, same 'v1' tag, same prefix - so a hash
+--     written by the old stage 2 is precisely the hash the new stage 2 would
+--     write, and src/lib/content-hash.ts reproduces both.
+--
+--     Re-deriving it would therefore be pure cost: it streams ~380 MB of chunk
+--     text through a free-tier instance already at its size ceiling, which is
+--     the entire reason stage 2 is a separate, batched, restartable file. Stage
+--     2 skips rows that already have one (`WHERE d2.content_hash IS NULL`), so
+--     whatever is already stored is kept and re-running it costs nothing.
+--
+--     Consequently section 2's `ADD COLUMN IF NOT EXISTS content_hash` and
+--     `CREATE INDEX IF NOT EXISTS idx_documents_content_hash` are no-ops on a
+--     database carrying the old design rather than a rebuild - the index
+--     definition is identical in both. The only thing about content_hash that
+--     changes is the wording of its COMMENT.
+--
+--     Nothing to execute here. This note is the decision.
 
 
 -- ─── 1. The pool ──────────────────────────────────────────────────────────────
@@ -1432,3 +1657,97 @@ WHERE r.group_size > 1;
 
 COMMENT ON VIEW dedup.plan IS
   'One row per document in a provably-identical group. is_donor = its chunks seed the pool row; every row in the group (donor included) then links to that pool row and gives up its own chunks.';
+
+
+-- ─── 8. SUPERSESSION, PART 2 OF 2: the old link column and its guards ─────────
+--
+-- Section 0 explains at length why this is down here rather than up there. The
+-- one-line version: until the statements above had run,
+-- public.search_document_chunks, public.search_document_chunks_hybrid and
+-- public.promote_document_to_library were still the superseded bodies that
+-- resolve COALESCE(d.canonical_document_id, d.id), and
+-- public.document_chunks_effective was still the superseded view that selects
+-- it. Sections 4 and 6 have now replaced all four, and there is no longer a
+-- single statement anywhere in this file - or anywhere in the database - that
+-- names canonical_document_id. It is dead weight now, and only now.
+--
+-- SAFE ON A VIRGIN DATABASE: every statement is IF EXISTS, so this section does
+-- nothing on one that never had the old design.
+--
+-- The guard trigger goes here, with the column, not in section 0. It is what
+-- stops a student aiming canonical_document_id at another student's document,
+-- and the old search bodies would have honoured such a pointer. Guard and column
+-- have to die together, or not yet.
+
+DROP TRIGGER IF EXISTS documents_canonical_guard ON public.documents;
+DROP TRIGGER IF EXISTS documents_reparent_canonical ON public.documents;
+
+-- After the triggers, never before: a function with a trigger still attached
+-- cannot be dropped without CASCADE, and CASCADE is the wrong instrument for
+-- something this load-bearing.
+DROP FUNCTION IF EXISTS public.documents_check_canonical_link();
+DROP FUNCTION IF EXISTS public.documents_reparent_canonical();
+
+-- Two partial indexes on canonical_document_id. DROP COLUMN would take them
+-- anyway; named here so the removal is auditable rather than incidental.
+DROP INDEX IF EXISTS public.idx_documents_user_canonical;
+DROP INDEX IF EXISTS public.idx_documents_canonical;
+
+-- The self-reference documents.canonical_document_id -> documents.id, auto-named
+-- by Postgres when the superseded file wrote `REFERENCES public.documents(id)`.
+ALTER TABLE public.documents
+  DROP CONSTRAINT IF EXISTS documents_canonical_document_id_fkey;
+
+-- THE PRECONDITION, ENFORCED RATHER THAN ASSERTED.
+--
+-- Section 0 states three times that no documents row has canonical_document_id
+-- set, and every "this narrows, never widens" argument in this file rests on it.
+-- Until now nothing checked it, and the DROP below would not have: `ALTER TABLE
+-- ... DROP COLUMN` does not care whether the column holds data. It drops either
+-- way, silently. (20260808120300 reasons that "stage 1 would not have been able
+-- to drop that column if any row had one" - that is not true of Postgres, and
+-- the comment there is wrong.) The `NOT CASCADE` below is real protection, but
+-- only against catalogue DEPENDENCIES; a million populated rows are not a
+-- dependency.
+--
+-- So assert it for real. If the superseded design ever did link a document, this
+-- raises and takes the whole file down with it - which is the correct outcome:
+-- those links are the only record that the work happened, and the pool design
+-- needs to be told about them rather than have them deleted underneath it.
+-- Recovery is to read the rows out, decide what the pool equivalent is, and only
+-- then re-run. IF EXISTS on the column keeps this a no-op on a virgin database.
+DO $$
+DECLARE
+  v_linked INT;
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name   = 'documents'
+      AND column_name  = 'canonical_document_id'
+  ) THEN
+    EXECUTE 'SELECT count(*) FROM public.documents WHERE canonical_document_id IS NOT NULL'
+      INTO v_linked;
+
+    IF v_linked > 0 THEN
+      RAISE EXCEPTION
+        'Refusing to drop documents.canonical_document_id: % row(s) still link through it. '
+        'The superseded design was used for real work, so this migration''s '
+        '"no row has one set" premise does not hold. Export those rows and decide '
+        'their pool equivalent before re-running stage 1.', v_linked;
+    END IF;
+  END IF;
+END
+$$;
+
+-- Deliberately NOT `CASCADE`. If anything still depends on this column, this
+-- statement must fail loudly and take the whole file down with it, not quietly
+-- delete whatever it is. Nothing should: 0a removed the policy, 0c the views,
+-- and sections 4 and 6 the function bodies - and function bodies never created a
+-- catalogue dependency to begin with, which is exactly why their ordering had to
+-- be reasoned about by hand rather than left to Postgres.
+--
+-- documents.content_hash stays. See 0d for why, and for the evidence that the
+-- values already in it are the values the pool design wants.
+ALTER TABLE public.documents
+  DROP COLUMN IF EXISTS canonical_document_id;
