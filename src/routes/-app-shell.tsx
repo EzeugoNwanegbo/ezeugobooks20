@@ -13,6 +13,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Swords,
   TimerReset,
   Trophy,
   Trash2,
@@ -393,6 +394,7 @@ function AppLayout() {
       | "/app/last-minute"
       | "/app/history"
       | "/app/studybody"
+      | "/app/battle-royale"
       | "/app/feedback"
       | "/app/settings",
   ) => {
@@ -715,6 +717,17 @@ function AppLayout() {
                   still exists; this only decides whether it is advertised. */}
               {socialEnabled(user) &&
                 navItem("/app/friends", <Users className="h-4 w-4 shrink-0" />, "Friends", "coral")}
+              {/* Same gate as Friends — a battle needs an opponent, which needs
+                  the same schema. Last Minute keeps its own slot below
+                  unchanged; unlike mobile (four tabs only), the sidebar has
+                  room to add this rather than replace anything. */}
+              {socialEnabled(user) &&
+                navItem(
+                  "/app/battle-royale",
+                  <Swords className="h-4 w-4 shrink-0" />,
+                  "Battle Royale",
+                  "coral",
+                )}
               {navAction(
                 <Sparkles className="h-4 w-4 shrink-0" />,
                 "Personalize",
@@ -1038,6 +1051,18 @@ function AppLayout() {
                   navigate({ to: "/app/leaderboard" });
                 }}
               />
+              {/* Same gate as the desktop sidebar's Battle Royale entry — see
+                  socialEnabled(). Kept in step with the sidebar deliberately:
+                  the route resolves at any width, so it must be reachable at
+                  any width too. */}
+              {socialEnabled(user) && (
+                <MobileDrawerNavItem
+                  active={location.pathname.includes("battle-royale")}
+                  icon={<Swords className="h-4 w-4" />}
+                  label="Battle Royale"
+                  onPick={() => goToMobileRoute("/app/battle-royale")}
+                />
+              )}
               <MobileDrawerNavItem
                 active={false}
                 icon={<Sparkles className="h-4 w-4" />}

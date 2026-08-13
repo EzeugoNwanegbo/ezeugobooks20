@@ -25,6 +25,7 @@ import { Route as AppHistoryRouteImport } from './routes/app.history'
 import { Route as AppFriendsRouteImport } from './routes/app.friends'
 import { Route as AppFeedbackRouteImport } from './routes/app.feedback'
 import { Route as AppChatRouteImport } from './routes/app.chat'
+import { Route as AppBattleRoyaleRouteImport } from './routes/app.battle-royale'
 import { Route as AppAdminRouteImport } from './routes/app.admin'
 
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -107,6 +108,11 @@ const AppChatRoute = AppChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => AppRoute,
 } as any)
+const AppBattleRoyaleRoute = AppBattleRoyaleRouteImport.update({
+  id: '/battle-royale',
+  path: '/battle-royale',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAdminRoute = AppAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -121,6 +127,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/app/admin': typeof AppAdminRoute
+  '/app/battle-royale': typeof AppBattleRoyaleRoute
   '/app/chat': typeof AppChatRoute
   '/app/feedback': typeof AppFeedbackRoute
   '/app/friends': typeof AppFriendsRoute
@@ -140,6 +147,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/app/admin': typeof AppAdminRoute
+  '/app/battle-royale': typeof AppBattleRoyaleRoute
   '/app/chat': typeof AppChatRoute
   '/app/feedback': typeof AppFeedbackRoute
   '/app/friends': typeof AppFriendsRoute
@@ -160,6 +168,7 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/app/admin': typeof AppAdminRoute
+  '/app/battle-royale': typeof AppBattleRoyaleRoute
   '/app/chat': typeof AppChatRoute
   '/app/feedback': typeof AppFeedbackRoute
   '/app/friends': typeof AppFriendsRoute
@@ -181,6 +190,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/app/admin'
+    | '/app/battle-royale'
     | '/app/chat'
     | '/app/feedback'
     | '/app/friends'
@@ -200,6 +210,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/app/admin'
+    | '/app/battle-royale'
     | '/app/chat'
     | '/app/feedback'
     | '/app/friends'
@@ -219,6 +230,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/app/admin'
+    | '/app/battle-royale'
     | '/app/chat'
     | '/app/feedback'
     | '/app/friends'
@@ -354,6 +366,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppChatRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/battle-royale': {
+      id: '/app/battle-royale'
+      path: '/battle-royale'
+      fullPath: '/app/battle-royale'
+      preLoaderRoute: typeof AppBattleRoyaleRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/admin': {
       id: '/app/admin'
       path: '/admin'
@@ -366,6 +385,7 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppAdminRoute: typeof AppAdminRoute
+  AppBattleRoyaleRoute: typeof AppBattleRoyaleRoute
   AppChatRoute: typeof AppChatRoute
   AppFeedbackRoute: typeof AppFeedbackRoute
   AppFriendsRoute: typeof AppFriendsRoute
@@ -380,6 +400,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAdminRoute: AppAdminRoute,
+  AppBattleRoyaleRoute: AppBattleRoyaleRoute,
   AppChatRoute: AppChatRoute,
   AppFeedbackRoute: AppFeedbackRoute,
   AppFriendsRoute: AppFriendsRoute,

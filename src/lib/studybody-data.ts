@@ -262,6 +262,7 @@ export async function createStraightInSession({
   questionType = "mixed",
   difficulty,
   timerSeconds,
+  topicFocus,
   onStage,
 }: {
   userId: string;
@@ -284,11 +285,24 @@ export async function createStraightInSession({
   difficulty: "easy" | "medium" | "hard";
   /** Omitted or 0 for an untimed set — no timer key is written at all. */
   timerSeconds?: number;
+  /**
+   * Narrows retrieval to the chunks that match this topic (the same pinpoint
+   * pull the roadmap builder uses, loadStudyDocuments with a query) instead of
+   * sampling evenly across the whole file. Added for Battle Royale's "a
+   * specific topic" scope (-app.battle-royale-page.tsx) — omitted or blank
+   * preserves this flow's original whole-file behaviour exactly, which is what
+   * every other caller (My Coach's "Go straight in", the challenge dialogs)
+   * still wants.
+   */
+  topicFocus?: string;
   /** Called as each real step begins, so the caller can show honest progress. */
   onStage?: (stage: StraightInStage) => void;
 }): Promise<{ planId: string; sessionId: string }> {
   onStage?.("reading");
-  const documents = await loadStudyDocumentsSpanning(documentIds, docsMeta);
+  const focus = topicFocus?.trim();
+  const documents = focus
+    ? await loadStudyDocuments(documentIds, focus)
+    : await loadStudyDocumentsSpanning(documentIds, docsMeta);
 
   // Only "mixed" splits the set two ways; the single-style sets ask for one kind
   // and let the edge function's non-mixed branch handle the whole count.
@@ -302,7 +316,9 @@ export async function createStraightInSession({
 
   const topicStub = {
     title,
-    summary: "A broad set drawn from across the whole of the selected material.",
+    summary: focus
+      ? `A set focused on "${focus}" from the selected material.`
+      : "A broad set drawn from across the whole of the selected material.",
     objectives: [],
     source_refs: [],
   };

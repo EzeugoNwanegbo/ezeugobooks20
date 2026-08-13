@@ -22,6 +22,26 @@
 // nothing to fail because nothing is asked.
 export const SOCIAL_SCHEMA_APPLIED = true;
 
+/**
+ * Is supabase/migrations/20260813120000_battle_royale.sql applied in
+ * production yet?
+ *
+ * FALSE until it has been run BY HAND — same contract as SOCIAL_SCHEMA_APPLIED
+ * above, and it can only ever be flipped once that one already is (the file
+ * itself refuses to apply otherwise). That migration raises the challenge cap
+ * from 12 to 60, adds challenges.time_limit_minutes (carried onto the
+ * opponent's copy by a rewritten challenge_begin()), and adds
+ * challenge_series for roadmap battles. Until this is true, Battle Royale
+ * (src/routes/-app.battle-royale-page.tsx) must not reference any of that —
+ * not the wider cap, not a third argument to createChallenge() below, not a
+ * series table or column.
+ *
+ * Flip it in the SAME commit that applies the migration, and only alongside
+ * mobile's copy of this flag (gandd-mobile/lib/battle-royale-client.ts) —
+ * both apps hit the same schema.
+ */
+export const BATTLE_SCHEMA_APPLIED = false;
+
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { isGuestUser } from "@/lib/guest-session";
@@ -210,15 +230,35 @@ export const DEFAULT_CHALLENGE_QUESTIONS = 8;
  * The set must be the caller's own, in progress, MCQ-only and untouched - the
  * server checks all four, because a set whose answers the challenger has already
  * seen is not a contest.
+ *
+ * Two callers: the challenge dialogs (src/components/challenge-friend-dialog.tsx)
+ * never pass a limit, and Battle Royale (src/routes/-app.battle-royale-page.tsx)
+ * passes one only once BATTLE_SCHEMA_APPLIED is true - see timeLimitMinutes below.
  */
-export async function createChallenge(opponentHandle: string, sessionId: string): Promise<string> {
+export async function createChallenge(
+  opponentHandle: string,
+  sessionId: string,
+  timeLimitMinutes?: number,
+): Promise<string> {
   if (!SOCIAL_SCHEMA_APPLIED) throw new Error(OFF);
-  return unwrap<string>(
-    await db.rpc("challenge_create", {
-      p_opponent_username: normalizeHandle(opponentHandle),
-      p_session_id: sessionId,
-    }),
-  );
+  // The third argument is OMITTED entirely unless a limit was given, and that is
+  // load-bearing rather than tidy. Before 20260813120000_battle_royale.sql is
+  // applied the only function in the database is challenge_create(TEXT, UUID);
+  // naming p_time_limit_minutes against it fails the call outright. Sending two
+  // keys works on BOTH schemas — after the migration the third parameter has a
+  // DEFAULT, so a two-argument call still resolves and means "no limit".
+  //
+  // The caller is responsible for only passing a limit once BATTLE_SCHEMA_APPLIED
+  // is true. Reading that flag here would be redundant — it is declared right
+  // above in this same module.
+  const args: Record<string, unknown> = {
+    p_opponent_username: normalizeHandle(opponentHandle),
+    p_session_id: sessionId,
+  };
+  if (typeof timeLimitMinutes === "number" && Number.isFinite(timeLimitMinutes)) {
+    args.p_time_limit_minutes = Math.round(timeLimitMinutes);
+  }
+  return unwrap<string>(await db.rpc("challenge_create", args));
 }
 
 /**

@@ -5,6 +5,18 @@
 // renders (the route exists, and somebody can always type a URL) but it renders
 // the "not switched on" panel and issues no query at all — the social helpers
 // return empty before they reach Supabase, and the effect below refuses to run.
+//
+// "Challenge" -> Battle Royale (2026-08-13). This page used to open a dialog
+// here (ChallengeFriendDialog) that sent one of the student's own unfinished
+// MCQ sets. That inline flow is gone: tapping Challenge now hands off to
+// /app/battle-royale (-app.battle-royale-page.tsx), which builds a fresh match
+// (file, scope, count, timer, format) and sends it itself via
+// src/lib/social.ts's createChallenge(). This page's job stays exactly what the
+// top of the file always said — find and see a person — plus one button that
+// now navigates instead of opening a dialog. ChallengeFriendDialog itself is
+// untouched: My Coach's "Challenge a friend" quick action
+// (src/components/challenge-friend-button.tsx) still uses it for a set that is
+// already built and does not belong here.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -24,7 +36,6 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
-import { ChallengeFriendDialog } from "@/components/challenge-friend-dialog";
 import { useAuth } from "@/lib/auth-context";
 import { isGuestUser } from "@/lib/guest-session";
 import { reconcileServerPoints } from "@/lib/points-ledger";
@@ -72,8 +83,6 @@ export function FriendsPage() {
   const [found, setFound] = useState<FoundStudent | null>(null);
 
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [challengeOpen, setChallengeOpen] = useState(false);
-  const [challengeTarget, setChallengeTarget] = useState<Friend | null>(null);
 
   // Hooks run unconditionally; the gate lives inside them and in the render.
   const enabled = socialEnabled(user);
@@ -186,6 +195,24 @@ export function FriendsPage() {
       toast.error(err instanceof Error ? err.message : "Could not open that challenge.");
       setBusyId(null);
     }
+  };
+
+  // Hands off to Battle Royale with the target already chosen, so the setup
+  // screen skips straight to "which file" instead of asking who to fight again.
+  // Battle Royale itself calls createChallenge() once the match is built.
+  const openBattle = (friend: Friend) => {
+    if (!friend.username) {
+      toast.error(`${friend.display_name} hasn't picked a handle yet, so they can't be battled.`);
+      return;
+    }
+    navigate({
+      to: "/app/battle-royale",
+      search: {
+        friendId: friend.user_id,
+        friendUsername: friend.username,
+        friendName: friend.display_name,
+      },
+    });
   };
 
   const shell = (children: React.ReactNode) => (
@@ -429,22 +456,7 @@ export function FriendsPage() {
 
       {/* ── Friends ─────────────────────────────────────────────────────── */}
       <Panel>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <SectionTitle icon={<Trophy className="h-4 w-4" />} title="Your friends" />
-          {friends.length > 0 && (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                setChallengeTarget(null);
-                setChallengeOpen(true);
-              }}
-            >
-              <Swords className="mr-1.5 h-3.5 w-3.5" />
-              New challenge
-            </Button>
-          )}
-        </div>
+        <SectionTitle icon={<Trophy className="h-4 w-4" />} title="Your friends" />
         <div className="mt-3 space-y-2">
           {loading ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
@@ -460,14 +472,7 @@ export function FriendsPage() {
                 subtitle={`${friend.username ? `@${friend.username} · ` : ""}${friend.points.toLocaleString()} pts · ${friend.current_streak}d`}
                 action={
                   <div className="flex gap-1.5">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        setChallengeTarget(friend);
-                        setChallengeOpen(true);
-                      }}
-                    >
+                    <Button size="sm" variant="secondary" onClick={() => openBattle(friend)}>
                       <Swords className="mr-1.5 h-3.5 w-3.5" />
                       Challenge
                     </Button>
@@ -523,14 +528,6 @@ export function FriendsPage() {
           </div>
         </Panel>
       )}
-
-      <ChallengeFriendDialog
-        open={challengeOpen}
-        onOpenChange={setChallengeOpen}
-        friends={friends}
-        presetFriend={challengeTarget}
-        onCreated={() => void refresh()}
-      />
     </>,
   );
 }
