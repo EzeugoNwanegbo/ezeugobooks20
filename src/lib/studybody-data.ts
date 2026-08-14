@@ -6,7 +6,7 @@ import { DEDUP_SCHEMA_APPLIED } from "@/lib/content-hash";
 import { embedQuery } from "@/lib/embeddings";
 import { generateStudyQuestions } from "@/lib/studybody-client";
 import type { Profile } from "@/lib/auth-context";
-import type { StudyDocument, StudyQuestionType } from "@/lib/studybody-client";
+import type { OnGenerationProgress, StudyDocument, StudyQuestionType } from "@/lib/studybody-client";
 
 type AnyDb = {
   from: (table: string) => DbQuery;
@@ -293,6 +293,7 @@ export async function createStraightInSession({
   topicFocus,
   docCharBudget,
   onStage,
+  onGenerationProgress,
 }: {
   userId: string;
   profile: Profile;
@@ -340,6 +341,14 @@ export async function createStraightInSession({
   docCharBudget?: number;
   /** Called as each real step begins, so the caller can show honest progress. */
   onStage?: (stage: StraightInStage) => void;
+  /**
+   * Called once per AI batch during the "writing" step, carrying how many
+   * questions exist so far out of how many were asked for. generateStudyQuestions
+   * now streams that up from the studybody edge function (see its own comment
+   * in studybody-client.ts) - this just relays it, so "writing" no longer has
+   * to sit silent for the whole call the way onStage alone would show it.
+   */
+  onGenerationProgress?: OnGenerationProgress;
 }): Promise<{ planId: string; sessionId: string }> {
   onStage?.("reading");
   const focus = topicFocus?.trim();
@@ -376,6 +385,7 @@ export async function createStraightInSession({
     essayCount: questionType === "mixed" ? split.essay : undefined,
     documents,
     difficulty,
+    onProgress: onGenerationProgress,
   });
   if (!generated.questions.length) {
     throw new Error("No questions could be built from this material. Try another file.");

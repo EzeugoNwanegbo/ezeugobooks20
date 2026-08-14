@@ -95,9 +95,22 @@ const COUNT_PRESETS = [10, 20, 30] as const;
 //              (MAX_CHALLENGE_QUESTIONS, mirrored in src/lib/social.ts);
 //   flag on  — both widened to 100 by 20260813120000_battle_royale.sql, which
 //              is also where the studybody edge function's generation clamp
-//              was raised to match, so 100 is the largest set that can
-//              actually be built.
-const BATTLE_MAX_QUESTIONS_POOLED = 100;
+//              was raised to match. 100 IS what the server will build — but
+//              BATTLE_MAX_QUESTIONS_POOLED below deliberately offers less
+//              than that.
+//
+// 50, not 100: the owner's own ceiling, set after a 30-question battle was
+// tried and aborted against the wall-clock budget this app does not control
+// (a Supabase Edge Function caps around 150s on the free plan; the client
+// gives up at STUDYBODY_TIMEOUT_MS in src/lib/studybody-client.ts). generate_
+// questions streams now (see that file), which makes a stalled attempt
+// degrade gracefully instead of losing everything, but streaming does not
+// raise either ceiling — so 50 is the largest set judged worth attempting,
+// not the largest the server can technically produce. A permissive server
+// (100) under a restrictive client (50) is the safe direction to be wrong in;
+// the DB CHECK and the edge function's own clamp are intentionally left at
+// 100 rather than lowered to match.
+const BATTLE_MAX_QUESTIONS_POOLED = 50;
 const BATTLE_MAX_QUESTIONS = BATTLE_SCHEMA_APPLIED
   ? BATTLE_MAX_QUESTIONS_POOLED
   : MAX_CHALLENGE_QUESTIONS; // 12
@@ -127,11 +140,10 @@ function clampInt(value: number, min: number, max: number): number {
 // ── Staged progress ───────────────────────────────────────────────────────────
 //
 // Four real steps, in order, matching what src/lib/battle-royale-client.ts
-// actually awaits: retrieving the material, generating the set (the one
-// opaque AI call — see the STAGE_LABEL note below for why it cannot show real
-// sub-progress), saving it, sending it. For a roadmap every stage is prefixed
-// "Round N of M —" so the host can tell which of the series' AI calls is in
-// flight, matching the brief's requested label shape exactly.
+// actually awaits: retrieving the material, generating the set, saving it,
+// sending it. For a roadmap every stage is prefixed "Round N of M —" so the
+// host can tell which of the series' AI calls is in flight, matching the
+// brief's requested label shape exactly.
 const STAGE_ORDER: readonly BattleStage[] = ["retrieving", "generating", "saving", "sending"];
 const STAGE_LABEL: Record<BattleStage, string> = {
   retrieving: "Reading your material",
@@ -140,15 +152,24 @@ const STAGE_LABEL: Record<BattleStage, string> = {
   sending: "Sending to your opponent",
 };
 
+// StageProgress's own design rule is "no invented percentage" - a guessed
+// fraction with nothing behind it is worse than no bar at all. This note is
+// not a guess: generate_questions streams (see battle-royale-client.ts's own
+// comment on BattleStage) an SSE frame the instant each server-side batch of
+// questions finishes, carrying an exact "made X of Y" count, which is exactly
+// the kind of real, non-interpolated fact that rule is asking for. Before the
+// first batch has landed there is nothing real to say yet, so the note falls
+// back to the honest "still working" line rather than showing "0 of Y".
 function progressStages(event: BattleProgressEvent | null): ProgressStage[] {
   const prefix = event?.round ? `Round ${event.round.index} of ${event.round.total} — ` : "";
+  const generatingNote =
+    event?.stage === "generating" && typeof event.made === "number" && typeof event.target === "number"
+      ? `${event.made} of ${event.target} questions written so far.`
+      : "The long part — larger sets take a little longer.";
   return STAGE_ORDER.map((stage) => ({
     key: stage,
     label: prefix + STAGE_LABEL[stage],
-    note:
-      stage === "generating"
-        ? "The long part. Nothing streams back from the AI mid-request, so this holds here — honestly — until the call returns. Larger sets take a little longer."
-        : undefined,
+    note: stage === "generating" ? generatingNote : undefined,
   }));
 }
 
@@ -1031,7 +1052,7 @@ export function BattleRoyalePage() {
             <p className="mt-3 flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground">
               <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
               {BATTLE_SCHEMA_APPLIED
-                ? `Battles run up to ${BATTLE_MAX_QUESTIONS} questions — the largest set the server will build for a fair, gradeable contest. This match will use ${resolvedCount}${format === "roadmap" ? " per round" : ""}.`
+                ? `Battles run up to ${BATTLE_MAX_QUESTIONS} questions — the largest set worth attempting against how long the AI takes to write one. This match will use ${resolvedCount}${format === "roadmap" ? " per round" : ""}.`
                 : `Battles are capped at ${BATTLE_MAX_QUESTIONS} questions for now — that is the server's own limit for a fair, gradeable contest. 20 and 30 will unlock once that cap is raised. This match will use ${resolvedCount}.`}
             </p>
           </Panel>

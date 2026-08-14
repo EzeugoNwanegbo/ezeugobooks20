@@ -28,12 +28,13 @@ import {
   Map as MapIcon,
   Play,
   RefreshCw,
+  RotateCcw,
   Send,
   Swords,
   Trophy,
   Users,
 } from "lucide-react-native";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ComingSoon } from "@/components/coming-soon";
 import { toast } from "@/components/toast";
@@ -85,7 +86,10 @@ type ScreenMode = "setup" | "play" | "result";
 // unapplied the server's cap is 12, so only 10 fits and the other two are shown
 // (the design is real) but disabled rather than wired to a call that
 // challenge_create() would refuse AFTER the AI spend had already happened. Once
-// it is applied the cap is 100 and all three simply work.
+// it is applied the DB/edge-function ceiling widens to 100, but
+// BATTLE_MAX_QUESTIONS itself only opens to 50 — see its own comment in
+// lib/battle-royale-client.ts for why that number, not 100, is what this
+// screen actually offers. All three presets below fit under 50 either way.
 const COUNT_PRESETS = [10, 20, 30] as const;
 const DIFFICULTIES: DifficultyLevel[] = ["easy", "medium", "hard"];
 
@@ -127,6 +131,37 @@ type ResultState = {
   loading: boolean;
   summary: ChallengeSummary | null;
   roadmap?: PlayRoadmapCtx;
+};
+
+// ── Resuming an unstarted or half-played battle ─────────────────────────────
+//
+// buildQuestionSet (battle-royale-client.ts) writes the study_sessions row and
+// its study_questions BEFORE the host plays a single question, and
+// challenge_create() has already run by the time enterPlay() is first called
+// — so the data survives a host who leaves mid-setup-to-play, or leaves
+// mid-play via "Leave" below. What was missing was any way BACK to it: this
+// screen had no query for it at all, unlike coach.tsx's own `resumable`
+// (see its useEffect around line 274), which this mirrors.
+//
+// Found via TWO reads, not one: study_sessions for the host's own in-progress
+// Battle Royale sessions (feedback.battle_royale === true, stamped by
+// buildQuestionSet), joined in memory against listChallenges() for the
+// opponent identity, title and live status — the same RPC the Result view
+// already calls, so this adds no new server surface. A session whose SEND
+// itself was interrupted before challenge_create() ever ran (no
+// feedback.challenge_id yet) is deliberately NOT offered back here: it has no
+// challenge to resume into, and the only way forward for it is what the setup
+// screen already does — configure and send a fresh one. That is a real,
+// accepted gap, not an oversight — see the report this shipped with.
+type ResumableBattle = {
+  sessionId: string;
+  challengeId: string;
+  title: string;
+  opponentUserId: string;
+  opponentUsername: string;
+  opponentName: string;
+  totalQuestions: number;
+  timeLimitMinutes: number;
 };
 
 export default function BattleRoyaleScreen() {
@@ -879,8 +914,8 @@ export default function BattleRoyaleScreen() {
                 <AlertTriangle size={12} color={colors.mutedDim} style={{ marginTop: 1 }} />
                 <Text style={styles.hint}>
                   {BATTLE_SCHEMA_APPLIED
-                    ? `Battles run up to ${BATTLE_MAX_QUESTIONS} questions — the largest set the ` +
-                      `server will build for a fair, gradeable contest. This match will use ${resolvedCount}${format === "roadmap" ? " per round" : ""}.`
+                    ? `Battles run up to ${BATTLE_MAX_QUESTIONS} questions — the largest set worth ` +
+                      `attempting against how long the AI takes to write one. This match will use ${resolvedCount}${format === "roadmap" ? " per round" : ""}.`
                     : `Battles are capped at ${BATTLE_MAX_QUESTIONS} questions for now — that is the ` +
                       `server's own limit for a fair, gradeable contest. 20 and 30 will unlock once ` +
                       `that cap is raised. This match will use ${resolvedCount}.`}

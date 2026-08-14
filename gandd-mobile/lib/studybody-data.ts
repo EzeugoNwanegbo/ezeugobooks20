@@ -122,20 +122,27 @@ export type DifficultyLevel = "easy" | "medium" | "hard";
 export const QUESTION_COUNTS = [10, 20, 30] as const;
 
 // Bounds for the free-typed "Custom" count. The floor is the obvious "a set
-// needs at least one question"; the ceiling is NOT arbitrary — it mirrors the
-// edge function's own clamp (supabase/functions/studybody/index.ts caps
-// count, and each half of a mixed set, at 60). Anything past that gets
-// silently truncated server-side anyway, and a client that let students type
-// past 60 would show them a number they never actually get charged or tested
-// on. Keeping the two caps equal means "accepted here" == "honoured there".
+// needs at least one question".
+//
+// The ceiling is NOT the edge function's own clamp — that clamp is 100
+// (supabase/functions/studybody/index.ts), well above this. 50 is the
+// owner's OWN ceiling for this screen, the same number and the same reasoning
+// as Battle Royale's BATTLE_MAX_QUESTIONS (see battle-royale-client.ts):
+// chosen after a 30-question Battle Royale generation was tried and aborted,
+// against the same generator and the same wall-clock budget this app does
+// not control (a Supabase Edge Function caps around 150s on the free plan; a
+// stalled request degrades gracefully now that generation streams - see
+// streamStudyBody in studybody-client.ts - but streaming does not raise that
+// ceiling). A permissive server (100) under a restrictive client (50) is the
+// safe direction; the two numbers are deliberately not kept equal any more.
 export const QUESTION_COUNT_MIN = 1;
-export const QUESTION_COUNT_MAX = 100;
+export const QUESTION_COUNT_MAX = 50;
 
 /** Parses a typed question count, rejecting anything that isn't a whole
  * number inside [QUESTION_COUNT_MIN, QUESTION_COUNT_MAX]. Returns the
  * validated count or an error string to show under the field — never a
  * silently clamped value, so a student who types "5000" learns why it didn't
- * take instead of unknowingly getting 60. */
+ * take instead of unknowingly getting a different number. */
 export function parseQuestionCount(raw: string): { ok: true; count: number } | { ok: false; error: string } {
   const text = raw.trim();
   if (!text) return { ok: false, error: "Type a number of questions." };
@@ -161,8 +168,8 @@ export function parseQuestionCount(raw: string): { ok: true; count: number } | {
 const DEFAULT_TIMER_SECONDS_PER_QUESTION = 45;
 
 // The ceiling is 4 hours, same reasoning as the web: the largest set this
-// screen can request is QUESTION_COUNT_MAX (60), and the most generous
-// suggested pace for 60 questions is (60*45/60)*1.5 ≈ 68 minutes — 240
+// screen can request is QUESTION_COUNT_MAX (50), and the most generous
+// suggested pace for 50 questions is (50*45/60)*1.5 ≈ 56 minutes — 240
 // minutes clears that with a lot of room while still refusing an obvious typo
 // (e.g. "2400"). The floor of 1 minute is the shortest span a countdown can
 // meaningfully show.

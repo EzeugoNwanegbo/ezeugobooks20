@@ -75,12 +75,14 @@ export function buildBattleTitle(doc: DocRow, scope: BattleScope, focus: string,
 // named stages and adds the one createStraightInSession doesn't know about:
 // sending the finished set to the opponent via challenge_create.
 //
-// STAGE "generating" CANNOT SHOW REAL SUB-PROGRESS. generateStudyQuestions is
-// one opaque fetch to the studybody edge function — even though that function
-// loops in batches of 20 server-side for a large count, nothing streams back
-// mid-request, so there is nothing to interpolate. The page holds honestly on
-// "Generating questions…" for the whole call rather than faking a tick that
-// would finish before the AI does.
+// STAGE "generating" now carries REAL sub-progress. generate_questions
+// streams (supabase/functions/studybody/index.ts's generationStreamResponse):
+// even though that function still loops in batches of 20 server-side for a
+// large count, it now emits an SSE frame the instant each batch finishes,
+// carrying exactly how many questions exist so far out of how many were asked
+// for. createStraightInSession's onGenerationProgress relays that here as
+// `made`/`target` on the event, rather than the page holding on a static
+// "Generating questions…" for the whole call.
 export type BattleStage = "retrieving" | "generating" | "saving" | "sending";
 
 // The studybody function accepts up to 100,000 characters (~25,000 tokens). A
@@ -100,10 +102,18 @@ const STRAIGHT_STAGE_MAP: Record<StraightInStage, BattleStage> = {
   saving: "saving",
 };
 
-/** One real step beginning. `round` is present only while building a series. */
+/**
+ * One real step beginning. `round` is present only while building a series.
+ * `made`/`target` are present only on a "generating" event once at least one
+ * AI batch has actually landed - before that (and for every other stage)
+ * they are absent, so a renderer that checks for them shows the honest
+ * pre-batch state rather than a fabricated 0-of-something.
+ */
 export type BattleProgressEvent = {
   stage: BattleStage;
   round?: { index: number; total: number };
+  made?: number;
+  target?: number;
 };
 export type OnBattleProgress = (event: BattleProgressEvent) => void;
 
@@ -176,6 +186,7 @@ export async function createSingleBattle({
     docCharBudget: BATTLE_DOC_CHARS_TOTAL,
     topicFocus: topicScoped ? focus : undefined,
     onStage: (stage) => onProgress?.({ stage: STRAIGHT_STAGE_MAP[stage] }),
+    onGenerationProgress: ({ made, target }) => onProgress?.({ stage: "generating", made, target }),
   });
 
   onProgress?.({ stage: "sending" });
@@ -303,6 +314,8 @@ export async function createRoadmapBattleSeries({
             stage: STRAIGHT_STAGE_MAP[stage],
             round: { index: roundNumber, total },
           }),
+        onGenerationProgress: ({ made, target }) =>
+          onProgress?.({ stage: "generating", round: { index: roundNumber, total }, made, target }),
       });
 
       onProgress?.({ stage: "sending", round: { index: roundNumber, total } });

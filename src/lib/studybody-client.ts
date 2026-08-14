@@ -3,7 +3,15 @@ import type { Profile } from "@/lib/auth-context";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const STUDYBODY_URL = `${SUPABASE_URL}/functions/v1/studybody`;
-const STUDYBODY_TIMEOUT_MS = 130_000;
+// Supabase Edge Functions on the free plan cap wall-clock around 150s
+// regardless of what the client does. This used to sit at a flat 130s for no
+// stated reason beyond symmetry with the old (non-streaming) behaviour; now
+// that a stalled generation degrades gracefully instead of losing everything
+// (see streamStudyBody below), it is safe to wait almost the whole platform
+// ceiling rather than giving up 20s early. 145s keeps a 5s margin under that
+// ceiling so the client's own abort - which DOES send a clean error - fires
+// before the platform kills the connection with none.
+const STUDYBODY_TIMEOUT_MS = 145_000;
 
 export type StudyQuestionType = "mcq" | "essay" | "mixed" | "flashcard";
 
@@ -93,6 +101,134 @@ async function callStudyBody<T>(payload: Record<string, unknown>): Promise<T> {
   }
 }
 
+// How many of the requested items exist so far, out of how many were asked
+// for. Fired once per completed AI batch - see generationStreamResponse in
+// supabase/functions/studybody/index.ts for exactly when that is.
+export type GenerationProgress = { made: number; target: number };
+export type OnGenerationProgress = (progress: GenerationProgress) => void;
+
+/**
+ * Streaming counterpart to callStudyBody, used by generate_questions and
+ * generate_flashcards. Reads the same SSE envelope src/lib/chat-client.ts's
+ * streamChat already parses (`data: {...}\n\n` frames, a bare `:` comment for
+ * the heartbeat, `data: [DONE]\n\n` to close) - see
+ * supabase/functions/studybody/index.ts's generationStreamResponse for the
+ * exact frames this sends: `{event:"batch", items, made, target}` as each
+ * batch finishes, one `{event:"done", ...}` carrying the final canonical
+ * list, or `{event:"error", error}` if generation failed partway through.
+ *
+ * WHY STREAM AT ALL, BEYOND THE PROGRESS BAR: a request that emits bytes
+ * continuously is never mistaken for a dead connection by whatever sits
+ * between here and the edge function - the same reason chat/index.ts's own
+ * visuals pipeline pings a heartbeat across its own long single call.
+ */
+async function streamStudyBody<T>(
+  payload: Record<string, unknown>,
+  doneKey: string,
+  onProgress?: OnGenerationProgress,
+): Promise<T> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), STUDYBODY_TIMEOUT_MS);
+
+  try {
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+    if (!token) throw new Error("Sign in again before using My Coach.");
+
+    const response = await fetch(STUDYBODY_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({ ...payload, stream: true }),
+    });
+
+    if (!response.ok) {
+      let message = "My Coach AI request failed";
+      try {
+        const j = await response.json();
+        message = j.error ?? message;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(message);
+    }
+
+    if (!response.body) {
+      // No streaming body available on this runtime - fall back to a single
+      // buffered read and parse every line out of the whole payload at once.
+      const text = await response.text();
+      const outcome = { result: undefined as T | undefined, error: null as string | null };
+      for (const line of text.split("\n")) applyStudyBodySseLine(line, doneKey, onProgress, outcome);
+      if (outcome.error) throw new Error(outcome.error);
+      if (outcome.result === undefined) {
+        throw new Error("The AI stream ended before it finished. Please try again.");
+      }
+      return outcome.result;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const outcome = { result: undefined as T | undefined, error: null as string | null };
+    let sawDone = false;
+
+    while (!sawDone) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, nl);
+        buffer = buffer.slice(nl + 1);
+        if (applyStudyBodySseLine(line, doneKey, onProgress, outcome)) sawDone = true;
+      }
+    }
+    if (buffer.trim()) applyStudyBodySseLine(buffer, doneKey, onProgress, outcome);
+
+    if (outcome.error) throw new Error(outcome.error);
+    if (outcome.result === undefined) {
+      throw new Error("The AI stream ended before it finished. Please try again.");
+    }
+    return outcome.result;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+/** Parses one SSE line, mutating `outcome` in place. Returns true once the
+ * `[DONE]` sentinel is seen, so the caller knows to stop reading. */
+function applyStudyBodySseLine<T>(
+  line: string,
+  doneKey: string,
+  onProgress: OnGenerationProgress | undefined,
+  outcome: { result: T | undefined; error: string | null },
+): boolean {
+  let l = line;
+  if (l.endsWith("\r")) l = l.slice(0, -1);
+  if (!l || l.startsWith(":") || !l.startsWith("data: ")) return false;
+  const json = l.slice(6).trim();
+  if (json === "[DONE]") return true;
+  try {
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+    if (parsed.event === "batch") {
+      onProgress?.({
+        made: typeof parsed.made === "number" ? parsed.made : 0,
+        target: typeof parsed.target === "number" ? parsed.target : 0,
+      });
+    } else if (parsed.event === "done") {
+      outcome.result = parsed[doneKey] as T;
+    } else if (parsed.event === "error") {
+      outcome.error = typeof parsed.error === "string" ? parsed.error : "My Coach AI request failed";
+    }
+  } catch {
+    /* ignore malformed keep-alive fragments */
+  }
+  return false;
+}
+
 export async function generateStudyPlan({
   profile,
   planTitle,
@@ -129,6 +265,7 @@ export async function generateStudyQuestions({
   excludePrompts,
   difficultyHint,
   difficulty,
+  onProgress,
 }: {
   profile: Profile;
   topic: unknown;
@@ -142,20 +279,31 @@ export async function generateStudyQuestions({
   difficultyHint?: "easier" | "medium" | "harder";
   // Explicit student-chosen level; overrides the adaptive difficultyHint.
   difficulty?: "easy" | "medium" | "hard";
+  // Optional: how many questions exist so far, out of how many were asked
+  // for, fired once per completed AI batch. Always streams under the hood
+  // now (see streamStudyBody) for the reliability win even if the caller
+  // does not pass this - Battle Royale wires it into its progress bar; My
+  // Coach gets the streaming reliability for free without wiring it up.
+  onProgress?: OnGenerationProgress;
 }) {
-  return callStudyBody<{ questions: GeneratedQuestion[] }>({
-    action: "generate_questions",
-    profile,
-    topic,
-    questionType,
-    count,
-    mcqCount,
-    essayCount,
-    documents,
-    excludePrompts,
-    difficultyHint,
-    difficulty,
-  });
+  const questions = await streamStudyBody<GeneratedQuestion[]>(
+    {
+      action: "generate_questions",
+      profile,
+      topic,
+      questionType,
+      count,
+      mcqCount,
+      essayCount,
+      documents,
+      excludePrompts,
+      difficultyHint,
+      difficulty,
+    },
+    "questions",
+    onProgress,
+  );
+  return { questions };
 }
 
 export async function generateFlashcards({
@@ -164,21 +312,28 @@ export async function generateFlashcards({
   count,
   documents,
   excludeFronts,
+  onProgress,
 }: {
   profile: Profile;
   topic: unknown;
   count: number;
   documents: StudyDocument[];
   excludeFronts?: string[];
+  onProgress?: OnGenerationProgress;
 }) {
-  return callStudyBody<{ flashcards: GeneratedFlashcard[] }>({
-    action: "generate_flashcards",
-    profile,
-    topic,
-    count,
-    documents,
-    excludePrompts: excludeFronts,
-  });
+  const flashcards = await streamStudyBody<GeneratedFlashcard[]>(
+    {
+      action: "generate_flashcards",
+      profile,
+      topic,
+      count,
+      documents,
+      excludePrompts: excludeFronts,
+    },
+    "flashcards",
+    onProgress,
+  );
+  return { flashcards };
 }
 
 export async function reviewStudyAnswers({

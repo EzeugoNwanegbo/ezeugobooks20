@@ -49,6 +49,13 @@ interface Body {
   // Explicit level chosen by the student in the test setup. When present it
   // overrides the adaptive difficultyHint.
   difficulty?: "easy" | "medium" | "hard";
+  // Opt-in only. generate_questions and generate_flashcards accumulate their
+  // whole result in memory today either way (a batch either lands in
+  // `collected` or it doesn't) - `stream` only changes HOW that accumulation
+  // is reported to the caller: as one JSON blob at the very end (the default,
+  // unchanged for any caller that omits this), or as a sequence of SSE frames
+  // emitted as each batch actually finishes. See generationStreamResponse().
+  stream?: boolean;
 }
 
 type DifficultyLevel = "easy" | "medium" | "hard";
@@ -118,6 +125,106 @@ function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+// ─── Streaming (opt-in) ─────────────────────────────────────────────────────
+//
+// Mirrors chat/index.ts's SSE envelope: `data: {...}\n\n` frames, a bare `:
+// comment\n\n` line for a keep-alive that carries no data, and a terminal
+// `data: [DONE]\n\n`. Reusing that exact shape (rather than inventing a
+// second one) is why the client-side parser in studybody-client.ts can be a
+// near copy of chat-client.ts's proven SSE reader.
+//
+// WHY THIS EXISTS: a 20-30 question set used to be one silent request that
+// held the connection open for the full duration of every DeepSeek batch
+// before writing a single byte back. That is indistinguishable, from the
+// wire, from a hung connection - and both clients give up at 130s
+// (STUDYBODY_TIMEOUT_MS) while the Supabase Edge Function itself is capped
+// around 150s on the free plan regardless. Streaming does not raise either of
+// those ceilings. What it changes is what happens AT them: instead of an
+// all-or-nothing blob that a timeout turns into a total loss, the batches
+// that already finished are already in the client's hands, frame by frame, so
+// a request that times out with 18 of 30 questions made can still hand the
+// student those 18 instead of nothing.
+const STUDYBODY_HEARTBEAT_MS = 10_000;
+
+/**
+ * Runs `run`, relaying whatever it reports through `onBatch` as individual
+ * SSE frames, then emits one final frame built by `toDone` from its return
+ * value, then the [DONE] sentinel. Errors thrown by `run` are caught and sent
+ * as an `{event:"error"}` frame rather than a non-200 status: by the time
+ * `run` is even invoked the Response has already committed to
+ * `text/event-stream` with a 200, the same constraint chat/index.ts's own
+ * visualStreamResponse works under.
+ *
+ * The heartbeat comment is NOT redundant with the batch frames. Two batches
+ * of 20 running concurrently (see generateOneType's "ONE ROUND, RUN IN
+ * PARALLEL" comment) both take up to DEEPSEEK_TIMEOUT_MS with nothing to
+ * report until the first one resolves - a real gap of up to 90s with zero
+ * batch frames to send. The heartbeat is what keeps THAT gap from reading as
+ * a dead connection to whatever sits between here and the client (a proxy, a
+ * mobile carrier's NAT, Hostinger's own front door) - the same reason
+ * chat/index.ts's visualStreamResponse pings every 12s across its own single,
+ * long DeepSeek call.
+ */
+function generationStreamResponse<T>(
+  run: (
+    onBatch: (added: Record<string, unknown>[], made: number, target: number) => void,
+  ) => Promise<T>,
+  toDone: (result: T) => Record<string, unknown>,
+): Response {
+  const encoder = new TextEncoder();
+  // Deno types setInterval as returning Timeout, not the DOM's number.
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const emit = (obj: unknown) => {
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+        } catch {
+          // Client already disconnected - nothing left to enqueue to. The
+          // generation already in flight is left to run to completion and be
+          // discarded rather than aborted, matching visualStreamResponse.
+        }
+      };
+
+      controller.enqueue(encoder.encode(": studybody-start\n\n"));
+      heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(": studybody-working\n\n"));
+        } catch {
+          if (heartbeat !== undefined) clearInterval(heartbeat);
+        }
+      }, STUDYBODY_HEARTBEAT_MS);
+
+      (async () => {
+        try {
+          const result = await run((added, made, target) =>
+            emit({ event: "batch", items: added, made, target }),
+          );
+          emit({ event: "done", ...toDone(result) });
+        } catch (err) {
+          console.error("studybody stream error:", err);
+          emit({
+            event: "error",
+            error: err instanceof Error ? err.message : "Unknown error",
+          });
+        } finally {
+          if (heartbeat !== undefined) clearInterval(heartbeat);
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        }
+      })();
+    },
+    cancel() {
+      if (heartbeat !== undefined) clearInterval(heartbeat);
+    },
+  });
+
+  return new Response(stream, {
+    headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
   });
 }
 
@@ -503,7 +610,6 @@ Question type requested: ${type} (ALL questions in this batch must be "${type}")
 Number of questions: ${count}
 
 ${difficultyInstruction(difficulty)}
-Set the "difficulty" field of every question in this batch to "${difficulty}".
 
 Already asked (do NOT repeat or paraphrase these):
 ${exclude.length ? exclude.map((p, i) => `${i + 1}. ${p}`).join("\n") : "(none yet)"}
@@ -514,20 +620,57 @@ ${documentContext(body.documents)}
 Return JSON:
 {
   "questions": [
-    {
-      "type": "${type}",
-      "prompt": "question text grounded in the excerpts",
-      "options": [{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."},{"id":"D","text":"..."}],
-      "correct_answer": "A or ideal essay answer",
-      "explanation": "explanation that quotes/points to the source excerpt",
-      "rubric": ["point 1", "point 2"],
-      "difficulty": "easy" | "medium" | "hard",
-      "source_refs": [{"file":"name", "page":"Page N, or omit if the excerpt has no page"}]
-    }
+${type === "mcq" ? MCQ_SHAPE : ESSAY_SHAPE}
   ]
 }
-For MCQ, provide exactly four options and one correct option id. For essay, options must be [].`;
+${
+  type === "mcq"
+    ? "Exactly four options, one correct option id."
+    : "options must be []. correct_answer is the ideal written answer."
+}`;
 }
+
+// ── WHAT WE ASK THE MODEL TO WRITE ──────────────────────────────────────────
+//
+// Generation time is dominated by OUTPUT tokens, so every field in this shape
+// is paid for on every question. Three were being paid for and thrown away:
+//
+//   "type"       generateOneType overwrites it (`{ ...question, type }`) - the
+//                caller asked for one type and gets one type, so the model
+//                echoing it back was never read.
+//   "difficulty" the caller chooses the level for the whole batch, and the
+//                clients already fall back to it (`q.difficulty ?? difficulty`).
+//                A per-question copy of a constant.
+//   "rubric"     a list of marking points for grading written answers. An MCQ
+//                is graded by matching correct_answer, so on an MCQ this is
+//                pure ceremony - and Battle Royale is MCQ ONLY, so it paid for
+//                it on every single question.
+//
+// The explanation is also bounded now. It was "explanation that quotes/points
+// to the source excerpt" with no length, and models answer that with a
+// paragraph; one or two sentences teaches just as well and costs a fraction.
+//
+// This is the cheapest speed available: the same questions, less writing. It
+// does not touch what a student sees beyond shorter explanations, and it makes
+// every count faster rather than only rescuing the large ones.
+const MCQ_SHAPE = `    {
+      "prompt": "question text grounded in the excerpts",
+      "options": [{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."},{"id":"D","text":"..."}],
+      "correct_answer": "A",
+      "explanation": "ONE or TWO sentences, pointing at the source excerpt",
+      "source_refs": [{"file":"name", "page":"Page N, or omit if the excerpt has no page"}]
+    }`;
+
+// Essays keep the rubric: it is what review_answers grades the written answer
+// against, so here it is load-bearing rather than ceremony.
+const ESSAY_SHAPE = `    {
+      "prompt": "question text grounded in the excerpts",
+      "options": [],
+      "correct_answer": "the ideal answer",
+      "explanation": "ONE or TWO sentences, pointing at the source excerpt",
+      "rubric": ["point 1", "point 2"],
+      "source_refs": [{"file":"name", "page":"Page N, or omit if the excerpt has no page"}]
+    }`;
 
 // Large sets (e.g. 50 MCQs) overflow a single DeepSeek response, so generate in
 // batches and accumulate, feeding already-asked prompts forward each round so we
@@ -539,6 +682,11 @@ async function generateOneType(
   type: "mcq" | "essay",
   target: number,
   seedExclude: string[],
+  // Fired once per batch that actually added something, streaming or not -
+  // the caller decides whether to do anything with it. Kept optional so the
+  // non-streaming callers (and every call site before this existed) need no
+  // changes at all.
+  onBatch?: (added: Record<string, unknown>[]) => void,
 ): Promise<Record<string, unknown>[]> {
   if (target <= 0) return [];
   const batchSize = 20;
@@ -562,17 +710,26 @@ async function generateOneType(
       ? q.prompt.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
       : "";
 
-  const absorb = (raw: Record<string, unknown>[]): number => {
+  // Returns the items actually added (not just a count) so a streaming caller
+  // can hand the real objects to onBatch instead of re-deriving them from a
+  // count against `collected`, which concurrent batches would race on.
+  const absorb = (raw: Record<string, unknown>[]): Record<string, unknown>[] => {
     const grounded = raw.filter(hasSourceRef);
     const picked = grounded.length ? grounded : raw;
-    let added = 0;
+    const added: Record<string, unknown>[] = [];
     for (const question of picked) {
       const k = key(question);
       if (k && seen.has(k)) continue;   // a duplicate across parallel batches
       if (k) seen.add(k);
-      collected.push({ ...question, type });
+      // `type` and `difficulty` are stamped HERE rather than asked for. Both
+      // are constants for the whole batch — the caller named them — so making
+      // the model write them on every question was output tokens spent to be
+      // told something we already knew. Stamping keeps every stored row's shape
+      // exactly as it was, so nothing downstream notices the prompt got cheaper.
+      const withType = { ...question, type, difficulty };
+      collected.push(withType);
       if (typeof question.prompt === "string") exclude.push(question.prompt);
-      added += 1;
+      added.push(withType);
     }
     return added;
   };
@@ -601,7 +758,7 @@ async function generateOneType(
   // starts clustered near 0ms with similar durations means truly parallel;
   // starts staggered by roughly one batch-duration means throttled.
   const t0 = Date.now();
-  const first = await Promise.all(
+  await Promise.all(
     Array.from({ length: rounds }, (_, i) => {
       // THIS ROUND'S SHARE, not a full batch every time. The sequential loop
       // this replaced asked for `min(batchSize, target - collected)`, so a
@@ -621,7 +778,18 @@ async function generateOneType(
           console.log(
             `studybody: batch ${i + 1}/${rounds} ok start=+${startedAt}ms dur=${Date.now() - t0 - startedAt}ms`,
           );
-          return r;
+          const raw = Array.isArray(r.questions) ? (r.questions as Record<string, unknown>[]) : [];
+          // ABSORBED AND REPORTED THE MOMENT THIS ONE BATCH RESOLVES, not after
+          // every parallel round in this Promise.all has finished. That is the
+          // entire point of streaming per batch instead of per generateOneType
+          // call: a caller that wants to render/report progress sees it the
+          // instant it exists rather than waiting for the slowest sibling batch
+          // too. Safe to mutate the shared collected/seen/exclude state from
+          // several in-flight .then() handlers here because absorb() has no
+          // `await` in it - the JS event loop still runs one handler fully to
+          // completion before starting the next, so there is no interleaving.
+          const added = absorb(raw);
+          if (added.length) onBatch?.(added);
         })
         // A failed batch must not take the others down: nine questions beat an
         // error, and the top-up below can recover the shortfall.
@@ -629,16 +797,12 @@ async function generateOneType(
           console.error(
             `studybody: batch ${i + 1}/${rounds} FAILED start=+${startedAt}ms dur=${Date.now() - t0 - startedAt}ms err=${err?.message ?? err}`,
           );
-          return { questions: [] as Record<string, unknown>[] };
         });
     }),
   );
   console.log(
     `studybody: ${rounds} batch(es) for ${target} ${type} finished in ${Date.now() - t0}ms`,
   );
-  for (const result of first) {
-    absorb(Array.isArray(result.questions) ? (result.questions as Record<string, unknown>[]) : []);
-  }
 
   // Top up sequentially if duplicates or a failed batch left us short. This is
   // the old behaviour, now the exception rather than the rule, and it CAN see
@@ -655,31 +819,62 @@ async function generateOneType(
       ? (result.questions as Record<string, unknown>[])
       : [];
     if (raw.length === 0) break;          // material exhausted, or the call failed
-    if (absorb(raw) === 0) break;         // only repeats coming back now
+    const added = absorb(raw);
+    if (added.length === 0) break;        // only repeats coming back now
+    onBatch?.(added);
   }
 
   return collected.slice(0, target);
 }
 
-async function generateQuestions(body: Body, deepSeekKey: string, openAiKey: string | undefined) {
+async function generateQuestions(
+  body: Body,
+  deepSeekKey: string,
+  openAiKey: string | undefined,
+  // Local to generateOneType, "made"/"target" mean "this type's own count" -
+  // mcq and essay each run their own generateOneType call with their own
+  // target. A streaming caller wants ONE combined progress line ("14 of 20"),
+  // not two resets, so this wraps generateOneType's per-type callback into a
+  // single running total against the OVERALL target computed once below.
+  onBatch?: (added: Record<string, unknown>[], made: number, target: number) => void,
+) {
   const type = body.questionType || "mcq";
   const seedExclude = (body.excludePrompts || []).filter((p) => typeof p === "string" && p.trim());
 
   if (type === "mixed") {
     const mcqTarget = Math.min(Math.max(body.mcqCount || 0, 0), 100);
     const essayTarget = Math.min(Math.max(body.essayCount || 0, 0), 100);
-    const mcqs = await generateOneType(body, deepSeekKey, openAiKey, "mcq", mcqTarget, seedExclude);
+    const overallTarget = mcqTarget + essayTarget;
+    let made = 0;
+    const relay = (added: Record<string, unknown>[]) => {
+      made += added.length;
+      onBatch?.(added, made, overallTarget);
+    };
+    const mcqs = await generateOneType(body, deepSeekKey, openAiKey, "mcq", mcqTarget, seedExclude, relay);
     const essayExclude = [
       ...seedExclude,
       ...mcqs.map((q) => q.prompt).filter((p): p is string => typeof p === "string"),
     ];
-    const essays = await generateOneType(body, deepSeekKey, openAiKey, "essay", essayTarget, essayExclude);
+    const essays = await generateOneType(
+      body,
+      deepSeekKey,
+      openAiKey,
+      "essay",
+      essayTarget,
+      essayExclude,
+      relay,
+    );
     return { questions: [...mcqs, ...essays] };
   }
 
   const target = Math.min(Math.max(body.count || 5, 1), 100);
   const onlyType = type === "essay" ? "essay" : "mcq";
-  const questions = await generateOneType(body, deepSeekKey, openAiKey, onlyType, target, seedExclude);
+  let made = 0;
+  const relay = (added: Record<string, unknown>[]) => {
+    made += added.length;
+    onBatch?.(added, made, target);
+  };
+  const questions = await generateOneType(body, deepSeekKey, openAiKey, onlyType, target, seedExclude, relay);
   return { questions };
 }
 
@@ -692,7 +887,12 @@ Hard rules:
 - Never repeat or lightly reword a card front listed under "Already made".
 Return strict JSON only.`;
 
-async function generateFlashcards(body: Body, deepSeekKey: string, openAiKey: string | undefined) {
+async function generateFlashcards(
+  body: Body,
+  deepSeekKey: string,
+  openAiKey: string | undefined,
+  onBatch?: (added: Record<string, unknown>[], made: number, target: number) => void,
+) {
   const target = Math.min(Math.max(body.count || 10, 1), 100);
   const batchSize = 30;
   const maxBatches = Math.ceil(target / batchSize) + 1;
@@ -741,6 +941,7 @@ Return JSON:
       const front = card.front;
       if (typeof front === "string") exclude.push(front);
     }
+    onBatch?.(picked, collected.length, target);
   }
 
   return { flashcards: collected.slice(0, target) };
@@ -831,6 +1032,15 @@ Deno.serve(async (req: Request) => {
           400,
         );
       }
+      // Opt-in: every real caller in this codebase now sets `stream: true` (see
+      // studybody-client.ts on both platforms), but a caller that omits it -
+      // present or future - gets EXACTLY today's behaviour, unchanged.
+      if (body.stream) {
+        return generationStreamResponse(
+          (onBatch) => generateQuestions(body, deepSeekKey, openAiKey, onBatch),
+          (result) => ({ questions: result.questions }),
+        );
+      }
       return jsonResponse(await generateQuestions(body, deepSeekKey, openAiKey));
     }
 
@@ -842,6 +1052,12 @@ Deno.serve(async (req: Request) => {
               "My Coach can only build flashcards from your file's text, but no readable text was found. Re-upload the file (scanned PDFs need OCR).",
           },
           400,
+        );
+      }
+      if (body.stream) {
+        return generationStreamResponse(
+          (onBatch) => generateFlashcards(body, deepSeekKey, openAiKey, onBatch),
+          (result) => ({ flashcards: result.flashcards }),
         );
       }
       return jsonResponse(await generateFlashcards(body, deepSeekKey, openAiKey));

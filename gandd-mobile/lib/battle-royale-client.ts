@@ -57,15 +57,26 @@ export { folderName, type DocRow };
  */
 export const BATTLE_SCHEMA_APPLIED = true;
 
-// Server hard cap. Two numbers, and which one is live depends on the flag above:
-//   flag off — challenges.question_count CHECK (BETWEEN 1 AND 12) plus
-//              challenge_create()'s own "up to 12 questions" guard;
-//   flag on  — both widened to 100 by the migration, matched by the studybody
-//              edge function's own clamp, which was raised in the same change.
-// MAX_CHALLENGE_QUESTIONS is mirrored from lib/social.ts (which mirrors the
-// migration) rather than re-declared, so there is one number that means "what
-// today's schema allows".
-export const BATTLE_MAX_QUESTIONS_POOLED = 100;
+// The SERVER's hard cap, once the migration is applied, really is 100:
+// challenges.question_count CHECK (BETWEEN 1 AND 100) plus the studybody edge
+// function's own clamp, raised to match in the same change. That number is
+// deliberately NOT what this screen offers, though.
+//
+// BATTLE_MAX_QUESTIONS below is the CLIENT's own, lower ceiling: 50, chosen by
+// the owner after a 30-question battle was tried and aborted (see the
+// generating-stage progress wiring in buildQuestionSet for the mechanism).
+// 50 is not a round number picked for looks - it is the largest set judged
+// worth attempting against a wall-clock budget this app does not control
+// (Supabase Edge Functions cap around 150s on the free plan; the client gives
+// up at STUDYBODY_TIMEOUT_MS in studybody-client.ts). Streaming the response
+// (see that same file) makes a timed-out attempt degrade gracefully instead of
+// losing everything, but it does not raise either ceiling - so the honest
+// move is a client ceiling well short of the server's, with headroom kept on
+// the server for whenever the underlying generation gets faster or the
+// per-batch concurrency issue is understood. A permissive server under a
+// restrictive client is the safe direction; the reverse is not, which is why
+// only this number moved and the DB/edge-function 100 stayed put.
+export const BATTLE_MAX_QUESTIONS_POOLED = 50;
 export const BATTLE_MAX_QUESTIONS = BATTLE_SCHEMA_APPLIED
   ? BATTLE_MAX_QUESTIONS_POOLED
   : MAX_CHALLENGE_QUESTIONS; // 12
@@ -232,7 +243,9 @@ function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n));
 }
 
-type StageReporter = (stage: BattleStage, within: number) => void;
+// `label` lets the generating stage override STAGE_LABEL with a live count
+// ("Generating questions… (14/20)") once real progress exists to report.
+type StageReporter = (stage: BattleStage, within: number, label?: string) => void;
 
 // ── The shared build: retrieve → generate → save ─────────────────────────────
 //
@@ -281,13 +294,14 @@ async function buildQuestionSet({
   const topicStub = { title, summary, objectives: [], source_refs: [] };
 
   reportStage("generating", 0);
-  // THIS STAGE CANNOT SHOW REAL MOTION. generateStudyQuestions is one opaque
-  // fetch to the studybody edge function — even though that function loops in
-  // batches of 20 server-side for a large count, nothing streams back from it
-  // mid-request, so there is no sub-progress to read here. Rather than fake a
-  // ticking bar (which would finish before the AI call does — worse than a
-  // plain spinner, per the brief), this stage sits at its start boundary with
-  // an honest "Generating questions…" label until the call resolves.
+  // REAL MOTION NOW. generate_questions streams: the studybody edge function
+  // (supabase/functions/studybody/index.ts, generationStreamResponse) emits
+  // an SSE frame the moment each server-side batch finishes, carrying exactly
+  // how many questions exist so far out of how many were asked for -
+  // generateStudyQuestions (studybody-client.ts) parses that into onProgress.
+  // This used to sit pinned at its start boundary for the whole call because
+  // nothing streamed back mid-request; now it advances every time a batch
+  // lands, and the label carries the real count rather than a static phrase.
   const generated = await generateStudyQuestions({
     profile,
     topic: topicStub,
@@ -295,6 +309,13 @@ async function buildQuestionSet({
     count,
     documents,
     difficulty,
+    onProgress: ({ made, target }) => {
+      reportStage(
+        "generating",
+        target > 0 ? clamp01(made / target) : 0,
+        `Generating questions… (${made}/${target})`,
+      );
+    },
   });
   reportStage("generating", 1);
 
@@ -447,10 +468,14 @@ export async function createBattleSession({
     ? `A Battle Royale match focused on "${focus}" from ${doc.file_name}.`
     : `A Battle Royale match drawn from across the whole of ${doc.file_name}.`;
 
-  const reportStage: StageReporter = (stage, within) => {
+  const reportStage: StageReporter = (stage, within, label) => {
     if (!onProgress) return;
     const [start, end] = STAGE_BOUNDS[stage];
-    onProgress({ stage, fraction: start + (end - start) * clamp01(within), label: STAGE_LABEL[stage] });
+    onProgress({
+      stage,
+      fraction: start + (end - start) * clamp01(within),
+      label: label ?? STAGE_LABEL[stage],
+    });
   };
 
   const built = await buildQuestionSet({
@@ -575,14 +600,14 @@ export async function createRoadmapBattleSeries({
     // Maps a stage's progress WITHIN this one round onto this round's slice of
     // the whole series, so the bar advances smoothly across all N rounds
     // instead of resetting to 0% every round.
-    const reportStage: StageReporter = (stage, within) => {
+    const reportStage: StageReporter = (stage, within, label) => {
       if (!onProgress) return;
       const [s, e] = STAGE_BOUNDS[stage];
       const roundFraction = s + (e - s) * clamp01(within);
       onProgress({
         stage,
         fraction: roundStart + (roundEnd - roundStart) * roundFraction,
-        label: `Round ${roundNumber} of ${total} — ${STAGE_LABEL[stage]}`,
+        label: `Round ${roundNumber} of ${total} — ${label ?? STAGE_LABEL[stage]}`,
       });
     };
 
