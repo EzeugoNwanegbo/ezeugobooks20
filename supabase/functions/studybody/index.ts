@@ -480,16 +480,49 @@ async function generateOneType(
   // de-duplicates on a normalised prompt rather than trusting `exclude` alone.
   // A duplicate costs one question from the batch, not the request.
   const rounds = Math.ceil(target / batchSize);
+
+  // INSTRUMENTED ON PURPOSE. Whether these batches genuinely run at the same
+  // time is not something the code can assert - the provider may serialise them
+  // behind a rate limit, in which case concurrency buys nothing and only adds
+  // duplicate risk. Each batch logs when it started and how long it took,
+  // relative to the same origin, so the answer is readable off one request:
+  // starts clustered near 0ms with similar durations means truly parallel;
+  // starts staggered by roughly one batch-duration means throttled.
+  const t0 = Date.now();
   const first = await Promise.all(
-    Array.from({ length: rounds }, () =>
-      callDeepSeekJson(
+    Array.from({ length: rounds }, (_, i) => {
+      // THIS ROUND'S SHARE, not a full batch every time. The sequential loop
+      // this replaced asked for `min(batchSize, target - collected)`, so a
+      // request for ten questions asked the model for ten. Passing batchSize
+      // here instead made every round ask for twenty and discard the surplus —
+      // a ten-question set became a twenty-question generation, and everything
+      // got about twice as slow, My Coach included. The last round takes the
+      // remainder.
+      const need = Math.min(batchSize, target - i * batchSize);
+      const startedAt = Date.now() - t0;
+      return callDeepSeekJson(
         deepSeekKey,
         QUESTION_SYSTEM,
-        questionUserPrompt(body, type, batchSize, exclude, difficulty),
-      ).catch(() => ({ questions: [] as Record<string, unknown>[] })),
-      // A failed batch must not take the others down: nine questions beat an
-      // error, and the top-up below can recover the shortfall.
-    ),
+        questionUserPrompt(body, type, need, exclude, difficulty),
+      )
+        .then((r) => {
+          console.log(
+            `studybody: batch ${i + 1}/${rounds} ok start=+${startedAt}ms dur=${Date.now() - t0 - startedAt}ms`,
+          );
+          return r;
+        })
+        // A failed batch must not take the others down: nine questions beat an
+        // error, and the top-up below can recover the shortfall.
+        .catch((err) => {
+          console.error(
+            `studybody: batch ${i + 1}/${rounds} FAILED start=+${startedAt}ms dur=${Date.now() - t0 - startedAt}ms err=${err?.message ?? err}`,
+          );
+          return { questions: [] as Record<string, unknown>[] };
+        });
+    }),
+  );
+  console.log(
+    `studybody: ${rounds} batch(es) for ${target} ${type} finished in ${Date.now() - t0}ms`,
   );
   for (const result of first) {
     absorb(Array.isArray(result.questions) ? (result.questions as Record<string, unknown>[]) : []);
