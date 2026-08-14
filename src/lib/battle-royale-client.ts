@@ -83,6 +83,17 @@ export function buildBattleTitle(doc: DocRow, scope: BattleScope, focus: string,
 // would finish before the AI does.
 export type BattleStage = "retrieving" | "generating" | "saving" | "sending";
 
+// The studybody function accepts up to 100,000 characters (~25,000 tokens). A
+// WHOLE-FILE battle fills that, and the model then spends its whole output
+// budget reading before writing a single question — it returns an empty
+// completion and the send fails. Proved in testing: ten questions scoped to one
+// TOPIC generated fine while the same ten over the whole file did not.
+//
+// 12,000 is deliberately well under, not merely under. A ten-to-thirty question
+// contest does not need the textbook in the prompt, and a smaller prompt is also
+// a faster one — generation time was the other complaint.
+const BATTLE_DOC_CHARS_TOTAL = 12_000;
+
 const STRAIGHT_STAGE_MAP: Record<StraightInStage, BattleStage> = {
   reading: "retrieving",
   writing: "generating",
@@ -162,6 +173,7 @@ export async function createSingleBattle({
     count,
     questionType: "mcq",
     difficulty: "medium",
+    docCharBudget: BATTLE_DOC_CHARS_TOTAL,
     topicFocus: topicScoped ? focus : undefined,
     onStage: (stage) => onProgress?.({ stage: STRAIGHT_STAGE_MAP[stage] }),
   });
@@ -277,6 +289,11 @@ export async function createRoadmapBattleSeries({
         count,
         questionType: "mcq",
         difficulty: "medium",
+        // A topic-pinpointed pull is already far smaller than a whole-file one,
+        // so this rarely binds — but a series is N generations back to back, and
+        // one round stalling on an oversized prompt strands the whole roadmap
+        // half-sent. The cap costs nothing when it is not needed.
+        docCharBudget: BATTLE_DOC_CHARS_TOTAL,
         // Pinpoints retrieval to this topic's own chunks — the grounded pull,
         // same as a single battle's "specific topic" scope — rather than
         // sampling the whole roadmap's material for every round.

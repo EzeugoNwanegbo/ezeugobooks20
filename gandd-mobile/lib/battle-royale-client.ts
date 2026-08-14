@@ -142,10 +142,15 @@ export async function loadPlanTopics(userId: string, planId: string): Promise<To
 // wall-clock limit not far above it.
 //
 // A contest of ten to thirty multiple-choice questions does not need the whole
-// textbook in the prompt. This budget is roughly a quarter of the function's,
-// which brings a whole-file battle back to the size of set My Coach already
-// generates comfortably.
-const BATTLE_DOC_CHARS_TOTAL = 26_000;
+// textbook in the prompt.
+//
+// This started at 26,000 and was still too much: a whole-file battle came back
+// with an EMPTY completion (the model spent its entire output budget reading),
+// while the same ten questions scoped to ONE TOPIC generated fine. Same count,
+// same model — only the context differed. 12,000 is deliberately well under the
+// line rather than near it, and a smaller prompt is a faster one too, which was
+// the other complaint.
+const BATTLE_DOC_CHARS_TOTAL = 12_000;
 
 /**
  * Reduce excerpts to the battle budget by SAMPLING EVENLY, not truncating.

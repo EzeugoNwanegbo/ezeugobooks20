@@ -252,6 +252,34 @@ export async function loadPreferredStraightInType(userId: string): Promise<Strai
   }
 }
 
+/**
+ * Reduce excerpts to a character budget by SAMPLING EVENLY, never truncating.
+ *
+ * Cutting the head would quietly turn "the whole file" into "the first
+ * chapter" — the opposite of the scope the student chose, and in a battle the
+ * opponent would be tested on a book neither player agreed to. Evenly spaced
+ * windows keep coverage across the material, which is the same reason
+ * loadStudyDocumentsSpanning samples rather than reading from the top.
+ */
+export function sampleToBudget(documents: StudyDocument[], budget: number): StudyDocument[] {
+  if (!documents.length) return documents;
+  const perDoc = Math.floor(budget / documents.length);
+
+  return documents.map((doc) => {
+    if (doc.excerpt.length <= perDoc) return doc;
+    // Enough windows to stay representative, few enough that each still holds a
+    // coherent passage rather than a scatter of half-sentences.
+    const windows = 8;
+    const size = Math.floor(perDoc / windows);
+    const stride = Math.floor(doc.excerpt.length / windows);
+    const parts: string[] = [];
+    for (let i = 0; i < windows; i++) {
+      parts.push(doc.excerpt.slice(i * stride, i * stride + size));
+    }
+    return { ...doc, excerpt: parts.join("\n…\n") };
+  });
+}
+
 export async function createStraightInSession({
   userId,
   profile,
@@ -263,6 +291,7 @@ export async function createStraightInSession({
   difficulty,
   timerSeconds,
   topicFocus,
+  docCharBudget,
   onStage,
 }: {
   userId: string;
@@ -295,14 +324,29 @@ export async function createStraightInSession({
    * still wants.
    */
   topicFocus?: string;
+  /**
+   * Cap on the characters of document context sent to the generator.
+   *
+   * Unset means the studybody function's own ceiling (100,000 chars, ~25,000
+   * tokens), which is what My Coach has always used and what its callers still
+   * get. Battle Royale passes a much smaller number, and has to: a WHOLE-FILE
+   * pull fills that ceiling, and the model then spends its entire output budget
+   * reading before it writes a single question, returning an empty completion.
+   *
+   * This was not theory. A ten-question battle scoped to ONE TOPIC generated
+   * fine while the same ten questions over the whole file failed — same count,
+   * same model, the only difference being how much context went up.
+   */
+  docCharBudget?: number;
   /** Called as each real step begins, so the caller can show honest progress. */
   onStage?: (stage: StraightInStage) => void;
 }): Promise<{ planId: string; sessionId: string }> {
   onStage?.("reading");
   const focus = topicFocus?.trim();
-  const documents = focus
+  const retrieved = focus
     ? await loadStudyDocuments(documentIds, focus)
     : await loadStudyDocumentsSpanning(documentIds, docsMeta);
+  const documents = docCharBudget ? sampleToBudget(retrieved, docCharBudget) : retrieved;
 
   // Only "mixed" splits the set two ways; the single-style sets ask for one kind
   // and let the edge function's non-mixed branch handle the whole count.

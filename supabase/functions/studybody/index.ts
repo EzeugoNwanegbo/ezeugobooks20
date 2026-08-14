@@ -440,27 +440,76 @@ async function generateOneType(
         ? "hard"
         : "medium";
   const collected: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
   const exclude = [...seedExclude];
 
+  // Normalised so two questions differing only by whitespace, case or trailing
+  // punctuation count as the same one.
+  const key = (q: Record<string, unknown>) =>
+    typeof q.prompt === "string"
+      ? q.prompt.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
+      : "";
+
+  const absorb = (raw: Record<string, unknown>[]): number => {
+    const grounded = raw.filter(hasSourceRef);
+    const picked = grounded.length ? grounded : raw;
+    let added = 0;
+    for (const question of picked) {
+      const k = key(question);
+      if (k && seen.has(k)) continue;   // a duplicate across parallel batches
+      if (k) seen.add(k);
+      collected.push({ ...question, type });
+      if (typeof question.prompt === "string") exclude.push(question.prompt);
+      added += 1;
+    }
+    return added;
+  };
+
+  // ONE ROUND, RUN IN PARALLEL.
+  //
+  // These batches used to run one after another, each passing the previous
+  // batch's prompts forward as `exclude` so the model would not repeat itself.
+  // Correct, and far too slow to survive: fifty questions is three chained
+  // DeepSeek calls at roughly a minute each, against a client that gives up at
+  // 130 seconds and an edge runtime with its own ceiling above that. Fifty
+  // simply could not be asked for.
+  //
+  // Run concurrently and the wall-clock cost of three batches is the cost of
+  // one. The price is that parallel batches cannot see each other's output, so
+  // they will sometimes land on the same question - which is why absorb()
+  // de-duplicates on a normalised prompt rather than trusting `exclude` alone.
+  // A duplicate costs one question from the batch, not the request.
+  const rounds = Math.ceil(target / batchSize);
+  const first = await Promise.all(
+    Array.from({ length: rounds }, () =>
+      callDeepSeekJson(
+        deepSeekKey,
+        QUESTION_SYSTEM,
+        questionUserPrompt(body, type, batchSize, exclude, difficulty),
+      ).catch(() => ({ questions: [] as Record<string, unknown>[] })),
+      // A failed batch must not take the others down: nine questions beat an
+      // error, and the top-up below can recover the shortfall.
+    ),
+  );
+  for (const result of first) {
+    absorb(Array.isArray(result.questions) ? (result.questions as Record<string, unknown>[]) : []);
+  }
+
+  // Top up sequentially if duplicates or a failed batch left us short. This is
+  // the old behaviour, now the exception rather than the rule, and it CAN see
+  // everything collected so far - so it is the reliable way to close a gap.
   for (let batch = 0; batch < maxBatches && collected.length < target; batch += 1) {
     const need = Math.min(batchSize, target - collected.length);
     const result = await callDeepSeekJson(
       deepSeekKey,
       QUESTION_SYSTEM,
       questionUserPrompt(body, type, need, exclude, difficulty),
-    );
+    ).catch(() => ({ questions: [] as Record<string, unknown>[] }));
     const raw = Array.isArray(result.questions)
       ? (result.questions as Record<string, unknown>[])
       : [];
-    const grounded = raw.filter(hasSourceRef);
-    const picked = grounded.length ? grounded : raw;
-    if (picked.length === 0) break;
-
-    for (const question of picked) {
-      collected.push({ ...question, type });
-      const prompt = question.prompt;
-      if (typeof prompt === "string") exclude.push(prompt);
-    }
+    if (raw.length === 0) break;          // material exhausted, or the call failed
+    if (absorb(raw) === 0) break;         // only repeats coming back now
   }
 
   return collected.slice(0, target);
