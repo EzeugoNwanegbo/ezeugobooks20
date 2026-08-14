@@ -394,6 +394,7 @@ function AppLayout() {
       | "/app/last-minute"
       | "/app/history"
       | "/app/studybody"
+      | "/app/friends"
       | "/app/battle-royale"
       | "/app/feedback"
       | "/app/settings",
@@ -1051,10 +1052,20 @@ function AppLayout() {
                   navigate({ to: "/app/leaderboard" });
                 }}
               />
-              {/* Same gate as the desktop sidebar's Battle Royale entry — see
-                  socialEnabled(). Kept in step with the sidebar deliberately:
-                  the route resolves at any width, so it must be reachable at
-                  any width too. */}
+              {/* Same gate as the desktop sidebar's Friends and Battle Royale
+                  entries — see socialEnabled(). Kept in step with the sidebar
+                  deliberately: the route resolves at any width, so it must be
+                  reachable at any width too, and the drawer is the only nav
+                  below md. Same order as the sidebar: Friends, then Battle
+                  Royale, which is the opponent you pick from it. */}
+              {socialEnabled(user) && (
+                <MobileDrawerNavItem
+                  active={location.pathname.includes("friends")}
+                  icon={<Users className="h-4 w-4" />}
+                  label="Friends"
+                  onPick={() => goToMobileRoute("/app/friends")}
+                />
+              )}
               {socialEnabled(user) && (
                 <MobileDrawerNavItem
                   active={location.pathname.includes("battle-royale")}
