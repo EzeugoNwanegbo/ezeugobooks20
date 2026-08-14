@@ -75,8 +75,29 @@ function difficultyInstruction(level: DifficultyLevel): string {
 - Two related ideas may be combined. Distractors should be plausible but resolvable from the material.`;
 }
 
-const MAX_DOC_CHARS_TOTAL = 100_000;
+// Was 100,000 (~25k tokens). The "docCharBudget" comment on
+// createStraightInSession already proved the failure mode this causes: a
+// whole-file pull fills the ceiling, the model spends its output budget
+// reading before it writes a single question, and the call returns an empty
+// completion or times out ("A ten-question battle scoped to ONE TOPIC
+// generated fine while the same ten questions over the whole file failed").
+// Battle Royale worked around it client-side by capping at 12,000. This cuts
+// the SERVER'S default in the same direction for every caller - prefill and
+// reasoning-over-context both scale with input size, so a smaller prompt is a
+// faster prompt everywhere, not just for the caller that remembered to ask
+// for one. 60,000 stays far more generous than Battle Royale's 12,000 - My
+// Coach's roadmap building and topic-scoped practice need the extra breadth -
+// while still being a real cut for "Go straight in" over a whole large file,
+// which never set docCharBudget and always hit the old ceiling.
+const MAX_DOC_CHARS_TOTAL = 60_000;
 const DEEPSEEK_TIMEOUT_MS = 90_000;
+// Only used to rescue a batch DeepSeek already failed (bad JSON, empty
+// completion, or a 5xx) - see callWithFallback. Kept short and separate from
+// DEEPSEEK_TIMEOUT_MS: this fires AFTER a DeepSeek attempt already spent up to
+// 90s, and both clients give up at 130s total, so the fallback has roughly 35s
+// of real budget before ITS timeout has to be the one that fires instead of a
+// clean recovery.
+const OPENAI_FALLBACK_TIMEOUT_MS = 30_000;
 
 async function fetchWithTimeout(
   input: string,
@@ -311,6 +332,96 @@ async function callDeepSeekJson(apiKey: string, systemPrompt: string, userPrompt
   return parseJsonObject(content);
 }
 
+/**
+ * Second-lane provider, used ONLY to rescue a batch DeepSeek already failed -
+ * never dispatched alongside DeepSeek "just in case". OpenAI bills materially
+ * more per token, so paying for it on every batch would trade a speed problem
+ * for a cost one; paying for it only when DeepSeek already threw (malformed
+ * JSON mid-array, an empty completion, a 5xx) is nearly free because it is
+ * rare, and it turns those failures into a recovered batch instead of a
+ * shortfall the sequential top-up loop has to spend another ~90s chasing from
+ * the same provider that just failed.
+ *
+ * gpt-5-nano (also DeepSeek's stand-in elsewhere in this codebase, see
+ * chat/index.ts) rather than the deep model: this is a rescue, not the
+ * primary path, so cheapest-and-fastest wins over quality headroom. No
+ * `response_format` - chat/index.ts never sets it for this model family
+ * either, and parseJsonObject already tolerates a fenced or loosely-wrapped
+ * reply via its regex/salvage fallback, so there is nothing to gain from
+ * relying on strict JSON mode and a small risk of a 400 if the family's
+ * support for it ever changes.
+ */
+async function callOpenAIJson(
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+  timeoutMs: number,
+): Promise<Record<string, unknown>> {
+  const model = Deno.env.get("OPENAI_FALLBACK_MODEL") || "gpt-5-nano";
+  const response = await fetchWithTimeout(
+    "https://api.openai.com/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        // GPT-5 renamed max_tokens and rejects temperature outright - same
+        // constraints documented in chat/index.ts's callOpenAISync.
+        max_completion_tokens: 8192,
+        reasoning_effort: "minimal",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      }),
+    },
+    timeoutMs,
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`OpenAI fallback error ${response.status}: ${text}`);
+  }
+
+  const json = await response.json();
+  const choice = json.choices?.[0];
+  const content: string = choice?.message?.content ?? "";
+  if (!content.trim()) {
+    throw new Error(`OpenAI fallback returned an empty response (${choice?.finish_reason ?? "unknown"})`);
+  }
+  return parseJsonObject(content);
+}
+
+/**
+ * DeepSeek first, OpenAI only if DeepSeek throws. Used by the sequential
+ * top-up loops (generateOneType's shortfall recovery, generateFlashcards),
+ * deliberately NOT the initial parallel round in generateOneType - that round
+ * is the common case, already bounded by DEEPSEEK_TIMEOUT_MS, and adding a
+ * second provider hop to its worst-case path would risk stacking two timeouts
+ * past the 130s the clients give up at. Top-up already accepts the extra
+ * latency as the exception path, so this is where a rescue pays for itself
+ * without threatening the fast path.
+ */
+async function callWithFallback(
+  deepSeekKey: string,
+  openAiKey: string | undefined,
+  systemPrompt: string,
+  userPrompt: string,
+): Promise<Record<string, unknown>> {
+  try {
+    return await callDeepSeekJson(deepSeekKey, systemPrompt, userPrompt);
+  } catch (err) {
+    if (!openAiKey) throw err;
+    console.warn(
+      `studybody: DeepSeek batch failed (${err instanceof Error ? err.message : err}), retrying via OpenAI fallback`,
+    );
+    return await callOpenAIJson(openAiKey, systemPrompt, userPrompt, OPENAI_FALLBACK_TIMEOUT_MS);
+  }
+}
+
 function hasUsableDocuments(documents: StudyDocument[] = []): boolean {
   return documents.some((doc) => (doc.excerpt || "").trim().length > 40);
 }
@@ -424,6 +535,7 @@ For MCQ, provide exactly four options and one correct option id. For essay, opti
 async function generateOneType(
   body: Body,
   deepSeekKey: string,
+  openAiKey: string | undefined,
   type: "mcq" | "essay",
   target: number,
   seedExclude: string[],
@@ -533,8 +645,9 @@ async function generateOneType(
   // everything collected so far - so it is the reliable way to close a gap.
   for (let batch = 0; batch < maxBatches && collected.length < target; batch += 1) {
     const need = Math.min(batchSize, target - collected.length);
-    const result = await callDeepSeekJson(
+    const result = await callWithFallback(
       deepSeekKey,
+      openAiKey,
       QUESTION_SYSTEM,
       questionUserPrompt(body, type, need, exclude, difficulty),
     ).catch(() => ({ questions: [] as Record<string, unknown>[] }));
@@ -548,25 +661,25 @@ async function generateOneType(
   return collected.slice(0, target);
 }
 
-async function generateQuestions(body: Body, deepSeekKey: string) {
+async function generateQuestions(body: Body, deepSeekKey: string, openAiKey: string | undefined) {
   const type = body.questionType || "mcq";
   const seedExclude = (body.excludePrompts || []).filter((p) => typeof p === "string" && p.trim());
 
   if (type === "mixed") {
     const mcqTarget = Math.min(Math.max(body.mcqCount || 0, 0), 100);
     const essayTarget = Math.min(Math.max(body.essayCount || 0, 0), 100);
-    const mcqs = await generateOneType(body, deepSeekKey, "mcq", mcqTarget, seedExclude);
+    const mcqs = await generateOneType(body, deepSeekKey, openAiKey, "mcq", mcqTarget, seedExclude);
     const essayExclude = [
       ...seedExclude,
       ...mcqs.map((q) => q.prompt).filter((p): p is string => typeof p === "string"),
     ];
-    const essays = await generateOneType(body, deepSeekKey, "essay", essayTarget, essayExclude);
+    const essays = await generateOneType(body, deepSeekKey, openAiKey, "essay", essayTarget, essayExclude);
     return { questions: [...mcqs, ...essays] };
   }
 
   const target = Math.min(Math.max(body.count || 5, 1), 100);
   const onlyType = type === "essay" ? "essay" : "mcq";
-  const questions = await generateOneType(body, deepSeekKey, onlyType, target, seedExclude);
+  const questions = await generateOneType(body, deepSeekKey, openAiKey, onlyType, target, seedExclude);
   return { questions };
 }
 
@@ -579,7 +692,7 @@ Hard rules:
 - Never repeat or lightly reword a card front listed under "Already made".
 Return strict JSON only.`;
 
-async function generateFlashcards(body: Body, deepSeekKey: string) {
+async function generateFlashcards(body: Body, deepSeekKey: string, openAiKey: string | undefined) {
   const target = Math.min(Math.max(body.count || 10, 1), 100);
   const batchSize = 30;
   const maxBatches = Math.ceil(target / batchSize) + 1;
@@ -588,8 +701,9 @@ async function generateFlashcards(body: Body, deepSeekKey: string) {
 
   for (let batch = 0; batch < maxBatches && collected.length < target; batch += 1) {
     const need = Math.min(batchSize, target - collected.length);
-    const result = await callDeepSeekJson(
+    const result = await callWithFallback(
       deepSeekKey,
+      openAiKey,
       FLASHCARD_SYSTEM,
       `${profileBlock(body.profile)}
 
@@ -686,6 +800,11 @@ Deno.serve(async (req: Request) => {
   try {
     const body = (await req.json()) as Body;
     const deepSeekKey = Deno.env.get("DEEPSEEK_API_KEY");
+    // Optional: only gates the OpenAI rescue in callWithFallback. Already
+    // configured project-wide for chat/index.ts and embed/index.ts, but stays
+    // undefined-safe here so a missing key degrades to today's DeepSeek-only
+    // behaviour instead of failing the whole request.
+    const openAiKey = Deno.env.get("OPENAI_API_KEY") || undefined;
 
     if (!deepSeekKey) return jsonResponse({ error: "DeepSeek API key not configured" }, 500);
 
@@ -712,7 +831,7 @@ Deno.serve(async (req: Request) => {
           400,
         );
       }
-      return jsonResponse(await generateQuestions(body, deepSeekKey));
+      return jsonResponse(await generateQuestions(body, deepSeekKey, openAiKey));
     }
 
     if (body.action === "generate_flashcards") {
@@ -725,7 +844,7 @@ Deno.serve(async (req: Request) => {
           400,
         );
       }
-      return jsonResponse(await generateFlashcards(body, deepSeekKey));
+      return jsonResponse(await generateFlashcards(body, deepSeekKey, openAiKey));
     }
 
     if (body.action === "review_answers") {
