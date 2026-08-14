@@ -172,6 +172,16 @@ export default function CoachScreen() {
     [topics],
   );
 
+  // True when this session is the opponent's copy of a friend challenge.
+  // challenge_begin() makes that copy with source_refs deliberately emptied —
+  // which files a student has uploaded is not something to hand to another
+  // student as a side effect of a quiz — so every question in it looks
+  // ungrounded. Showing "not found in your material" on all of them would say
+  // something false: they came from real material, just not from this student's.
+  const isChallengeSet = Boolean(
+    (activeSession?.feedback as { challenge_id?: string } | null)?.challenge_id,
+  );
+
   // The count actually in effect: the picked preset, or the typed Custom
   // value once it parses. Never silently clamped — an invalid Custom value
   // resolves to null + an error string so the start buttons can block instead
@@ -602,13 +612,22 @@ export default function CoachScreen() {
         .eq("session_id", session.id)
         .order("position", { ascending: true });
       if (error) throw error;
-      const fb = (session.feedback ?? {}) as SessionRow["feedback"] & { timerSeconds?: number };
+      const fb = (session.feedback ?? {}) as SessionRow["feedback"] & {
+        timerSeconds?: number;
+        challenge_id?: string;
+      };
       const timerSeconds = typeof fb?.timerSeconds === "number" ? fb.timerSeconds : 0;
       feedbackBaseRef.current = {
         mode: fb?.mode ?? "learning",
         questionType: fb?.questionType ?? session.question_type,
         difficulty: fb?.difficulty ?? "medium",
         timerSeconds,
+        // Carried across rather than dropped. challenge_begin() puts this id in
+        // the session's feedback, and every write from here (the autosave and
+        // the submit) REPLACES the whole object — so without this line, opening
+        // a friend's challenge erases the only mark that it is one, and the set
+        // starts claiming the questions came from this student's own files.
+        ...(typeof fb?.challenge_id === "string" ? { challenge_id: fb.challenge_id } : {}),
       };
       setMode((fb?.mode as PracticeMode) ?? "learning");
       setQuestionType(session.question_type);
@@ -1125,7 +1144,7 @@ export default function CoachScreen() {
                         <FileText size={12} color={colors.accent} style={{ marginTop: 1 }} />
                         <Text style={styles.sourceTagText}>Source: {sourceText(q.source_refs)}</Text>
                       </View>
-                    ) : (
+                    ) : isChallengeSet ? null : (
                       <View style={styles.warnTag}>
                         <AlertTriangle size={12} color={colors.warning} style={{ marginTop: 1 }} />
                         <Text style={styles.warnTagText}>

@@ -22,6 +22,7 @@ import {
   Text,
   TextInput,
   View,
+  type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -64,6 +65,17 @@ import {
 import { colors, fonts, radius } from "@/lib/theme";
 import { ScreenContainer, TopBar, useHaptics } from "@/platform";
 
+/** A settled challenge from the caller's side. Mirrors ChallengeSummary.outcome. */
+type ChallengeOutcome = "won" | "lost" | "draw";
+
+/** Wins, draws and losses — against one friend, or across the lot. */
+type Tally = { won: number; drawn: number; lost: number };
+
+// The server clamps p_limit to 100, so asking for more quietly gets 100 anyway;
+// asking explicitly is the difference between a record over the last 40 battles
+// and one over the last 100.
+const CHALLENGE_HISTORY = 100;
+
 export default function FriendsScreen() {
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
@@ -96,7 +108,11 @@ export default function FriendsScreen() {
     }
     setLoading(true);
     try {
-      const [f, r, c] = await Promise.all([friendList(), friendRequests(), listChallenges()]);
+      const [f, r, c] = await Promise.all([
+        friendList(),
+        friendRequests(),
+        listChallenges(CHALLENGE_HISTORY),
+      ]);
       setFriends(f);
       setRequests(r);
       setChallenges(c);
@@ -127,6 +143,37 @@ export default function FriendsScreen() {
     () => challenges.filter((c) => c.status !== "pending" && c.status !== "active"),
     [challenges],
   );
+
+  // The win/draw/loss record — one per opponent, plus the total and the recent
+  // form strip. Counted from the challenge list this screen already loads, so
+  // there is no extra query and no server change behind any of it. Mirrors
+  // src/routes/-app.friends-page.tsx, including the honest limit: the server
+  // caps the list at 100, so a student past their hundredth battle has a record
+  // over their most recent 100.
+  const { tallies, overall, form } = useMemo(() => {
+    const tallies = new Map<string, Tally>();
+    const overall: Tally = { won: 0, drawn: 0, lost: 0 };
+    const form: ChallengeOutcome[] = [];
+    for (const challenge of challenges) {
+      const outcome = challenge.outcome;
+      if (!outcome) continue;
+      const tally = tallies.get(challenge.opponent_user_id) ?? { won: 0, drawn: 0, lost: 0 };
+      if (outcome === "won") {
+        tally.won += 1;
+        overall.won += 1;
+      } else if (outcome === "lost") {
+        tally.lost += 1;
+        overall.lost += 1;
+      } else {
+        tally.drawn += 1;
+        overall.drawn += 1;
+      }
+      tallies.set(challenge.opponent_user_id, tally);
+      if (form.length < 5) form.push(outcome);
+    }
+    return { tallies, overall, form };
+  }, [challenges]);
+  const settledTotal = overall.won + overall.drawn + overall.lost;
 
   const saveHandle = async () => {
     setSavingHandle(true);
@@ -416,6 +463,9 @@ export default function FriendsScreen() {
             </Panel>
           ) : null}
 
+          {/* ── Record ─────────────────────────────────────────────────── */}
+          {settledTotal > 0 ? <RecordPanel overall={overall} form={form} /> : null}
+
           {/* ── Friends ────────────────────────────────────────────────── */}
           <Panel>
             <View style={styles.panelHeadRow}>
@@ -432,24 +482,14 @@ export default function FriendsScreen() {
                 </View>
               ) : (
                 friends.map((friend) => (
-                  <Row
+                  <FriendRow
                     key={friend.user_id}
-                    title={friend.display_name}
-                    subtitle={`${friend.username ? `@${friend.username} · ` : ""}${friend.points.toLocaleString()} pts · ${friend.current_streak}d`}
-                    action={
-                      <View style={styles.actionRow}>
-                        <Pressable onPress={() => openBattle(friend)} style={styles.smallBtnSecondary}>
-                          <Swords size={13} color={colors.text} />
-                          <Text style={styles.smallBtnSecondaryText}>Battle</Text>
-                        </Pressable>
-                        <Pressable
-                          disabled={busyId === friend.user_id}
-                          onPress={() => void act(friend.user_id, () => removeFriend(friend.user_id), "Removed.")}
-                          style={styles.iconBtnGhost}
-                        >
-                          <UserMinus size={15} color={colors.muted} />
-                        </Pressable>
-                      </View>
+                    friend={friend}
+                    tally={tallies.get(friend.user_id) ?? null}
+                    busy={busyId === friend.user_id}
+                    onBattle={() => openBattle(friend)}
+                    onRemove={() =>
+                      void act(friend.user_id, () => removeFriend(friend.user_id), "Removed.")
                     }
                   />
                 ))
@@ -531,6 +571,186 @@ function Row({
   );
 }
 
+// Your record across every settled battle: the three counts, the split as one
+// bar, and the last five results newest first.
+function RecordPanel({ overall, form }: { overall: Tally; form: ChallengeOutcome[] }) {
+  const total = overall.won + overall.drawn + overall.lost;
+  // A draw counts as half a win, the usual convention — counting it as a loss
+  // would make a drawn-heavy record read as a losing one, which it is not.
+  const winRate = Math.round(((overall.won + overall.drawn / 2) / total) * 100);
+
+  return (
+    <Panel>
+      <View style={styles.panelHeadRow}>
+        <SectionTitle icon={<Swords size={16} color={colors.accent} />} title="Your record" />
+        <Text style={styles.mutedTag}>
+          {total} battle{total === 1 ? "" : "s"}
+        </Text>
+      </View>
+
+      <View style={styles.statRow}>
+        <StatTile value={overall.won} label="Won" tone={colors.success} soft={colors.successSoft} />
+        {/* Neutral rather than copper — "success" here is a lifted copper too,
+            so a copper drawn tile would sit next to the won tile as a near-twin. */}
+        <StatTile
+          value={overall.drawn}
+          label="Drawn"
+          tone={colors.muted}
+          soft={colors.surfaceLowest}
+        />
+        <StatTile value={overall.lost} label="Lost" tone={colors.danger} soft={colors.dangerSoft} />
+      </View>
+
+      <SplitBar tally={overall} style={{ marginTop: 12 }} />
+
+      <View style={styles.recordFootRow}>
+        <Text style={styles.hint}>{winRate}% win rate</Text>
+        {form.length > 0 ? (
+          <View style={styles.formRow}>
+            <Text style={styles.hint}>Form</Text>
+            {form.map((outcome, index) => (
+              <FormPip key={index} outcome={outcome} />
+            ))}
+          </View>
+        ) : null}
+      </View>
+    </Panel>
+  );
+}
+
+function StatTile({
+  value,
+  label,
+  tone,
+  soft,
+}: {
+  value: number;
+  label: string;
+  tone: string;
+  soft: string;
+}) {
+  return (
+    <View style={[styles.statTile, { borderColor: tone, backgroundColor: soft }]}>
+      <Text style={[styles.statValue, { color: tone }]}>{value}</Text>
+      <Text style={[styles.statLabel, { color: tone }]}>{label}</Text>
+    </View>
+  );
+}
+
+// Won / drawn / lost as one bar. Every number it draws is written out beside it,
+// so it is decoration rather than the only place the record is stated.
+function SplitBar({ tally, style }: { tally: Tally; style?: ViewStyle }) {
+  const total = tally.won + tally.drawn + tally.lost;
+  if (total === 0) return null;
+  return (
+    <View style={[styles.splitBar, style]}>
+      {tally.won > 0 ? (
+        <View style={{ flex: tally.won, backgroundColor: colors.success }} />
+      ) : null}
+      {tally.drawn > 0 ? (
+        <View style={{ flex: tally.drawn, backgroundColor: colors.muted }} />
+      ) : null}
+      {tally.lost > 0 ? (
+        <View style={{ flex: tally.lost, backgroundColor: colors.danger }} />
+      ) : null}
+    </View>
+  );
+}
+
+function FormPip({ outcome }: { outcome: ChallengeOutcome }) {
+  const label = outcome === "won" ? "Won" : outcome === "lost" ? "Lost" : "Draw";
+  const tone: string =
+    outcome === "won" ? colors.success : outcome === "lost" ? colors.danger : colors.muted;
+  const soft: string =
+    outcome === "won"
+      ? colors.successSoft
+      : outcome === "lost"
+        ? colors.dangerSoft
+        : colors.surfaceLowest;
+  return (
+    <View style={[styles.formPip, { borderColor: tone, backgroundColor: soft }]}>
+      <Text style={[styles.formPipText, { color: tone }]}>{label[0]}</Text>
+    </View>
+  );
+}
+
+// A friend, plus the head-to-head against them. The record only appears once
+// there is one, so a friend you have never battled reads exactly as before.
+function FriendRow({
+  friend,
+  tally,
+  busy,
+  onBattle,
+  onRemove,
+}: {
+  friend: Friend;
+  tally: Tally | null;
+  busy: boolean;
+  onBattle: () => void;
+  onRemove: () => void;
+}) {
+  const played = tally ? tally.won + tally.drawn + tally.lost : 0;
+  const shortName = friend.username ? `@${friend.username}` : friend.display_name.split(" ")[0];
+
+  let leadText = "";
+  // Annotated because `colors` is a const object: without it the first
+  // assignment narrows leadTone to that one hex string and the rest fail.
+  let leadTone: string = colors.accent;
+  if (tally && played > 0) {
+    if (tally.won > tally.lost) {
+      leadText = `You lead ${tally.won}–${tally.lost}`;
+      leadTone = colors.success;
+    } else if (tally.lost > tally.won) {
+      leadText = `${shortName} leads ${tally.lost}–${tally.won}`;
+      leadTone = colors.danger;
+    } else if (tally.won > 0) {
+      leadText = `All square ${tally.won}–${tally.lost}`;
+    } else {
+      // Nothing but draws, where "all square 0–0" would read as never played.
+      leadText = `Level — ${tally.drawn} draw${tally.drawn === 1 ? "" : "s"}`;
+    }
+  }
+
+  return (
+    <View style={styles.friendRow}>
+      <View style={styles.friendRowTop}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.rowTitle} numberOfLines={1}>
+            {friend.display_name}
+          </Text>
+          <Text style={styles.rowSubtitle} numberOfLines={1}>
+            {friend.username ? `@${friend.username} · ` : ""}
+            {friend.points.toLocaleString()} pts · {friend.current_streak}d
+          </Text>
+        </View>
+        <View style={styles.actionRow}>
+          <Pressable onPress={onBattle} style={styles.smallBtnSecondary}>
+            <Swords size={13} color={colors.text} />
+            <Text style={styles.smallBtnSecondaryText}>Battle</Text>
+          </Pressable>
+          <Pressable disabled={busy} onPress={onRemove} style={styles.iconBtnGhost}>
+            <UserMinus size={15} color={colors.muted} />
+          </Pressable>
+        </View>
+      </View>
+
+      {tally && played > 0 ? (
+        <View style={styles.headToHead}>
+          <View style={styles.headToHeadRow}>
+            <Text style={[styles.headToHeadLead, { color: leadTone }]} numberOfLines={1}>
+              {leadText}
+            </Text>
+            <Text style={styles.mutedTag}>
+              {tally.won}W · {tally.drawn}D · {tally.lost}L
+            </Text>
+          </View>
+          <SplitBar tally={tally} style={{ marginTop: 6 }} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function ChallengeRow({
   challenge,
   busy,
@@ -546,10 +766,19 @@ function ChallengeRow({
 }) {
   const opponent = challenge.opponent_username ? `@${challenge.opponent_username}` : challenge.opponent_name;
 
+  // Level on score and still not a draw means the clock separated the two of
+  // you, which is the one result that reads as a mistake unless it says so.
+  const decidedOnTime =
+    (challenge.outcome === "won" || challenge.outcome === "lost") &&
+    challenge.my_score != null &&
+    challenge.their_score != null &&
+    challenge.my_score === challenge.their_score;
+
   const scoreline =
     challenge.my_finished_at || challenge.status === "complete"
       ? `${challenge.my_score ?? 0}-${challenge.their_score ?? "?"} of ${challenge.question_count}` +
-        (challenge.my_duration_ms != null ? ` · ${formatDuration(challenge.my_duration_ms)}` : "")
+        (challenge.my_duration_ms != null ? ` · ${formatDuration(challenge.my_duration_ms)}` : "") +
+        (decidedOnTime ? " · level, decided on time" : "")
       : `${challenge.question_count} questions`;
 
   const outcomeColor =
@@ -558,6 +787,17 @@ function ChallengeRow({
       : challenge.outcome === "lost"
         ? colors.muted
         : colors.accent;
+
+  // Spelled out rather than a capitalised "draw": one word next to a scoreline
+  // is read as the score's label, and a tie has to be unmistakable.
+  const verdict =
+    challenge.outcome === "won"
+      ? "You won"
+      : challenge.outcome === "lost"
+        ? "You lost"
+        : challenge.outcome === "draw"
+          ? "It's a draw"
+          : null;
 
   return (
     <View style={styles.row}>
@@ -570,11 +810,7 @@ function ChallengeRow({
         </Text>
       </View>
       <View style={styles.actionRow}>
-        {challenge.outcome ? (
-          <Text style={[styles.mutedTag, { color: outcomeColor, textTransform: "capitalize" }]}>
-            {challenge.outcome}
-          </Text>
-        ) : null}
+        {verdict ? <Text style={[styles.mutedTag, { color: outcomeColor }]}>{verdict}</Text> : null}
         {challenge.status === "expired" ? <Text style={styles.mutedTag}>Expired</Text> : null}
         {challenge.status === "declined" ? <Text style={styles.mutedTag}>Declined</Text> : null}
 
@@ -715,6 +951,53 @@ const styles = StyleSheet.create({
   },
   rowTitle: { fontFamily: fonts.bodySemibold, fontSize: 14, color: colors.text },
   rowSubtitle: { fontFamily: fonts.mono, fontSize: 11, color: colors.muted, marginTop: 2 },
+  // A friend row is the plain row plus the head-to-head underneath it, so it
+  // stacks rather than sitting on one line.
+  friendRow: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceLowest,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  friendRowTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  headToHead: {
+    marginTop: 10,
+    paddingTop: 9,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  headToHeadRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  headToHeadLead: { flex: 1, minWidth: 0, fontFamily: fonts.bodySemibold, fontSize: 12 },
+  statRow: { flexDirection: "row", gap: 8, marginTop: 12 },
+  statTile: { flex: 1, borderWidth: 1, borderRadius: radius.md, paddingVertical: 8, alignItems: "center" },
+  statValue: { fontFamily: fonts.display, fontSize: 22 },
+  statLabel: { fontFamily: fonts.body, fontSize: 11, marginTop: 1, opacity: 0.85 },
+  splitBar: {
+    flexDirection: "row",
+    height: 6,
+    borderRadius: radius.full,
+    overflow: "hidden",
+    backgroundColor: colors.surface,
+  },
+  recordFootRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  formRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
+  formPip: {
+    width: 20,
+    height: 20,
+    borderWidth: 1,
+    borderRadius: radius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  formPipText: { fontFamily: fonts.bodySemibold, fontSize: 10 },
   actionRow: { flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 },
   mutedTag: { fontFamily: fonts.mono, fontSize: 11, color: colors.mutedDim },
   smallBtn: {

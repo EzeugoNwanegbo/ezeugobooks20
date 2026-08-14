@@ -10,6 +10,7 @@ import {
   GraduationCap,
   Layers,
   Play,
+  Swords,
   Timer,
   Trophy,
   XCircle,
@@ -52,7 +53,12 @@ import {
 } from "@/lib/timed-challenge";
 import { TimerPicker } from "@/components/timer-picker";
 import { chosenTimerSeconds, timerChoiceBlocker, useTimerChoice } from "@/lib/use-timer-choice";
-import { submitChallengeForSession } from "@/lib/social";
+import {
+  listChallenges,
+  submitChallengeForSession,
+  formatDuration as formatChallengeDuration,
+  type ChallengeSummary,
+} from "@/lib/social";
 import {
   gradeMcqOnServer,
   loadQuestionsWithheld,
@@ -111,7 +117,22 @@ function formatDuration(seconds: number | null | undefined): string {
   return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
 }
 
-function SourceOrWarn({ question }: { question: QuestionRow }) {
+// The source line under a question, or the warning that stands in for it.
+//
+// `sourcesStripped` is for a challenge set. challenge_begin() copies the
+// challenger's questions to the opponent with source_refs deliberately emptied -
+// which file a student has uploaded is not something to hand to another student
+// as a side effect of a quiz - so EVERY question in a received challenge has no
+// refs. The warning would then fire on all of them and say something false:
+// these questions do come from real material, just not from this student's.
+// Nothing is shown instead; the set already announces itself as a friend's.
+function SourceOrWarn({
+  question,
+  sourcesStripped,
+}: {
+  question: QuestionRow;
+  sourcesStripped?: boolean;
+}) {
   if (Array.isArray(question.source_refs) && question.source_refs.length > 0) {
     return (
       <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-pop/5 px-2.5 py-1.5 text-xs text-muted-foreground break-words">
@@ -120,6 +141,7 @@ function SourceOrWarn({ question }: { question: QuestionRow }) {
       </p>
     );
   }
+  if (sourcesStripped) return null;
   return (
     <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-xs font-medium text-amber-600 break-words dark:text-amber-400">
       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -130,7 +152,15 @@ function SourceOrWarn({ question }: { question: QuestionRow }) {
 
 // The post-answer panel: correct answer, explanation, source, and (for essays)
 // the AI feedback. Used inline in Learning mode and in the Exam review list.
-function AnswerFeedback({ question, grade }: { question: QuestionRow; grade?: Grade }) {
+function AnswerFeedback({
+  question,
+  grade,
+  sourcesStripped,
+}: {
+  question: QuestionRow;
+  grade?: Grade;
+  sourcesStripped?: boolean;
+}) {
   const correctText =
     question.question_type === "mcq"
       ? optionLabel(question, question.correct_answer)
@@ -150,19 +180,118 @@ function AnswerFeedback({ question, grade }: { question: QuestionRow; grade?: Gr
           {question.explanation}
         </p>
       ) : null}
-      <p className="flex items-start gap-1.5 break-words text-xs text-muted-foreground">
-        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-pop" />
-        <span className="min-w-0">
-          <span className="font-semibold">Source: </span>
-          {sourceText(question.source_refs)}
-        </span>
-      </p>
+      {/* Skipped on a challenge copy: with source_refs stripped, sourceText()
+          falls back to "from your uploaded material", which is the one thing it
+          definitely is not - the file belongs to whoever sent the challenge. */}
+      {sourcesStripped ? null : (
+        <p className="flex items-start gap-1.5 break-words text-xs text-muted-foreground">
+          <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-pop" />
+          <span className="min-w-0">
+            <span className="font-semibold">Source: </span>
+            {sourceText(question.source_refs)}
+          </span>
+        </p>
+      )}
       {grade?.feedback ? (
         <p className="break-words text-muted-foreground">
           <span className="font-semibold text-foreground">Feedback: </span>
           {grade.feedback}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+// The verdict on a friend challenge, shown on the results screen the moment the
+// set is submitted.
+//
+// Before this, finishing a received challenge told you your own score and
+// nothing else - whether you had actually won it was a separate trip to Friends.
+// Every branch below is read from the server's decision (challenge_list_mine's
+// `outcome`), never recomputed on the device, and a draw is named as a draw
+// rather than being left as the absence of a win.
+function ChallengeResultCard({ summary }: { summary: ChallengeSummary }) {
+  const opponent = summary.opponent_username
+    ? `@${summary.opponent_username}`
+    : summary.opponent_name;
+  const tone =
+    summary.outcome === "won"
+      ? "border-leaf/40 bg-leaf/10 text-leaf"
+      : summary.outcome === "lost"
+        ? "border-destructive/40 bg-destructive/5 text-destructive"
+        : // A draw. Deliberately neutral rather than copper: --pop and --leaf
+          // are the same hex in the light theme, where a copper badge would be
+          // indistinguishable from the one that says you won.
+          "border-border bg-foreground/[0.08] text-foreground";
+  const verdict =
+    summary.outcome === "won"
+      ? "You won"
+      : summary.outcome === "lost"
+        ? "You lost"
+        : summary.outcome === "draw"
+          ? "It's a draw"
+          : null;
+  // Level on score but not a draw means the clock separated you, which is the
+  // one result students read as a mistake unless it says so out loud.
+  const decidedOnTime =
+    summary.outcome != null &&
+    summary.outcome !== "draw" &&
+    summary.my_score != null &&
+    summary.their_score != null &&
+    summary.my_score === summary.their_score;
+
+  return (
+    <div className="rounded-2xl border border-border bg-surface p-4">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-sm font-semibold">
+          <Swords className="h-4 w-4 text-pop" />
+          Challenge from {opponent}
+        </span>
+        <Link
+          to="/app/friends"
+          className="shrink-0 text-xs font-semibold text-pop transition-colors hover:text-pop/80"
+        >
+          All results
+        </Link>
+      </div>
+
+      <div className="mt-3 flex items-center justify-center gap-5">
+        <div className="text-center">
+          <div className="font-display text-3xl font-light">{summary.my_score ?? 0}</div>
+          <div className="mt-0.5 font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+            You
+          </div>
+        </div>
+        <div className="text-xs text-muted-foreground">of {summary.question_count}</div>
+        <div className="text-center">
+          <div
+            className={`font-display text-3xl font-light ${summary.their_finished ? "" : "text-muted-foreground"}`}
+          >
+            {summary.their_finished ? (summary.their_score ?? 0) : "—"}
+          </div>
+          <div className="mt-0.5 max-w-28 truncate font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+            {opponent}
+          </div>
+        </div>
+      </div>
+
+      {verdict ? (
+        <div className="mt-3 flex flex-col items-center gap-1.5">
+          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${tone}`}>
+            {verdict}
+          </span>
+          <p className="text-center text-xs text-muted-foreground">
+            {decidedOnTime
+              ? `Level on score - the faster finish decided it (${formatChallengeDuration(summary.my_duration_ms)} to ${formatChallengeDuration(summary.their_duration_ms)}).`
+              : `${formatChallengeDuration(summary.my_duration_ms)} to ${formatChallengeDuration(summary.their_duration_ms)}.`}
+          </p>
+        </div>
+      ) : (
+        <p className="mt-3 text-center text-xs text-muted-foreground">
+          Your answers are in. {opponent} hasn&apos;t played yet - their score shows once they
+          finish, and the result lands in Friends.
+        </p>
+      )}
     </div>
   );
 }
@@ -982,6 +1111,9 @@ function SessionView({
   // time on submit, so a backgrounded tab cannot be used to buy time.
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [timeUpNotified, setTimeUpNotified] = useState(false);
+  // The server's verdict on this set, once it is finished and if it is half of a
+  // friend challenge. Null for an ordinary practice set and until it is fetched.
+  const [challengeResult, setChallengeResult] = useState<ChallengeSummary | null>(null);
 
   const [fcIndex, setFcIndex] = useState(0);
   const [fcFlipped, setFcFlipped] = useState(false);
@@ -999,6 +1131,10 @@ function SessionView({
   // keeps its mode), then the URL param, defaulting to learning.
   const mode: PracticeMode =
     (session?.feedback as { mode?: PracticeMode } | null)?.mode ?? modeParam ?? "learning";
+  // Set when this session is a copy made by challenge_begin() - i.e. somebody
+  // sent this set. Null for anything built from the student's own material, so
+  // every challenge-only behaviour below is off for ordinary practice.
+  const challengeId = (session?.feedback as { challenge_id?: string } | null)?.challenge_id ?? null;
 
   useEffect(() => {
     if (!user) return;
@@ -1229,6 +1365,32 @@ function SessionView({
     // Deliberately not a submit. See the note at the top of lib/timed-challenge.ts.
     toast.message("Time's up — the bonus is gone, but finish the set at your own pace.");
   }, [secondsLeft, timeUpNotified, completed]);
+
+  // The challenge verdict, fetched once this sitting is finished - both when a
+  // set is submitted here (persistResults flips `completed` after it has stamped
+  // the finish time) and when a finished challenge set is reopened later.
+  //
+  // listChallenges() sweeps before it reads, which is what settles a contest
+  // whose second player has just finished, so this is the server's decision and
+  // not a guess made on the device. It is allowed to fail quietly: the same
+  // result is always recoverable from Friends, and practice must not break
+  // because a social read did.
+  useEffect(() => {
+    if (!challengeId || !completed) return;
+    let active = true;
+    (async () => {
+      try {
+        const rows = await listChallenges();
+        if (!active) return;
+        setChallengeResult(rows.find((row) => row.id === challengeId) ?? null);
+      } catch (err) {
+        console.warn("could not load the challenge result", err);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [challengeId, completed]);
 
   const backToTopics = () => navigate({ to: "/app/practice", search: { plan: planId } });
 
@@ -1500,7 +1662,17 @@ function SessionView({
       .update({
         status: "completed",
         score: percentage,
-        feedback: { mode, time_taken_seconds: elapsed, review: review ?? null },
+        // challenge_id is carried across rather than dropped. This write replaces
+        // the whole feedback object, and challenge_begin() put that id there: it
+        // is how a reopened set still knows it was a contest, which is what
+        // suppresses the "not in your material" warning on a friend's questions
+        // and what puts the result back on the screen.
+        feedback: {
+          ...(challengeId ? { challenge_id: challengeId } : {}),
+          mode,
+          time_taken_seconds: elapsed,
+          review: review ?? null,
+        },
         completed_at: new Date().toISOString(),
       })
       .eq("id", session.id);
@@ -1516,8 +1688,6 @@ function SessionView({
       },
       updated_at: new Date().toISOString(),
     });
-    setCompleted(true);
-
     // If this set is half of a friend challenge, tell the server it is finished
     // NOW, so the tie-break time is stamped by the server's clock within a
     // second of the real finish. A device-reported duration is not merely
@@ -1527,6 +1697,11 @@ function SessionView({
     // It never throws: practice must not fail because a social feature did, and
     // opening the challenge list recovers a result that did not land here.
     await submitChallengeForSession(session.id);
+
+    // Flipped AFTER the stamp above, not before: it is what triggers the read of
+    // the challenge verdict, and reading it first would ask the server who won
+    // while this player's own finish time was still missing.
+    setCompleted(true);
 
     const correct = questions.filter((question) => isGradeCorrect(map[question.id])).length;
     const failed = Math.max(0, questions.length - correct);
@@ -1845,6 +2020,10 @@ function SessionView({
                       </div>
                     </div>
 
+                    {/* Above the coach notes on purpose: on a challenge, "who
+                        won" is the first thing the student is looking for. */}
+                    {challengeResult && <ChallengeResultCard summary={challengeResult} />}
+
                     {review?.coaching ? (
                       <div className="rounded-2xl border border-pop/20 bg-pop/5 p-4">
                         <div className="mb-1 text-sm font-semibold">Coach notes</div>
@@ -1899,7 +2078,11 @@ function SessionView({
                                     : answers[question.id] || "-"}
                                 </span>
                               </p>
-                              <AnswerFeedback question={question} grade={grades[question.id]} />
+                              <AnswerFeedback
+                                question={question}
+                                grade={grades[question.id]}
+                                sourcesStripped={!!challengeId}
+                              />
                             </div>
                           );
                         })}
@@ -1933,7 +2116,7 @@ function SessionView({
                             {question.question_type} · {question.difficulty} · {index + 1}
                           </div>
                           <p className="text-sm font-medium break-words">{question.prompt}</p>
-                          <SourceOrWarn question={question} />
+                          <SourceOrWarn question={question} sourcesStripped={!!challengeId} />
                           {isMcq ? (
                             <div className="mt-3 space-y-2">
                               {(question.options ?? []).map((option) => {
@@ -2011,7 +2194,13 @@ function SessionView({
                               )}
                             </>
                           )}
-                          {showFeedback && <AnswerFeedback question={question} grade={grade} />}
+                          {showFeedback && (
+                            <AnswerFeedback
+                              question={question}
+                              grade={grade}
+                              sourcesStripped={!!challengeId}
+                            />
+                          )}
                         </div>
                       );
                     })}
@@ -2065,19 +2254,9 @@ function SessionView({
                       {question.question_type} - {question.difficulty} - {index + 1}
                     </div>
                     <p className="text-sm font-medium break-words">{question.prompt}</p>
-                    {Array.isArray(question.source_refs) && question.source_refs.length > 0 ? (
-                      <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-pop/5 px-2.5 py-1.5 text-xs text-muted-foreground break-words">
-                        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-pop" />
-                        <span className="min-w-0">Source: {sourceText(question.source_refs)}</span>
-                      </p>
-                    ) : (
-                      <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-xs font-medium text-amber-600 break-words dark:text-amber-400">
-                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                        <span className="min-w-0">
-                          Not found in your material - answer with caution.
-                        </span>
-                      </p>
-                    )}
+                    {/* Same line as every other question list, rather than a
+                        second copy of it that could drift. */}
+                    <SourceOrWarn question={question} sourcesStripped={!!challengeId} />
                     {question.question_type === "mcq" ? (
                       <div className="mt-3 space-y-2">
                         {(question.options ?? []).map((option) => (
@@ -2113,7 +2292,11 @@ function SessionView({
                       />
                     )}
                     {completed && (
-                      <AnswerFeedback question={question} grade={grades[question.id]} />
+                      <AnswerFeedback
+                        question={question}
+                        grade={grades[question.id]}
+                        sourcesStripped={!!challengeId}
+                      />
                     )}
                   </div>
                 ))}

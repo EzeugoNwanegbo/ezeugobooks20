@@ -65,6 +65,17 @@ import {
 
 const VISIBILITY_OPTIONS = ["anyone", "nobody"] as const satisfies readonly Discoverability[];
 
+/** A settled challenge from the caller's side. Mirrors ChallengeSummary.outcome. */
+type ChallengeOutcome = "won" | "lost" | "draw";
+
+/** Wins, draws and losses — against one friend, or across the lot. */
+type Tally = { won: number; drawn: number; lost: number };
+
+// How many challenges to count the record over. The server clamps p_limit to
+// 100, so asking for more would quietly get 100 anyway; asking for it explicitly
+// is the difference between a record over the last 40 battles and the last 100.
+const CHALLENGE_HISTORY = 100;
+
 export function FriendsPage() {
   const { user, profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
@@ -99,7 +110,11 @@ export function FriendsPage() {
     }
     setLoading(true);
     try {
-      const [f, r, c] = await Promise.all([friendList(), friendRequests(), listChallenges()]);
+      const [f, r, c] = await Promise.all([
+        friendList(),
+        friendRequests(),
+        listChallenges(CHALLENGE_HISTORY),
+      ]);
       setFriends(f);
       setRequests(r);
       setChallenges(c);
@@ -136,6 +151,40 @@ export function FriendsPage() {
     () => challenges.filter((c) => c.status !== "pending" && c.status !== "active"),
     [challenges],
   );
+
+  // The win/draw/loss record: one per opponent, plus the total and the recent
+  // form strip. Counted here from the challenge list the page already loads, so
+  // there is no extra query and no server change behind any of it.
+  //
+  // The one honest limit: challenge_list_mine() caps at 100 rows, so a student
+  // past their hundredth challenge has a record over the most recent 100. The
+  // heading says "your battles" rather than "all time" for exactly that reason.
+  const { tallies, overall, form } = useMemo(() => {
+    const tallies = new Map<string, Tally>();
+    const overall: Tally = { won: 0, drawn: 0, lost: 0 };
+    const form: ChallengeOutcome[] = [];
+    for (const challenge of challenges) {
+      const outcome = challenge.outcome;
+      if (!outcome) continue;
+      const tally = tallies.get(challenge.opponent_user_id) ?? { won: 0, drawn: 0, lost: 0 };
+      if (outcome === "won") {
+        tally.won += 1;
+        overall.won += 1;
+      } else if (outcome === "lost") {
+        tally.lost += 1;
+        overall.lost += 1;
+      } else {
+        tally.drawn += 1;
+        overall.drawn += 1;
+      }
+      tallies.set(challenge.opponent_user_id, tally);
+      // Newest first, matching the server's ordering, and only the last five -
+      // "form" is meant to be read at a glance, not audited.
+      if (form.length < 5) form.push(outcome);
+    }
+    return { tallies, overall, form };
+  }, [challenges]);
+  const settledTotal = overall.won + overall.drawn + overall.lost;
 
   const saveHandle = async () => {
     setSavingHandle(true);
@@ -454,6 +503,9 @@ export function FriendsPage() {
         </Panel>
       )}
 
+      {/* ── Record ──────────────────────────────────────────────────────── */}
+      {settledTotal > 0 && <RecordPanel overall={overall} form={form} />}
+
       {/* ── Friends ─────────────────────────────────────────────────────── */}
       <Panel>
         <SectionTitle icon={<Trophy className="h-4 w-4" />} title="Your friends" />
@@ -466,28 +518,14 @@ export function FriendsPage() {
             </p>
           ) : (
             friends.map((friend) => (
-              <Row
+              <FriendRow
                 key={friend.user_id}
-                title={friend.display_name}
-                subtitle={`${friend.username ? `@${friend.username} · ` : ""}${friend.points.toLocaleString()} pts · ${friend.current_streak}d`}
-                action={
-                  <div className="flex gap-1.5">
-                    <Button size="sm" variant="secondary" onClick={() => openBattle(friend)}>
-                      <Swords className="mr-1.5 h-3.5 w-3.5" />
-                      Challenge
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={busyId === friend.user_id}
-                      onClick={() =>
-                        void act(friend.user_id, () => removeFriend(friend.user_id), "Removed.")
-                      }
-                    >
-                      <UserMinus className="h-3.5 w-3.5" />
-                      <span className="sr-only">Remove friend</span>
-                    </Button>
-                  </div>
+                friend={friend}
+                tally={tallies.get(friend.user_id) ?? null}
+                busy={busyId === friend.user_id}
+                onBattle={() => openBattle(friend)}
+                onRemove={() =>
+                  void act(friend.user_id, () => removeFriend(friend.user_id), "Removed.")
                 }
               />
             ))
@@ -571,6 +609,172 @@ function Row({
   );
 }
 
+// Your record across every settled battle: the three counts, the split as one
+// bar, and the last five results newest first. It is a read of what the page
+// already fetched - no extra call, and nothing here is stored anywhere.
+function RecordPanel({ overall, form }: { overall: Tally; form: ChallengeOutcome[] }) {
+  const total = overall.won + overall.drawn + overall.lost;
+  // A draw counts as half a win, the usual convention. Counting it as a loss
+  // would make a drawn-heavy record read as a losing one, which it is not.
+  const winRate = Math.round(((overall.won + overall.drawn / 2) / total) * 100);
+
+  return (
+    <Panel>
+      <div className="flex items-center justify-between gap-3">
+        <SectionTitle icon={<Swords className="h-4 w-4" />} title="Your record" />
+        <span className="shrink-0 font-mono text-xs text-muted-foreground">
+          {total} battle{total === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <Stat value={overall.won} label="Won" tone="border-leaf/30 bg-leaf/10 text-leaf" />
+        {/* Neutral rather than copper: --leaf and --pop resolve to the SAME hex
+            in the light theme, so a copper "drawn" tile would be a win tile. */}
+        <Stat value={overall.drawn} label="Drawn" tone="border-border bg-foreground/[0.04]" />
+        <Stat
+          value={overall.lost}
+          label="Lost"
+          tone="border-destructive/30 bg-destructive/5 text-destructive"
+        />
+      </div>
+
+      <SplitBar tally={overall} className="mt-3" />
+
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground">{winRate}% win rate</span>
+        {form.length > 0 && (
+          <span className="flex items-center gap-1">
+            <span className="mr-1 text-xs text-muted-foreground">Form</span>
+            {form.map((outcome, index) => (
+              <FormPip key={index} outcome={outcome} />
+            ))}
+          </span>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+function Stat({ value, label, tone }: { value: number; label: string; tone: string }) {
+  return (
+    <div className={`rounded-xl border p-2 text-center ${tone}`}>
+      <div className="font-display text-2xl font-light">{value}</div>
+      <div className="text-[11px] opacity-80">{label}</div>
+    </div>
+  );
+}
+
+// Won / drawn / lost as one bar. Decorative — every number it draws is written
+// out beside it, so it is hidden from screen readers rather than duplicated.
+function SplitBar({ tally, className = "" }: { tally: Tally; className?: string }) {
+  const total = tally.won + tally.drawn + tally.lost;
+  if (total === 0) return null;
+  const width = (part: number) => `${(part / total) * 100}%`;
+  return (
+    <div
+      aria-hidden
+      className={`flex h-1.5 w-full overflow-hidden rounded-full bg-foreground/[0.06] ${className}`}
+    >
+      <span className="bg-leaf" style={{ width: width(tally.won) }} />
+      <span className="bg-foreground/30" style={{ width: width(tally.drawn) }} />
+      <span className="bg-destructive/70" style={{ width: width(tally.lost) }} />
+    </div>
+  );
+}
+
+function FormPip({ outcome }: { outcome: ChallengeOutcome }) {
+  const label = outcome === "won" ? "Won" : outcome === "lost" ? "Lost" : "Draw";
+  const tone =
+    outcome === "won"
+      ? "border-leaf/40 bg-leaf/15 text-leaf"
+      : outcome === "lost"
+        ? "border-destructive/40 bg-destructive/10 text-destructive"
+        : "border-border bg-foreground/[0.06] text-foreground";
+  return (
+    <span
+      title={label}
+      className={`grid h-5 w-5 place-items-center rounded-md border text-[10px] font-bold ${tone}`}
+    >
+      {label[0]}
+    </span>
+  );
+}
+
+// A friend, plus the head-to-head against them. The record only appears once
+// there is one: a friend you have never battled reads exactly as it did before.
+function FriendRow({
+  friend,
+  tally,
+  busy,
+  onBattle,
+  onRemove,
+}: {
+  friend: Friend;
+  tally: Tally | null;
+  busy: boolean;
+  onBattle: () => void;
+  onRemove: () => void;
+}) {
+  const played = tally ? tally.won + tally.drawn + tally.lost : 0;
+  const shortName = friend.username ? `@${friend.username}` : friend.display_name.split(" ")[0];
+
+  let leadText = "";
+  let leadTone = "text-pop";
+  if (tally && played > 0) {
+    if (tally.won > tally.lost) {
+      leadText = `You lead ${tally.won}–${tally.lost}`;
+      leadTone = "text-leaf";
+    } else if (tally.lost > tally.won) {
+      leadText = `${shortName} leads ${tally.lost}–${tally.won}`;
+      leadTone = "text-destructive";
+    } else if (tally.won > 0) {
+      leadText = `All square ${tally.won}–${tally.lost}`;
+    } else {
+      // Nothing but draws, where "all square 0–0" would read as never played.
+      leadText = `Level — ${tally.drawn} draw${tally.drawn === 1 ? "" : "s"}`;
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-background/40 px-3 py-2.5">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold tracking-[-0.01em]">
+            {friend.display_name}
+          </div>
+          <div className="truncate font-mono text-xs text-muted-foreground">
+            {friend.username ? `@${friend.username} · ` : ""}
+            {friend.points.toLocaleString()} pts · {friend.current_streak}d
+          </div>
+        </div>
+        <div className="flex shrink-0 gap-1.5">
+          <Button size="sm" variant="secondary" onClick={onBattle}>
+            <Swords className="mr-1.5 h-3.5 w-3.5" />
+            Challenge
+          </Button>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={onRemove}>
+            <UserMinus className="h-3.5 w-3.5" />
+            <span className="sr-only">Remove friend</span>
+          </Button>
+        </div>
+      </div>
+
+      {tally && played > 0 && (
+        <div className="mt-2.5 border-t border-border/60 pt-2">
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <span className={`min-w-0 truncate font-semibold ${leadTone}`}>{leadText}</span>
+            <span className="shrink-0 font-mono text-muted-foreground">
+              {tally.won}W · {tally.drawn}D · {tally.lost}L
+            </span>
+          </div>
+          <SplitBar tally={tally} className="mt-1.5" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChallengeRow({
   challenge,
   busy,
@@ -591,10 +795,19 @@ function ChallengeRow({
   // The scoreline is only ever rendered from what the server chose to return.
   // their_score is null until you have played or the challenge has settled, so
   // there is no branch here that could show it early.
+  // Level on score and still not a draw means the clock separated the two of
+  // you, which is the one result that reads as a mistake unless it says so.
+  const decidedOnTime =
+    (challenge.outcome === "won" || challenge.outcome === "lost") &&
+    challenge.my_score != null &&
+    challenge.their_score != null &&
+    challenge.my_score === challenge.their_score;
+
   const scoreline =
     challenge.my_finished_at || challenge.status === "complete"
       ? `${challenge.my_score ?? 0}–${challenge.their_score ?? "?"} of ${challenge.question_count}` +
-        (challenge.my_duration_ms != null ? ` · ${formatDuration(challenge.my_duration_ms)}` : "")
+        (challenge.my_duration_ms != null ? ` · ${formatDuration(challenge.my_duration_ms)}` : "") +
+        (decidedOnTime ? " · level on score, decided on time" : "")
       : `${challenge.question_count} questions`;
 
   const outcomeTone =
@@ -602,7 +815,20 @@ function ChallengeRow({
       ? "border-leaf/40 bg-leaf/10 text-leaf"
       : challenge.outcome === "lost"
         ? "border-border bg-foreground/[0.04] text-muted-foreground"
-        : "border-pop/40 bg-pop/10 text-pop";
+        : // A draw. Not copper: --pop and --leaf are the same hex in the light
+          // theme, so a copper badge here would read as a win.
+          "border-border bg-foreground/[0.08] text-foreground";
+
+  // Spelled out rather than a capitalised "draw": a one-word badge next to a
+  // scoreline is read as the score's label, and a tie has to be unmistakable.
+  const verdict =
+    challenge.outcome === "won"
+      ? "You won"
+      : challenge.outcome === "lost"
+        ? "You lost"
+        : challenge.outcome === "draw"
+          ? "It's a draw"
+          : null;
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-background/40 px-3 py-2.5">
@@ -614,11 +840,9 @@ function ChallengeRow({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
-        {challenge.outcome && (
-          <span
-            className={`rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${outcomeTone}`}
-          >
-            {challenge.outcome}
+        {verdict && (
+          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${outcomeTone}`}>
+            {verdict}
           </span>
         )}
         {challenge.status === "expired" && (
