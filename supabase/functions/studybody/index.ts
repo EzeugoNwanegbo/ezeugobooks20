@@ -958,8 +958,73 @@ Return JSON:
   return { flashcards: collected.slice(0, target) };
 }
 
+/**
+ * Grade an all-MCQ set WITHOUT asking the model anything.
+ *
+ * An MCQ has one stored key and the student picked one option: correctness is a
+ * string comparison, not a judgement. Sending the whole set to DeepSeek to be
+ * told which letters match which letters cost a full model round trip on every
+ * submit - and Battle Royale is MCQ ONLY, so a battle paid it every single
+ * time. That is why submitting felt slow.
+ *
+ * Grading stays SERVER-SIDE, which is the property that actually matters: the
+ * client still cannot mark its own contest. It is simply decided here by
+ * comparison instead of by a language model.
+ *
+ * Returns null when anything in the set needs real judgement (an essay against
+ * a rubric), in which case the model call below runs exactly as before.
+ */
+function gradeObjectively(body: Body): Record<string, unknown> | null {
+  const questions = (body.questions || []) as Record<string, unknown>[];
+  if (!questions.length) return null;
+  // One written answer anywhere and the whole set goes the slow way: a mixed
+  // set still needs the rubric grading, and splitting it would mean two grading
+  // paths whose scores have to agree.
+  if (questions.some((q) => q.type !== "mcq")) return null;
+
+  const answers = (body.answers || {}) as Record<string, string>;
+  const norm = (v: unknown) => String(v ?? "").trim().toUpperCase();
+
+  let score = 0;
+  const graded = questions.map((q) => {
+    const id = String(q.id ?? "");
+    const correct = norm(q.correct_answer);
+    const given = norm(answers[id]);
+    const isCorrect = Boolean(given) && given === correct;
+    if (isCorrect) score += 1;
+    return {
+      question_id: id,
+      is_correct: isCorrect,
+      score: isCorrect ? 1 : 0,
+      // The explanation was already written when the question was generated, so
+      // the student still gets the "why" - it just is not re-written per
+      // submission by a model that would only be paraphrasing it.
+      feedback: isCorrect ? "" : String(q.explanation ?? ""),
+      missing_points: [] as string[],
+    };
+  });
+
+  const total = questions.length;
+  return {
+    score,
+    total,
+    percentage: total ? Math.round((score / total) * 100) : 0,
+    answers: graded,
+    weak_areas: [],
+    next_steps: [],
+  };
+}
+
 async function reviewAnswers(body: Body, deepSeekKey: string) {
   const mode = body.mode || "Simplified";
+
+  // Same envelope the model path returns, so nothing downstream can tell which
+  // way a set was graded. `coaching` is empty rather than invented: there is no
+  // written review when no model wrote one, and a fabricated one would be worse
+  // than none.
+  const objective = gradeObjectively(body);
+  if (objective) return { grading: objective, coaching: "" };
+
   const result = await callDeepSeekJson(
     deepSeekKey,
     `You are StudyBody's grading AND coaching engine. DeepSeek does all of the work here.
