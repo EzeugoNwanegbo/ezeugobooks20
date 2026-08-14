@@ -25,7 +25,7 @@ import {
   type SessionRow,
   type TopicRow,
 } from "./studybody-data";
-import { generateStudyQuestions } from "./studybody-client";
+import { generateStudyQuestions, type StudyDocument } from "./studybody-client";
 import type { Profile } from "./auth";
 import { createChallenge, MAX_CHALLENGE_QUESTIONS, normalizeHandle } from "./social";
 
@@ -133,6 +133,49 @@ export async function loadPlanTopics(userId: string, planId: string): Promise<To
   return (data as TopicRow[]) ?? [];
 }
 
+// The studybody function accepts up to 100,000 characters of document context
+// (MAX_DOC_CHARS_TOTAL). My Coach rarely approaches that, because it generates
+// from a topic-pinpointed pull. A WHOLE-FILE battle does approach it, and that
+// is what made sending abort: ~25,000 tokens of input has to be read by the
+// model before it writes a single question, and the client gives up at 130s —
+// a ceiling there is no point raising, since the edge function has its own
+// wall-clock limit not far above it.
+//
+// A contest of ten to thirty multiple-choice questions does not need the whole
+// textbook in the prompt. This budget is roughly a quarter of the function's,
+// which brings a whole-file battle back to the size of set My Coach already
+// generates comfortably.
+const BATTLE_DOC_CHARS_TOTAL = 26_000;
+
+/**
+ * Reduce excerpts to the battle budget by SAMPLING EVENLY, not truncating.
+ *
+ * Truncating the head would quietly turn "the whole file" into "the first
+ * chapter", which is precisely the promise the whole-file scope makes to the
+ * host — and the opponent would be tested on a book neither of them agreed to.
+ * Taking evenly spaced windows keeps coverage across the material, which is the
+ * same reason loadStudyDocumentsSpanning samples rather than reading the head.
+ */
+function trimForBattle(documents: StudyDocument[]): StudyDocument[] {
+  if (!documents.length) return documents;
+  const perDoc = Math.floor(BATTLE_DOC_CHARS_TOTAL / documents.length);
+
+  return documents.map((doc) => {
+    if (doc.excerpt.length <= perDoc) return doc;
+
+    // Enough windows to stay representative, few enough that each still holds a
+    // coherent passage rather than a scatter of half-sentences.
+    const windows = 8;
+    const size = Math.floor(perDoc / windows);
+    const stride = Math.floor(doc.excerpt.length / windows);
+    const parts: string[] = [];
+    for (let i = 0; i < windows; i++) {
+      parts.push(doc.excerpt.slice(i * stride, i * stride + size));
+    }
+    return { ...doc, excerpt: parts.join("\n…\n") };
+  });
+}
+
 function buildBattleTitle(doc: DocRow, scope: BattleScope, focus: string, minutes: number): string {
   const base = scope === "topic" && focus ? `${doc.file_name} — ${focus}` : doc.file_name;
   // challenge_create() truncates whatever it reads from here to 80 chars
@@ -223,9 +266,11 @@ async function buildQuestionSet({
   // pinpointed pull of just the matching chunks for a topic (grounded, with
   // page refs), or an evenly-sampled span of the whole file when there is no
   // focus to pin to.
-  const documents = focus
-    ? await loadStudyDocuments(docIds, focus)
-    : await loadStudyDocumentsSpanning(docIds, docsMeta);
+  const documents = trimForBattle(
+    focus
+      ? await loadStudyDocuments(docIds, focus)
+      : await loadStudyDocumentsSpanning(docIds, docsMeta),
+  );
   reportStage("retrieving", 1);
 
   const topicStub = { title, summary, objectives: [], source_refs: [] };
