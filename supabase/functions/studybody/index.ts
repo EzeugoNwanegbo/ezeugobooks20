@@ -130,16 +130,26 @@ function stripCodeFence(value: string): string {
  * question's text cannot be mistaken for structure.
  */
 function salvageObjects(text: string): Record<string, unknown>[] {
-  const start = text.indexOf("[");
-  if (start === -1) return [];
-
+  // Every position where a '{' opens, so that when its matching '}' is found the
+  // slice between them can be tried. Objects are collected at ANY depth rather
+  // than only inside the first array: the earlier version anchored on the first
+  // '[' and tracked depth from there, which recovered nothing whenever the
+  // damage was before that point, or the array was nested deeper than assumed,
+  // or the model wrapped its output differently than expected. Depth-agnostic
+  // scanning has no such assumption to be wrong about.
+  const opens: number[] = [];
   const out: Record<string, unknown>[] = [];
-  let depth = 0;
-  let objStart = -1;
   let inString = false;
   let escaped = false;
 
-  for (let i = start; i < text.length; i++) {
+  // Sub-objects INSIDE an item (an options map, a nested rubric) parse just as
+  // happily as the item itself, so shape is what separates a question from its
+  // own innards. Anything carrying one of these reads as a whole item.
+  const ITEM_KEYS = ["prompt", "question", "front", "term", "title"];
+  const looksLikeItem = (o: Record<string, unknown>) =>
+    ITEM_KEYS.some((k) => k in o);
+
+  for (let i = 0; i < text.length; i++) {
     const ch = text[i];
 
     if (inString) {
@@ -150,21 +160,24 @@ function salvageObjects(text: string): Record<string, unknown>[] {
     }
 
     if (ch === '"') { inString = true; continue; }
-    if (ch === "{") { if (depth === 0) objStart = i; depth++; continue; }
+    if (ch === "{") { opens.push(i); continue; }
     if (ch === "}") {
-      depth--;
-      if (depth === 0 && objStart !== -1) {
-        try {
-          out.push(JSON.parse(text.slice(objStart, i + 1)));
-        } catch {
-          // The damaged one. Skip it and keep going: the items after it are
-          // usually intact, since the model recovers its own formatting.
+      const start = opens.pop();
+      if (start === undefined) continue;
+      try {
+        const parsed = JSON.parse(text.slice(start, i + 1));
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const obj = parsed as Record<string, unknown>;
+          // Only whole items, and never one already represented by an outer
+          // object that also parsed — collecting both would duplicate content.
+          if (looksLikeItem(obj)) out.push(obj);
         }
-        objStart = -1;
+      } catch {
+        // Damaged. Skip it; the items after it are usually intact, because the
+        // model recovers its own formatting after a bad string.
       }
       continue;
     }
-    if (ch === "]" && depth === 0) break;
   }
 
   return out;
@@ -200,7 +213,21 @@ function parseJsonObject(text: string): Record<string, unknown> {
       return { [key]: salvaged };
     }
 
-    throw new Error("AI returned invalid JSON");
+    // Nothing was recoverable. Say what actually arrived rather than only that
+    // it was wrong: an empty body, a refusal in prose, and a truncated array are
+    // three different faults with three different fixes, and "AI returned
+    // invalid JSON" cannot tell them apart - which cost a full debugging round
+    // when a student hit it.
+    const head = cleaned.slice(0, 180).replace(/\s+/g, " ");
+    const tail = cleaned.length > 360 ? cleaned.slice(-120).replace(/\s+/g, " ") : "";
+    console.error(
+      `studybody: unsalvageable model output (${cleaned.length} chars) head=${JSON.stringify(head)} tail=${JSON.stringify(tail)}`,
+    );
+    throw new Error(
+      cleaned.length === 0
+        ? "The AI returned an empty response. Please try again."
+        : `AI returned invalid JSON (${cleaned.length} chars, starts: ${head.slice(0, 80)})`,
+    );
   }
 }
 
@@ -255,7 +282,33 @@ async function callDeepSeekJson(apiKey: string, systemPrompt: string, userPrompt
   }
 
   const json = await response.json();
-  return parseJsonObject(json.choices?.[0]?.message?.content ?? "{}");
+  const choice = json.choices?.[0];
+  const content: string = choice?.message?.content ?? "";
+
+  // `?? "{}"` used to stand here, which does NOT catch an empty STRING - only
+  // null and undefined - so a 200 response carrying no content fell through to
+  // the JSON parser and surfaced as "invalid JSON" with nothing to debug from.
+  // An empty completion is a different fault entirely and worth naming.
+  if (!content.trim()) {
+    const reason = choice?.finish_reason ?? "unknown";
+    console.error(
+      `studybody: empty completion. finish_reason=${reason} ` +
+        `reasoning_content=${Boolean(choice?.message?.reasoning_content)} ` +
+        `usage=${JSON.stringify(json.usage ?? {})}`,
+    );
+    // 'length' means the model used its whole output budget without producing
+    // an answer - on a reasoning model the thinking itself is billed against
+    // max_tokens, so a long prompt can consume the lot before a single question
+    // is written. That is a size problem the student can act on, unlike the
+    // others, so it gets its own sentence.
+    throw new Error(
+      reason === "length"
+        ? "The AI ran out of room before it finished writing. Try fewer questions, or a single topic instead of the whole file."
+        : `The AI returned an empty response (${reason}). Please try again.`,
+    );
+  }
+
+  return parseJsonObject(content);
 }
 
 function hasUsableDocuments(documents: StudyDocument[] = []): boolean {
