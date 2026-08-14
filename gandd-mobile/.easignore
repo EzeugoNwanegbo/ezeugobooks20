@@ -1,0 +1,35 @@
+# What NOT to upload to EAS Build.
+#
+# CAREFUL: this file REPLACES .gitignore for build uploads — it does not add to
+# it. Anything .gitignore excluded that is not repeated here comes BACK, which
+# is why node_modules leads the list rather than being assumed.
+#
+# Written because the archive reached 123 MB and stalled on a phone hotspot.
+# None of it is needed to build the app: EAS installs dependencies from the
+# lockfile on its own machines, and the rest is local scratch.
+
+node_modules/
+.expo/
+dist/
+web-build/
+
+# Signing material. EAS holds the real credentials remotely (Build Credentials
+# dX6Gi0XbOO) — these local copies must never travel in a build archive.
+*.jks
+credentials/
+credentials.json
+.env
+
+# Local scratch that accumulated during development.
+b.txt
+bundle_check.txt
+manifest.json
+*.log
+.codex-*
+expo-qr.html
+expo-qr*.svg
+expo-qr.png
+
+# The build runs from source; a previous build's output is never an input.
+*.apk
+*.aab

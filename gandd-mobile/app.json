@@ -25,7 +25,7 @@
     },
     "android": {
       "package": "com.gandd.mobile",
-      "versionCode": 18,
+      "versionCode": 20,
       "permissions": [],
       "adaptiveIcon": {
         "backgroundColor": "#070707",
