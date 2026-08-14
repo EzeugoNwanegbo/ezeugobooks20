@@ -109,14 +109,98 @@ function stripCodeFence(value: string): string {
     .trim();
 }
 
+/**
+ * Pull every BALANCED top-level object out of the first array in `text`,
+ * keeping the ones that parse and discarding the rest.
+ *
+ * This exists because one malformed item used to cost the whole batch. The
+ * model occasionally emits a question containing a raw newline or an unescaped
+ * quote inside a string; that breaks the enclosing array, JSON.parse fails at
+ * whatever character the damage starts on, and a request for ten perfectly good
+ * questions returns nothing but
+ *
+ *     expected ',' or ']' after array element in JSON at position 4795
+ *
+ * which is what the student sees. Nine intact questions are far better than an
+ * error, and the caller already tolerates a short batch - generateOneType()
+ * loops until it has collected enough, so a salvaged batch simply means one
+ * more round rather than a failure.
+ *
+ * Scanning is string-aware (quotes and backslash escapes) so a brace inside a
+ * question's text cannot be mistaken for structure.
+ */
+function salvageObjects(text: string): Record<string, unknown>[] {
+  const start = text.indexOf("[");
+  if (start === -1) return [];
+
+  const out: Record<string, unknown>[] = [];
+  let depth = 0;
+  let objStart = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") { if (depth === 0) objStart = i; depth++; continue; }
+    if (ch === "}") {
+      depth--;
+      if (depth === 0 && objStart !== -1) {
+        try {
+          out.push(JSON.parse(text.slice(objStart, i + 1)));
+        } catch {
+          // The damaged one. Skip it and keep going: the items after it are
+          // usually intact, since the model recovers its own formatting.
+        }
+        objStart = -1;
+      }
+      continue;
+    }
+    if (ch === "]" && depth === 0) break;
+  }
+
+  return out;
+}
+
 function parseJsonObject(text: string): Record<string, unknown> {
   const cleaned = stripCodeFence(text);
   try {
     return JSON.parse(cleaned);
   } catch {
     const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("AI returned invalid JSON");
-    return JSON.parse(match[0]);
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch {
+        // fall through to salvage
+      }
+    }
+
+    // Last resort before failing the whole call: rescue the individual items.
+    // The key is guessed from the shape the callers expect, which is the only
+    // thing this function knows about them - questions, flashcards or topics.
+    const salvaged = salvageObjects(cleaned);
+    if (salvaged.length) {
+      const key = /"flashcards"\s*:/.test(cleaned)
+        ? "flashcards"
+        : /"topics"\s*:/.test(cleaned)
+          ? "topics"
+          : "questions";
+      console.warn(
+        `studybody: recovered ${salvaged.length} ${key} from malformed model JSON`,
+      );
+      return { [key]: salvaged };
+    }
+
+    throw new Error("AI returned invalid JSON");
   }
 }
 
