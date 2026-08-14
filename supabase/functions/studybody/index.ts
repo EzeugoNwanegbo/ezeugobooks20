@@ -529,6 +529,65 @@ async function callWithFallback(
   }
 }
 
+/**
+ * WHICH PROVIDER WRITES THE QUESTIONS.
+ *
+ * Set QUESTION_PROVIDER to "deepseek" to put it back; anything else (including
+ * unset) uses OpenAI. An env var rather than a code constant so the choice can
+ * be reversed from the dashboard without a deploy — this is a taste-and-speed
+ * decision the owner may want to take back after seeing a set.
+ *
+ * WHY OPENAI IS THE DEFAULT HERE. The progress bar settled a question that
+ * guesswork could not: on a thirty-question set it moves 0 → 10 → 29, so the
+ * batches ARE landing concurrently and the remaining wait is simply how long
+ * the model takes to WRITE ten questions. No further batching, trimming or
+ * parallelism addresses that — only a faster writer does.
+ *
+ * deepseek-v4-pro appears to be a reasoning model: it thinks before it writes,
+ * and that thinking is invisible, billed against the same budget, and slow.
+ * gpt-5-nano with reasoning_effort "minimal" (already this codebase's fast tier
+ * in chat/index.ts) skips most of it. Nano is the cheap tier at $0.05/$0.40 per
+ * 1M, but generation is the heaviest AI workload here, so this IS a real cost
+ * change and not a free win.
+ *
+ * The loser of this choice becomes the rescue, so a failure on either side is
+ * still covered by the other.
+ */
+function questionProvider(): "deepseek" | "openai" {
+  return (Deno.env.get("QUESTION_PROVIDER") || "openai").toLowerCase() === "deepseek"
+    ? "deepseek"
+    : "openai";
+}
+
+/**
+ * A generation batch, sent to whichever provider is primary, falling back to
+ * the other. Same contract as callWithFallback — this only changes who is
+ * asked first.
+ *
+ * The primary gets the full DEEPSEEK_TIMEOUT_MS budget whichever it is: the
+ * short OPENAI_FALLBACK_TIMEOUT_MS exists because a RESCUE starts after another
+ * attempt already burned most of the clock, and that reasoning does not apply
+ * to the first call.
+ */
+async function callGenerationJson(
+  deepSeekKey: string,
+  openAiKey: string | undefined,
+  systemPrompt: string,
+  userPrompt: string,
+): Promise<Record<string, unknown>> {
+  if (questionProvider() === "openai" && openAiKey) {
+    try {
+      return await callOpenAIJson(openAiKey, systemPrompt, userPrompt, DEEPSEEK_TIMEOUT_MS);
+    } catch (err) {
+      console.warn(
+        `studybody: OpenAI batch failed (${err instanceof Error ? err.message : err}), retrying via DeepSeek`,
+      );
+      return await callDeepSeekJson(deepSeekKey, systemPrompt, userPrompt);
+    }
+  }
+  return await callWithFallback(deepSeekKey, openAiKey, systemPrompt, userPrompt);
+}
+
 function hasUsableDocuments(documents: StudyDocument[] = []): boolean {
   return documents.some((doc) => (doc.excerpt || "").trim().length > 40);
 }
@@ -780,8 +839,9 @@ async function generateOneType(
       // remainder.
       const need = Math.min(batchSize, target - i * batchSize);
       const startedAt = Date.now() - t0;
-      return callDeepSeekJson(
+      return callGenerationJson(
         deepSeekKey,
+        openAiKey,
         QUESTION_SYSTEM,
         questionUserPrompt(body, type, need, exclude, difficulty),
       )
@@ -820,7 +880,7 @@ async function generateOneType(
   // everything collected so far - so it is the reliable way to close a gap.
   for (let batch = 0; batch < maxBatches && collected.length < target; batch += 1) {
     const need = Math.min(batchSize, target - collected.length);
-    const result = await callWithFallback(
+    const result = await callGenerationJson(
       deepSeekKey,
       openAiKey,
       QUESTION_SYSTEM,
