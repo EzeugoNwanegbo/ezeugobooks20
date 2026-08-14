@@ -198,7 +198,25 @@ COMMENT ON COLUMN public.challenges.time_limit_minutes IS
 -- Dropping the old signature first and giving the new third parameter a DEFAULT
 -- means those existing two-argument callers keep working untouched and pick up
 -- "no limit", which is exactly what they mean.
+-- EVERY earlier shape, not just the original two-argument one.
+--
+-- This file itself went from three parameters to five while it was being
+-- written (p_series_id and p_round_index arrived with roadmap in section 3). A
+-- database that applied the earlier draft therefore holds
+-- challenge_create(TEXT, UUID, INT), and creating the five-argument version
+-- beside it reproduces the ambiguity this DROP exists to prevent - the last two
+-- parameters have DEFAULTs, so a three-argument call matches BOTH candidates
+-- and Postgres refuses it:
+--
+--     Could not choose the best candidate function between:
+--       public.challenge_create(p_opponent_username => text, p_session_id => uuid,
+--                               p_time_limit_minutes => integer),
+--       public.challenge_create(..., p_series_id => uuid, p_round_index => integer)
+--
+-- Signatures are dropped by exact argument list; there is no wildcard, so each
+-- one that has ever existed has to be named here explicitly.
 DROP FUNCTION IF EXISTS public.challenge_create(TEXT, UUID);
+DROP FUNCTION IF EXISTS public.challenge_create(TEXT, UUID, INT);
 
 -- Body reproduced verbatim from 20260809120000 except for: the new parameter and
 -- its validation, the 12 → 60 guard, the time_limit_minutes column in the
@@ -396,6 +414,35 @@ $$;
 
 REVOKE ALL ON FUNCTION public.challenge_create(TEXT, UUID, INT, UUID, INT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.challenge_create(TEXT, UUID, INT, UUID, INT) TO authenticated;
+
+-- EXACTLY ONE challenge_create MUST SURVIVE.
+--
+-- Overload ambiguity does not fail here, at apply time. It fails later, in the
+-- student's hands, the first time anyone sends a battle - and the message names
+-- Postgres internals rather than anything they did. This check turns a silent
+-- future outage into a loud refusal now, which is the whole argument for
+-- enforcing a precondition rather than stating one.
+--
+-- If it fires, the extra rows are earlier signatures of this same file. Read
+-- them off pg_proc, DROP each by its exact argument list, and re-run.
+DO $$
+DECLARE
+  v_n INT;
+  v_sigs TEXT;
+BEGIN
+  SELECT count(*), string_agg(pg_get_function_identity_arguments(p.oid), ' | ')
+    INTO v_n, v_sigs
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'challenge_create';
+
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION
+      'challenge_create has % overloads (%). Exactly one must remain, or every call is ambiguous at runtime.',
+      v_n, v_sigs;
+  END IF;
+END
+$$;
 
 
 -- 2b. challenge_begin() carries the limit onto the opponent's copy.
