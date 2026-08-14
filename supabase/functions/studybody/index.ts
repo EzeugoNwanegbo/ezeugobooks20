@@ -67,7 +67,7 @@ function difficultyInstruction(level: DifficultyLevel): string {
     return `DIFFICULTY: EASY.
 - Test direct recall and recognition of facts that are stated plainly in the excerpts.
 - One step to answer. Use clear, unambiguous wording.
-- For MCQ, make the three distractors clearly wrong to someone who read the material.`;
+- For MCQ, make every distractor clearly wrong to someone who read the material.`;
   }
   if (level === "hard") {
     return `DIFFICULTY: HARD - make these EXTREMELY challenging, exam-topper level.
@@ -101,7 +101,7 @@ const DEEPSEEK_TIMEOUT_MS = 90_000;
 // Only used to rescue a batch DeepSeek already failed (bad JSON, empty
 // completion, or a 5xx) - see callWithFallback. Kept short and separate from
 // DEEPSEEK_TIMEOUT_MS: this fires AFTER a DeepSeek attempt already spent up to
-// 90s, and both clients give up at 130s total, so the fallback has roughly 35s
+// 90s, and both clients give up at 145s total, so the fallback has roughly 50s
 // of real budget before ITS timeout has to be the one that fires instead of a
 // clean recovery.
 const OPENAI_FALLBACK_TIMEOUT_MS = 30_000;
@@ -625,7 +625,7 @@ ${type === "mcq" ? MCQ_SHAPE : ESSAY_SHAPE}
 }
 ${
   type === "mcq"
-    ? "Exactly four options, one correct option id."
+    ? "Exactly three options, one correct option id."
     : "options must be []. correct_answer is the ideal written answer."
 }`;
 }
@@ -655,7 +655,7 @@ ${
 // every count faster rather than only rescuing the large ones.
 const MCQ_SHAPE = `    {
       "prompt": "question text grounded in the excerpts",
-      "options": [{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."},{"id":"D","text":"..."}],
+      "options": [{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."}],
       "correct_answer": "A",
       "explanation": "ONE or TWO sentences, pointing at the source excerpt",
       "source_refs": [{"file":"name", "page":"Page N, or omit if the excerpt has no page"}]
@@ -689,7 +689,18 @@ async function generateOneType(
   onBatch?: (added: Record<string, unknown>[]) => void,
 ): Promise<Record<string, unknown>[]> {
   if (target <= 0) return [];
-  const batchSize = 20;
+  // TEN, not twenty. Each round's wall-clock is dominated by how much the model
+  // has to WRITE, so halving the batch halves the longest single call - and the
+  // rounds run concurrently, so more of them costs no extra time when the
+  // provider honours the concurrency. Thirty questions becomes three short
+  // rounds instead of two long ones, which is the difference between finishing
+  // inside the platform's ceiling and being killed at it.
+  //
+  // The trade is more simultaneous calls (fifty questions is five), so if the
+  // provider rate-limits concurrency this trades a timeout for a throttle. That
+  // is the better failure: a throttled batch returns something, and the
+  // sequential top-up can close the gap.
+  const batchSize = 10;
   const maxBatches = Math.ceil(target / batchSize) + 1;
   // Prefer the student's explicit level; fall back to mapping the adaptive hint.
   const difficulty: DifficultyLevel = body.difficulty
