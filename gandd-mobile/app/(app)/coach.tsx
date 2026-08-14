@@ -55,6 +55,7 @@ import {
   type TopicRow,
 } from "@/lib/studybody-data";
 import {
+  type GenerationProgress,
   type GeneratedFlashcard,
   type GeneratedQuestion,
   generateFlashcards,
@@ -132,6 +133,9 @@ export default function CoachScreen() {
 
   // Session state
   const [starting, setStarting] = useState(false);
+  // How many questions the generator has actually produced so far, streamed
+  // back batch by batch. Null except while a set is being built.
+  const [genProgress, setGenProgress] = useState<GenerationProgress | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const [activeSession, setActiveSession] = useState<SessionRow | null>(null);
   const [questions, setQuestions] = useState<QuestionRow[]>([]);
@@ -450,6 +454,7 @@ export default function CoachScreen() {
     }
 
     setStarting(true);
+    setGenProgress(null);
     setReview(null);
     setAnswers({});
     setRevealed([]);
@@ -470,6 +475,12 @@ export default function CoachScreen() {
         excludePrompts: exclude,
         difficultyHint: difficultyFromScore(Number(topic.mastery_score || 0)),
         difficulty,
+        // Real counts, not a timer. The generator streams a frame as each batch
+        // lands, so this is how many questions actually exist — which is why the
+        // bar moves in steps rather than gliding. A smooth bar here would be
+        // inventing motion between batches, and a set of thirty is long enough
+        // that a student deserves to know it is working rather than stuck.
+        onProgress: setGenProgress,
       });
       if (!generated.questions.length) {
         toast.message("No fresh questions left from this material. Try another topic or add files.");
@@ -545,12 +556,14 @@ export default function CoachScreen() {
       toast.error(err instanceof Error ? err.message : "Could not start practice");
     } finally {
       setStarting(false);
+      setGenProgress(null);
     }
   };
 
   const startFlashcards = async (topic: TopicRow, ids: string[], count: number) => {
     if (!profile) return;
     setStarting(true);
+    setGenProgress(null);
     try {
       const studyDocs = await loadStudyDocuments(ids, topic.title);
       const generated = await generateFlashcards({
@@ -572,12 +585,14 @@ export default function CoachScreen() {
       toast.error(err instanceof Error ? err.message : "Could not build flashcards");
     } finally {
       setStarting(false);
+      setGenProgress(null);
     }
   };
 
   const resumeSession = async (session: SessionRow) => {
     if (!user) return;
     setStarting(true);
+    setGenProgress(null);
     try {
       const { data, error } = await db
         .from("study_questions")
@@ -615,6 +630,7 @@ export default function CoachScreen() {
       toast.error(err instanceof Error ? err.message : "Could not resume");
     } finally {
       setStarting(false);
+      setGenProgress(null);
     }
   };
 
@@ -1027,6 +1043,22 @@ export default function CoachScreen() {
                     icon={<RotateCcw size={16} color={colors.text} />}
                     style={{ marginTop: 16 }}
                   />
+                ) : null}
+
+                {starting && genProgress ? (
+                  <View style={{ marginBottom: 12 }}>
+                    <Text style={styles.progressLabel}>
+                      Writing questions… {genProgress.made} of {genProgress.target}
+                    </Text>
+                    <ProgressBar
+                      value={
+                        genProgress.target > 0
+                          ? Math.min(100, (genProgress.made / genProgress.target) * 100)
+                          : 0
+                      }
+                      style={{ marginTop: 8 }}
+                    />
+                  </View>
                 ) : null}
 
                 <Button
