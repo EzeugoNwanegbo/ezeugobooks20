@@ -40,12 +40,15 @@ import { useAuth } from "@/lib/auth-context";
 import { isGuestUser } from "@/lib/guest-session";
 import { reconcileServerPoints } from "@/lib/points-ledger";
 import {
+  FRIEND_SEARCH_PREFIX_APPLIED,
   SOCIAL_SCHEMA_APPLIED,
   USERNAME_PATTERN,
   cancelChallenge,
   claimUsername,
   declineChallenge,
   findStudent,
+  findStudentsByPrefix,
+  normalizeHandle,
   formatDuration,
   friendList,
   friendRequests,
@@ -92,6 +95,10 @@ export function FriendsPage() {
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
   const [found, setFound] = useState<FoundStudent | null>(null);
+  // Handle-prefix hits. Always empty until the prefix migration is applied —
+  // findStudentsByPrefix() returns [] without a request — so the exact lookup
+  // above stays the search until then.
+  const [suggestions, setSuggestions] = useState<FoundStudent[]>([]);
 
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -209,18 +216,93 @@ export function FriendsPage() {
     }
   };
 
-  const runSearch = async () => {
-    setSearching(true);
-    setSearched(false);
-    try {
-      setFound(await findStudent(query));
-    } catch {
+  // What the box is actually asking for. Two forms, because they answer two
+  // different questions: the handle (@ and spaces forgiven) is what the server
+  // is asked for, and the raw text is what the on-device matching below reads,
+  // since a display name has spaces in it and a handle never does.
+  const handleNeedle = normalizeHandle(query);
+  const rawNeedle = query.trim().toLowerCase().replace(/^@+/, "");
+  const needleReady = USERNAME_PATTERN.test(handleNeedle);
+
+  // Search as you type. Nothing has to be pressed any more: 250ms after the
+  // last keystroke is under the point where a list stops feeling like it is
+  // responding to you, and it replaces "type the whole handle, press Search,
+  // wait" with "start typing". Every stale run is dropped by `active`, so a
+  // slow request for "ada" can never overwrite the results for "ada_l".
+  useEffect(() => {
+    if (!enabled) return;
+    if (!needleReady) {
       setFound(null);
-    } finally {
+      setSuggestions([]);
+      setSearched(false);
       setSearching(false);
-      setSearched(true);
+      return;
     }
-  };
+    let active = true;
+    setSearching(true);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          // Both at once: the prefix list, and the exact hit. Until the prefix
+          // migration is applied the first resolves to [] without touching the
+          // network, so this is one request, not two.
+          const [exact, list] = await Promise.all([
+            findStudent(handleNeedle),
+            findStudentsByPrefix(handleNeedle),
+          ]);
+          if (!active) return;
+          setFound(exact);
+          setSuggestions(list);
+        } catch {
+          if (!active) return;
+          setFound(null);
+          setSuggestions([]);
+        } finally {
+          if (active) {
+            setSearching(false);
+            setSearched(true);
+          }
+        }
+      })();
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [handleNeedle, needleReady, enabled]);
+
+  // People already in your list, matched on the device against what has been
+  // typed so far. No round trip, so they appear on the second keystroke rather
+  // than after the debounce — and searching for somebody you have already added
+  // is the single most common thing this box is asked to do. Display names are
+  // matched here and nowhere else: these are people you are already connected
+  // to, so nothing is disclosed that you cannot already see.
+  const localMatches = useMemo(() => {
+    if (rawNeedle.length < 2) return [];
+    const hits: Array<{ user: Friend | FriendRequest; tag: string }> = [];
+    const matches = (username: string | null, name: string) =>
+      (username ?? "").includes(handleNeedle) || name.toLowerCase().includes(rawNeedle);
+    for (const friend of friends) {
+      if (matches(friend.username, friend.display_name)) hits.push({ user: friend, tag: "Friend" });
+    }
+    for (const request of requests) {
+      if (!matches(request.username, request.display_name)) continue;
+      hits.push({
+        user: request,
+        tag: request.direction === "incoming" ? "Asked you" : "Request sent",
+      });
+    }
+    return hits.slice(0, 5);
+  }, [rawNeedle, handleNeedle, friends, requests]);
+
+  // One list either way: up to five prefix hits once the migration is applied,
+  // or the single exact match until then. Anyone already shown above is dropped
+  // rather than rendered twice.
+  const results = useMemo(() => {
+    const base = FRIEND_SEARCH_PREFIX_APPLIED ? suggestions : found ? [found] : [];
+    const shown = new Set(localMatches.map((hit) => hit.user.user_id));
+    return base.filter((student) => !shown.has(student.user_id));
+  }, [suggestions, found, localMatches]);
 
   const act = async (id: string, work: () => Promise<unknown>, done?: string) => {
     setBusyId(id);
@@ -368,68 +450,96 @@ export function FriendsPage() {
       <Panel>
         <SectionTitle icon={<Search className="h-4 w-4" />} title="Find a student" />
         <p className="mt-1 text-xs text-muted-foreground">
-          Exact handle only. There&apos;s no browse or partial search on purpose — it would let
-          anyone page through the whole student list.
+          {FRIEND_SEARCH_PREFIX_APPLIED
+            ? "Type the first few letters of a handle and matches appear as you go. Real names aren’t searchable, and only students who have left themselves findable show up here."
+            : "Exact handle only. There’s no browse or partial search on purpose — it would let anyone page through the whole student list."}
         </p>
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+        <div className="relative mt-4">
           <Input
             value={query}
-            onChange={(event) => setQuery(event.target.value.toLowerCase())}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void runSearch();
-            }}
-            placeholder="their_handle"
-            maxLength={20}
-            className="font-mono"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={FRIEND_SEARCH_PREFIX_APPLIED ? "start typing a handle" : "their_handle"}
+            maxLength={21}
+            className="pr-9 font-mono"
             aria-label="Search by handle"
           />
-          <Button
-            variant="secondary"
-            onClick={() => void runSearch()}
-            disabled={searching || !query.trim()}
-            className="shrink-0"
-          >
-            {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
-          </Button>
+          {/* The spinner stands in for the Search button, which had nothing left
+              to do once the box searched by itself. */}
+          {searching && (
+            <Loader2 className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+          )}
         </div>
 
-        {searched && !searching && (
+        {/* On-device, so it lands on the keystroke rather than after the
+            debounce. Searching for somebody already added is the most common
+            thing this box is asked to do, and it used to answer it with a round
+            trip that said "Already friends". */}
+        {localMatches.length > 0 && (
           <div className="mt-4">
-            {!found ? (
-              <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-                No student found with that handle. Check the spelling — handles are exact.
-              </p>
+            <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Already in your list
+            </p>
+            <div className="space-y-2">
+              {localMatches.map((hit) => (
+                <Row
+                  key={hit.user.user_id}
+                  title={hit.user.display_name}
+                  subtitle={hit.user.username ? `@${hit.user.username}` : ""}
+                  action={<span className="text-xs text-muted-foreground">{hit.tag}</span>}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {needleReady && searched && !searching && (
+          <div className="mt-4">
+            {results.length === 0 ? (
+              // Silent when the local list already answered the question -
+              // "no student found" under a row showing the student is nonsense.
+              localMatches.length > 0 ? null : (
+                <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+                  {FRIEND_SEARCH_PREFIX_APPLIED
+                    ? "No handle starts with that. Check the spelling, or ask them to make themselves findable in their settings."
+                    : "No student found with that handle. Check the spelling — handles are exact."}
+                </p>
+              )
             ) : (
-              <Row
-                title={found.display_name}
-                subtitle={`@${found.username} · ${found.points.toLocaleString()} pts`}
-                action={
-                  found.relationship === "self" ? (
-                    <span className="text-xs text-muted-foreground">That&apos;s you</span>
-                  ) : found.relationship === "friends" ? (
-                    <span className="text-xs text-leaf">Already friends</span>
-                  ) : found.relationship === "pending_out" ? (
-                    <span className="text-xs text-muted-foreground">Request sent</span>
-                  ) : found.relationship === "pending_in" ? (
-                    <span className="text-xs text-muted-foreground">They asked you</span>
-                  ) : (
-                    <Button
-                      size="sm"
-                      disabled={busyId === found.user_id}
-                      onClick={() =>
-                        void act(
-                          found.user_id,
-                          () => sendFriendRequest(found.username),
-                          "Request sent.",
-                        )
-                      }
-                    >
-                      <UserPlus className="mr-1.5 h-3.5 w-3.5" />
-                      Add
-                    </Button>
-                  )
-                }
-              />
+              <div className="space-y-2">
+                {results.map((student) => (
+                  <Row
+                    key={student.user_id}
+                    title={student.display_name}
+                    subtitle={`@${student.username} · ${student.points.toLocaleString()} pts`}
+                    action={
+                      student.relationship === "self" ? (
+                        <span className="text-xs text-muted-foreground">That&apos;s you</span>
+                      ) : student.relationship === "friends" ? (
+                        <span className="text-xs text-leaf">Already friends</span>
+                      ) : student.relationship === "pending_out" ? (
+                        <span className="text-xs text-muted-foreground">Request sent</span>
+                      ) : student.relationship === "pending_in" ? (
+                        <span className="text-xs text-muted-foreground">They asked you</span>
+                      ) : (
+                        <Button
+                          size="sm"
+                          disabled={busyId === student.user_id}
+                          onClick={() =>
+                            void act(
+                              student.user_id,
+                              () => sendFriendRequest(student.username),
+                              "Request sent.",
+                            )
+                          }
+                        >
+                          <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+                          Add
+                        </Button>
+                      )
+                    }
+                  />
+                ))}
+              </div>
             )}
           </div>
         )}

@@ -47,6 +47,24 @@ export const SOCIAL_SCHEMA_APPLIED = true;
  */
 export const BATTLE_SCHEMA_APPLIED = true;
 
+/**
+ * Is supabase/migrations/20260815120000_friend_search_prefix.sql applied in
+ * production yet?
+ *
+ * FALSE until it has been run BY HAND — same contract as the two flags above.
+ * That migration adds public.find_students(), a handle-PREFIX search: three
+ * characters minimum, ten results maximum, opt-in students only, handles never
+ * display names. Until this is true, findStudentsByPrefix() below returns an
+ * empty list without making a network call, and the search box falls back to
+ * the exact-handle lookup it has always used — which is why the fallback is
+ * kept working rather than replaced.
+ *
+ * Flip it in the SAME commit that applies the migration, and only alongside
+ * mobile's copy of this flag (gandd-mobile/lib/social.ts) — both apps hit the
+ * same schema.
+ */
+export const FRIEND_SEARCH_PREFIX_APPLIED = false;
+
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { isGuestUser } from "@/lib/guest-session";
@@ -78,7 +96,12 @@ export function socialEnabled(user: User | null | undefined): boolean {
 export const USERNAME_PATTERN = /^[a-z0-9_]{3,20}$/;
 
 export function normalizeHandle(input: string): string {
-  return input.trim().toLowerCase();
+  // The '@' and the spaces are forgiven rather than rejected. Every handle in
+  // this app is DISPLAYED as "@ada", so typing it back that way is the expected
+  // thing to do, not a mistake - and before this, "@ada" failed the shape guard
+  // and came back as "no student found", which reads as "that person is not
+  // here" rather than "drop the @".
+  return input.trim().toLowerCase().replace(/^@+/, "").replace(/\s+/g, "");
 }
 
 export type Discoverability = "anyone" | "nobody";
@@ -189,6 +212,30 @@ export async function findStudent(handle: string): Promise<FoundStudent | null> 
   if (!USERNAME_PATTERN.test(value)) return null;
   const rows = unwrap<FoundStudent[] | null>(await db.rpc("find_student", { p_handle: value }));
   return rows?.[0] ?? null;
+}
+
+/**
+ * Students whose handle STARTS with what has been typed — the type-ahead.
+ *
+ * Empty, with no network call at all, until FRIEND_SEARCH_PREFIX_APPLIED is
+ * true: find_students() does not exist in the database before then, and naming
+ * a function that is not there fails the call rather than returning nothing.
+ * Callers are expected to keep findStudent() as their fallback, which is why
+ * this returns [] rather than throwing — an empty suggestion list degrades into
+ * "type the whole handle", which is exactly the behaviour that came before it.
+ *
+ * The three-character minimum is the server's, mirrored here only so a shorter
+ * prefix does not cost a round trip. Everything that decides who is findable —
+ * the opt-in flag, guests, blocks — is decided by the database.
+ */
+export async function findStudentsByPrefix(prefix: string, limit = 5): Promise<FoundStudent[]> {
+  if (!SOCIAL_SCHEMA_APPLIED || !FRIEND_SEARCH_PREFIX_APPLIED) return [];
+  const value = normalizeHandle(prefix);
+  if (!USERNAME_PATTERN.test(value)) return [];
+  const rows = unwrap<FoundStudent[] | null>(
+    await db.rpc("find_students", { p_prefix: value, p_limit: limit }),
+  );
+  return rows ?? [];
 }
 
 // ── Friends ─────────────────────────────────────────────────────────────────

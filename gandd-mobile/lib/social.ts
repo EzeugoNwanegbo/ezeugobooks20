@@ -18,6 +18,22 @@
 // already, so every reference to the new schema is behind this flag.
 export const SOCIAL_SCHEMA_APPLIED = true;
 
+/**
+ * Is supabase/migrations/20260815120000_friend_search_prefix.sql applied in
+ * production yet?
+ *
+ * FALSE until it has been run BY HAND — same contract as the flag above. That
+ * migration adds public.find_students(), a handle-PREFIX search: three
+ * characters minimum, ten results maximum, opt-in students only, handles never
+ * display names. Until this is true, findStudentsByPrefix() below returns an
+ * empty list without making a network call and the search falls back to the
+ * exact-handle lookup, which is why that lookup is kept rather than replaced.
+ *
+ * Flip it in the SAME commit that applies the migration, and only alongside the
+ * web's copy of this flag (src/lib/social.ts) — both apps hit the same schema.
+ */
+export const FRIEND_SEARCH_PREFIX_APPLIED = false;
+
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 
@@ -43,7 +59,11 @@ export function socialEnabled(user: User | null | undefined): boolean {
 export const USERNAME_PATTERN = /^[a-z0-9_]{3,20}$/;
 
 export function normalizeHandle(input: string): string {
-  return input.trim().toLowerCase();
+  // The '@' and the spaces are forgiven rather than rejected. Every handle in
+  // this app is DISPLAYED as "@ada", so typing it back that way is the expected
+  // thing to do — and before this it failed the shape guard and came back as
+  // "no student found", which reads as "that person is not here".
+  return input.trim().toLowerCase().replace(/^@+/, "").replace(/\s+/g, "");
 }
 
 export type Discoverability = "anyone" | "nobody";
@@ -129,6 +149,26 @@ export async function findStudent(handle: string): Promise<FoundStudent | null> 
   if (!USERNAME_PATTERN.test(value)) return null;
   const rows = unwrap<FoundStudent[] | null>(await db.rpc("find_student", { p_handle: value }));
   return rows?.[0] ?? null;
+}
+
+/**
+ * Students whose handle STARTS with what has been typed — the type-ahead.
+ *
+ * Empty, with no network call at all, until FRIEND_SEARCH_PREFIX_APPLIED is
+ * true: find_students() does not exist in the database before then, and naming
+ * a function that is not there fails the call rather than returning nothing.
+ * Callers keep findStudent() as their fallback, which is why this returns []
+ * rather than throwing — an empty list degrades into "type the whole handle",
+ * which is the behaviour that came before it.
+ */
+export async function findStudentsByPrefix(prefix: string, limit = 5): Promise<FoundStudent[]> {
+  if (!SOCIAL_SCHEMA_APPLIED || !FRIEND_SEARCH_PREFIX_APPLIED) return [];
+  const value = normalizeHandle(prefix);
+  if (!USERNAME_PATTERN.test(value)) return [];
+  const rows = unwrap<FoundStudent[] | null>(
+    await db.rpc("find_students", { p_prefix: value, p_limit: limit }),
+  );
+  return rows ?? [];
 }
 
 // ── Friends ─────────────────────────────────────────────────────────────────
