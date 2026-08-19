@@ -3856,7 +3856,12 @@ function ContinueElsewhereButton({
         aria-expanded={open}
         className={
           isPill
-            ? "inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/25 bg-pop/[0.06] px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-pop/10"
+            ? // Opaque, like the "Add files" pill it sits beside. This was
+              // bg-pop/[0.06] - six percent - and the row floats above the
+              // scrolling answer, so the last line of the reply read straight
+              // through the pill and neither the word nor the label could be
+              // made out. A control that sits over content has to cover it.
+              "inline-flex shrink-0 items-center gap-1 rounded-full border border-pop/25 bg-background/95 px-2.5 py-1 text-[11px] font-medium text-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-pop/10"
             : "inline-flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-pop/10 hover:text-pop"
         }
       >
