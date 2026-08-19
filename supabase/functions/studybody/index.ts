@@ -60,22 +60,77 @@ interface Body {
 
 type DifficultyLevel = "easy" | "medium" | "hard";
 
+// The distractor half of HARD, kept out of the template literal below so the
+// essay path is not shipped a page of option rules it must ignore. This is the
+// part that answers "the options are not confusing enough": it names the four
+// constructions a real trap is built from, and bans the surface tells (length,
+// hedging, book phrasing, absolutes) that let a student pick the answer without
+// having read anything.
+const HARD_OPTION_RULES = `
+- There are three options and only three, so all three carry weight. ONE is defensible; the OTHER TWO must each be a trap a well-prepared student would seriously consider. A wasted option turns this into a coin flip.
+- Build EVERY distractor from the excerpts, using one of these four moves: (a) a statement that is TRUE in the material but does not answer THIS question; (b) the right idea applied to the wrong condition, stage, case or population; (c) a near-miss that changes exactly one decisive detail - a number, a direction, an order, a qualifier; (d) the precise misconception the material exists to correct.
+- Never invent a nonsense, off-topic or absurd option. If a student can strike an option out without knowing the material, that option is broken - rewrite it.
+- Make the options SURFACE-IDENTICAL: same length (within a few words), same grammatical form, same level of detail, same technical vocabulary. The correct answer must NEVER be the longest, the most detailed, the most hedged, or the only one written in the book's exact phrasing.
+- No "all of the above", no "none of the above", and no absolutes ("always", "never", "only") that appear only in the wrong options.
+- Choosing between the best two options must turn on ONE specific fact from the excerpts - not on general reasoning, tone or plausibility.
+- Vary which option id is correct across the batch. Do not settle on A.
+
+SELF-CHECK BEFORE RETURNING - rewrite anything that fails:
+1. Could someone who never read the material eliminate any option from its wording alone? Then that option is too weak.
+2. Is any distractor obviously false or off-topic? Then it is wasted - replace it with a real trap.
+3. Does one sentence of one excerpt answer the stem outright? Then the question is too easy.
+4. The explanation must name the trap: in ONE or TWO sentences, why the correct option holds AND why the most tempting wrong one fails.
+`;
+
+// The written-answer half. An essay has no distractors to confuse, so hard here
+// means the ANSWER has to be built rather than recalled: several parts, in a
+// defensible order, with the reasoning shown.
+const HARD_ESSAY_RULES = `
+THE ANSWER (what a full-mark response must contain):
+- The ideal answer must have SEVERAL distinct parts drawn from different excerpts. A question a strong student can finish in one sentence is not hard.
+- Demand reasoning, not a list: make them justify, compare, rank, explain a mechanism, or resolve an apparent contradiction in the material.
+- Where the material sets conditions or exceptions, the question should be built so that missing them costs marks.
+- The rubric must contain the specific points a marker looks for, including the subtle one most students will leave out.
+`;
+
 // Absolute, student-chosen difficulty. "hard" must be genuinely punishing while
 // staying 100% answerable from the excerpts - never reaching outside the files.
-function difficultyInstruction(level: DifficultyLevel): string {
+//
+// HARD IS SPELLED OUT MECHANICALLY ON PURPOSE. "Make these extremely
+// challenging" is the kind of instruction a model agrees with and then ignores:
+// it returns a recall question with two throwaway distractors and calls it hard.
+// What actually makes an exam question hard is not the topic, it is (a) a stem
+// that cannot be answered by finding one sentence, and (b) options that are all
+// defensible until you know the one fact that separates them. So the rules below
+// name the specific distractor constructions to use, ban the surface tells that
+// let a student pick the answer without reading the material, and end with a
+// self-check the model has to apply before returning.
+//
+// Takes the question type because most of that is about DISTRACTORS, and a batch
+// of essays has none - sending an essay batch a page of option-writing rules is
+// input spent to describe a field the model is told to return empty. Each type
+// gets the half that applies to it.
+function difficultyInstruction(level: DifficultyLevel, type: "mcq" | "essay"): string {
   if (level === "easy") {
+    // Written as its own line rather than an inline escape so the prompt text
+    // stays readable in the source.
+    const distractorLine =
+      type === "mcq" ? "- Make every distractor clearly wrong to someone who read the material." : "";
     return `DIFFICULTY: EASY.
 - Test direct recall and recognition of facts that are stated plainly in the excerpts.
 - One step to answer. Use clear, unambiguous wording.
-- For MCQ, make every distractor clearly wrong to someone who read the material.`;
+${distractorLine}`.trim();
   }
   if (level === "hard") {
-    return `DIFFICULTY: HARD - make these EXTREMELY challenging, exam-topper level.
-- Demand multi-step reasoning: require combining and synthesising facts spread across SEVERAL excerpts, not a single sentence.
-- Target subtle distinctions, edge cases, exceptions, mechanisms, "why/how" reasoning, and commonly confused points.
-- For MCQ, every distractor must be highly plausible and drawn from the excerpts (e.g. a true-but-irrelevant fact, a near-miss, or a common misconception the material corrects). No giveaway options.
-- Use precise, demanding wording. The student should have to truly understand the material to answer.
-- ABSOLUTE GROUNDING RULE: despite the difficulty, every question, the correct answer, every distractor, and the explanation must remain fully verifiable from the provided excerpts ONLY. Do NOT pull in any fact, term, or scenario that is not in the files. Hard means deeper use of the material, never outside material.`;
+    return `DIFFICULTY: HARD - exam-topper level. Your target: a student who read the material once and understood it shallowly must get this WRONG. A student who genuinely understands it must get it right without guessing.
+
+THE QUESTION (stem):
+- Do NOT ask what something is. Ask what FOLLOWS from it: give a concrete scenario, case, dataset or worked situation and ask for the consequence, the mechanism, the exception, the next step, or the best explanation.
+- Every question must require combining at least TWO separate facts from the excerpts. If a single sentence of the material answers it, it is too easy - rewrite it.
+- Mine the hard parts of the material: exceptions, conditions ("only when...", "unless..."), thresholds and limits, ordering and precedence, mechanisms, and any point the text itself flags as commonly confused.
+- Precise, unpadded wording. Never define a term in the stem that the answer depends on, and never hint at the answer.
+${type === "essay" ? HARD_ESSAY_RULES : HARD_OPTION_RULES}
+ABSOLUTE GROUNDING RULE: despite the difficulty, every question, the correct answer, every distractor, and the explanation must remain fully verifiable from the provided excerpts ONLY. Do NOT pull in any fact, term, or scenario that is not in the files. Hard means deeper use of the material, never outside material.`;
   }
   return `DIFFICULTY: MEDIUM.
 - Test understanding and application, not just recall: require interpreting or applying a fact from the excerpts.
@@ -668,7 +723,7 @@ ${JSON.stringify(body.topic || {}, null, 2)}
 Question type requested: ${type} (ALL questions in this batch must be "${type}")
 Number of questions: ${count}
 
-${difficultyInstruction(difficulty)}
+${difficultyInstruction(difficulty, type)}
 
 Already asked (do NOT repeat or paraphrase these):
 ${exclude.length ? exclude.map((p, i) => `${i + 1}. ${p}`).join("\n") : "(none yet)"}
@@ -679,12 +734,12 @@ ${documentContext(body.documents)}
 Return JSON:
 {
   "questions": [
-${type === "mcq" ? MCQ_SHAPE : ESSAY_SHAPE}
+${type === "mcq" ? mcqShape(difficulty) : ESSAY_SHAPE}
   ]
 }
 ${
   type === "mcq"
-    ? "Exactly three options, one correct option id."
+    ? `Exactly three options, one correct option id. "correct_answer" is that option's id - vary which one it is across the batch, do not always answer "A".`
     : "options must be []. correct_answer is the ideal written answer."
 }`;
 }
@@ -712,13 +767,24 @@ ${
 // This is the cheapest speed available: the same questions, less writing. It
 // does not touch what a student sees beyond shorter explanations, and it makes
 // every count faster rather than only rescuing the large ones.
-const MCQ_SHAPE = `    {
+//
+// Still three options at every level - the shape is a function only because the
+// explanation differs at hard: same one-or-two-sentence budget, spent on naming
+// the trap (why the tempting wrong option fails) rather than only restating the
+// source. When both wrong options are meant to be believable, "why not that one"
+// is the part the student actually needs back.
+function mcqShape(level: DifficultyLevel): string {
+  const explanation = level === "hard"
+    ? "ONE or TWO sentences: why the correct option holds and why the most tempting wrong option fails, pointing at the source excerpt"
+    : "ONE or TWO sentences, pointing at the source excerpt";
+  return `    {
       "prompt": "question text grounded in the excerpts",
       "options": [{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."}],
       "correct_answer": "A",
-      "explanation": "ONE or TWO sentences, pointing at the source excerpt",
+      "explanation": "${explanation}",
       "source_refs": [{"file":"name", "page":"Page N, or omit if the excerpt has no page"}]
     }`;
+}
 
 // Essays keep the rubric: it is what review_answers grades the written answer
 // against, so here it is load-bearing rather than ceremony.
