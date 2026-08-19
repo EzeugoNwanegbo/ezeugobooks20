@@ -67,10 +67,10 @@ export const getRouter = () => {
 
   // Analytics is wired here (not in main.tsx) because this is the only module
   // shared by BOTH entry points: main.tsx runs only in the static/SPA build
-  // (e.g. the Android WebView), while the SSR build — production gd1.online,
-  // served by server.mjs — never loads main.tsx at all. Initializing in
-  // main.tsx left production with zero PostHog data. The window guard keeps
-  // this out of server-side rendering; initAnalytics() itself is idempotent.
+  // (the web deploy and the Android WebView), while the SSR build served by
+  // server.mjs never loads main.tsx at all. Initializing in main.tsx once left
+  // the SSR production site with zero PostHog data. The window guard keeps this
+  // out of server-side rendering; initAnalytics() itself is idempotent.
   if (typeof window !== "undefined") {
     initAnalytics({ autocapture: !isNativeApp() });
     capturePageview();

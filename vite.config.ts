@@ -17,6 +17,8 @@ const BUILD_ID = (() => {
 export default defineConfig({
   define: {
     __BUILD_ID__: JSON.stringify(BUILD_ID),
+    // SSR: the root shell renders the real document.
+    __STATIC_SPA__: JSON.stringify(false),
   },
   plugins: [tanstackStart(), react(), tailwindcss(), tsconfigPaths()],
   server: {

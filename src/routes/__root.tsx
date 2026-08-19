@@ -86,6 +86,42 @@ export const Route = createRootRoute({
 });
 
 function RootShell({ children }: { children: React.ReactNode }) {
+  // THE STATIC BUILD MUST NOT RENDER A DOCUMENT.
+  //
+  // This shell is a TanStack Start concept: during SSR it IS the page, so
+  // returning <html>/<head>/<body> is exactly right. The static build is a
+  // different shape entirely - index.html already provides the document and
+  // main.tsx mounts the router into <div id="root"> inside it. Returning a
+  // document there nests <html>, <head> and <body> inside a <div>, with
+  // HeadContent and Scripts both trying to drive the real document head from
+  // within that invalid tree.
+  //
+  // The symptom was brutal and misleading: the first paint looked perfect, then
+  // the first re-render - focusing a text input is enough - locked the main
+  // thread for good. No exception, so the console stayed clean and React's
+  // nesting warnings are stripped in production. It reproduced on every page,
+  // every device and every viewport, which is what finally ruled out rendering
+  // cost and pointed here. `npm run dev` never showed it because that runs the
+  // SSR config, where this shell is correct.
+  //
+  // HeadContent still renders, so per-route <title> and meta tags keep working:
+  // React hoists those to <head> on its own and needs no document wrapper.
+  //
+  // The theme script is dropped here, and nothing is lost by it: a <script>
+  // injected by React never executes, so this build has never run it. That is
+  // why index.html hard-codes class="dark" - the default the script would have
+  // chosen. Moving it into index.html would additionally restore the low-power
+  // and stored-theme detection this build has always been missing; worth doing,
+  // but a separate change from the freeze.
+  if (__STATIC_SPA__) {
+    return (
+      <>
+        <HeadContent />
+        {children}
+      </>
+    );
+  }
+
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>

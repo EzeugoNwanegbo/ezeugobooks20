@@ -394,7 +394,23 @@ const GD_CSS = `
 }
 
 /* Ambient */
-.gd-blob { position: fixed; z-index: -1; border-radius: 9999px; filter: blur(120px); opacity: 0.4; pointer-events: none; }
+/* NO filter HERE, deliberately. This was \`filter: blur(120px)\` and it froze the
+   page on the FIRST FOCUS of the email field - measured, not guessed: the
+   on-device log's last line before the stall was \`focusin input[EMAIL]\`, on a
+   1358x682 laptop, with no keystroke and no console error.
+
+   Why focus was enough: \`filter\` puts the element in its own stacking context,
+   and at \`z-index: -1\` it sits behind every pixel of content. Focusing the
+   input changes its border-color and box-shadow, which repaints - and a repaint
+   over a filtered backdrop makes the browser re-rasterise that filter. A 120px
+   blur is O(radius) work across the whole surface, twice, on the main thread,
+   synchronously. Animating it made it worse but was never the cause; the
+   transform animation alone is compositor-only and cannot block script.
+
+   Nothing is lost visually. The background is already
+   \`radial-gradient(circle, ..., transparent 70%)\` - a gradient that fades to
+   nothing on its own. The blur was blurring something blurry by construction. */
+.gd-blob { position: fixed; z-index: -1; border-radius: 9999px; opacity: 0.55; pointer-events: none; }
 .gd-blob-1 {
   top: -10%; right: -5%; width: 45vw; height: 45vw; max-width: 620px; max-height: 620px;
   background: radial-gradient(circle, var(--accent-soft), transparent 70%);

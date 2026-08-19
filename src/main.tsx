@@ -24,8 +24,34 @@ initNativeShell();
 // loads this file. Do not re-add it here or pageviews will double-fire.
 
 // TEMPORARY: on-device event log (top of screen) to diagnose the login-input
-// freeze. Native only. Remove once fixed (see src/lib/native-diagnostics.ts).
-if (isNativeApp()) {
+// freeze. Remove once fixed (see src/lib/native-diagnostics.ts).
+//
+// It was gated to native only because the note in that file concluded the
+// freeze was "WebView-specific — web login works on the same phone's browser".
+// That conclusion compared the Android app (which ships `build:static`) against
+// the web (which was then Hostinger's SSR build), so the variable it actually
+// isolated was STATIC vs SSR, not WebView vs browser. The same freeze appeared
+// on the web the moment Vercel began serving the static build, and it
+// reproduces on `npm run preview:static` locally.
+//
+// So the harness is opened to the web behind `?diag=1` — off by default, no
+// cost to a normal visit, and it turns "the page froze" into a timestamped log
+// naming the last event before the main thread stopped.
+//
+// It earned its keep: `focusin input[EMAIL]` as the last line, with the
+// watchdog never reporting the thread recovering, is what proved this was an
+// infinite loop rather than slow rendering. The cause was the root route's
+// document shell (see src/routes/__root.tsx) and is fixed; the harness stays
+// because the next freeze will be diagnosed the same way.
+const diagRequested = (() => {
+  try {
+    return new URLSearchParams(window.location.search).has("diag");
+  } catch {
+    return false;
+  }
+})();
+
+if (isNativeApp() || diagRequested) {
   void import("./lib/native-diagnostics").then(({ initNativeDiagnostics }) =>
     initNativeDiagnostics(),
   );
@@ -48,9 +74,7 @@ if (typeof window !== "undefined") {
     if (!isNativeApp()) return;
     try {
       const text =
-        detail instanceof Error
-          ? `${detail.message}\n${detail.stack ?? ""}`
-          : String(detail);
+        detail instanceof Error ? `${detail.message}\n${detail.stack ?? ""}` : String(detail);
       let banner = document.getElementById("gd-error-banner");
       if (!banner) {
         banner = document.createElement("div");
