@@ -712,6 +712,61 @@ NO FILES ARE IN PLAY FOR THIS ANSWER:
   }`;
 }
 
+/**
+ * The whole answer, in one streamed call, for a question with no files.
+ *
+ * WHY THIS EXISTS. The no-documents route used to run callDeepSeekSync() - a
+ * BLOCKING, non-streamed research draft with a 75 second ceiling - and only then
+ * start streaming the styled answer. Measured against production, "what is a
+ * nephron" put the first character on screen after SIXTY-FOUR SECONDS. Students
+ * reported the chat as frozen, and they were right to: a minute of blank screen
+ * is indistinguishable from a broken app.
+ *
+ * The second hop existed to let a reasoning model do the facts and a styling
+ * model do the voice. With no documents to search there is no retrieval for the
+ * first hop to do - it was answering from its own knowledge and handing that to
+ * another model to rewrite. One capable model does both, and the student sees
+ * words immediately.
+ *
+ * The LIBRARY route keeps both hops. There the first one really does work: it
+ * reads the excerpts and pins the citations, which is the part that must not be
+ * guessed at.
+ *
+ * This is the rewriter's prompt with the draft removed and the source rules
+ * dropped, since there is nothing to cite.
+ */
+function buildDirectAnswerSystemPrompt(
+  p: Profile,
+  mode: Mode,
+  usingWebCurriculum: boolean,
+): string {
+  return `You are G&D, a study companion for students.
+
+IDENTITY (strict): You are G&D, and only G&D. Never mention, name, or hint at any
+underlying model, provider, or internal step - including "DeepSeek", "GPT",
+"OpenAI", "the draft", "the research engine", or "as an AI language model". If
+the student asks what you are or what powers you, say you are G&D.
+
+${buildStudentIdentity(p, { usingWebCurriculum })}
+
+STYLE INSTRUCTIONS:
+${modeInstruction(mode, p.exam_format || "MCQ")}
+
+RULES:
+- Answer the question directly and accurately from what you know. Lead with the answer, then the reasoning.
+- CONVERSE. React to what they actually asked, in a calm and friendly voice, with the teaching underneath it rather than on top of it. A reference manual is not the target.
+- No files are attached to this question, so there is nothing to cite. Do NOT produce a "Source:" line, do NOT say the answer was missing from their files, and do NOT ask them to upload anything before helping.
+- Be honest about uncertainty. If something is genuinely disputed or you are unsure, say so rather than inventing a confident answer.
+- Never invent citations, page numbers, statistics or study references.
+- Write as if you are talking directly to ${p.name || "the student"} - warm, clear, encouraging.
+- Use clean, organized Markdown: headings, short paragraphs, numbered steps, hyphen bullets, and tables where helpful.
+- When the concept is naturally visual - a process, cycle, hierarchy, timeline, comparison, or how parts connect - include ONE small diagram as a fenced \`\`\`mermaid code block. Keep it simple and valid: prefer "flowchart LR", "flowchart TD", "mindmap", or "sequenceDiagram"; use short plain node labels; no colours, CSS, or style directives. If the topic is not visual, do not force a diagram.
+- Mermaid label syntax is strict: if a node label contains anything other than letters, numbers, and spaces - parentheses, brackets, colons, slashes, commas, quotes - wrap the whole label in double quotes, e.g. A["Adrenaline (1:1000 IM)"] not A[Adrenaline (1:1000 IM)]. An unquoted label with punctuation is a syntax error and the diagram will not render.
+- Never output asterisk characters. Do not use asterisks for emphasis, bullets, multiplication, footnotes, or decoration. Use plain labels, hyphen bullets, and the x symbol for multiplication.
+- For maths, write equations clearly using plain text or fenced code/math blocks, define every variable, then explain the steps in order.
+- At most ONCE in a conversation, and only after the answer is complete, you may close with one short friendly line noting that G&D is built to read their own textbooks, notes and past papers and answer with the page. Skip it if an earlier reply already said it, or if the moment does not suit it. It is a footnote, never the point.`;
+}
+
 function buildGPTVisualScriptSystemPrompt(p: Profile): string {
   return `You are GPT, G&D's animation director.
 
@@ -1814,38 +1869,30 @@ Prepare the factual draft for a final teaching answer.`,
         });
       }
 
-      const deepSeekText = await callDeepSeekSync(
-        DEEPSEEK_API_KEY!,
-        buildDeepSeekDirectSystemPrompt(body.profile, useWebCurriculum),
-        deepSeekMessages,
-        DEEPSEEK_CHAT_TIMEOUT_MS,
-      );
-
+      // ONE hop, streamed. The blocking research draft that used to sit here put
+      // the first character of a plain answer on screen after 64 seconds
+      // (measured against production), which students reported as the chat
+      // freezing. See buildDirectAnswerSystemPrompt for why the second model
+      // had nothing to do on this route.
       return openAIRewriteResponse({
         apiKey: OPENAI_API_KEY,
-        systemPrompt: buildGPTRewriterSystemPrompt(
-          body.profile,
-          body.mode,
-          false,
-          useWebCurriculum,
-          false,
-        ),
-        messages: [
-          ...priorMessages,
-          {
-            role: "user" as const,
-            content: `Student question: ${lastUserMessage.content}
+        systemPrompt: buildDirectAnswerSystemPrompt(body.profile, body.mode, useWebCurriculum),
+        messages: curriculumGuidance
+          ? [
+              ...priorMessages,
+              {
+                role: "user" as const,
+                content: `${lastUserMessage.content}
 
-Research draft (factual):
-"""
-${deepSeekText}
-"""
-
-${curriculumGuidance ? `Web curriculum guidance:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer STRICTLY following the ${body.mode} mode rules in your system prompt. Do not exceed the length and structure limits for that mode. Do not add facts outside the research draft. Never mention the research draft, DeepSeek, GPT, OpenAI, or any internal step in your answer.`,
-          },
-        ],
+---
+WEB CURRICULUM GUIDANCE (use this for what to prioritise; do not mention it):
+${curriculumGuidance}
+---`,
+              },
+            ]
+          : body.messages,
         mode: body.mode,
-        model: useWebCurriculum ? "deepseek-to-openai-web-curriculum" : "deepseek-to-openai",
+        model: useWebCurriculum ? "openai-direct-web-curriculum" : "openai-direct",
         source,
         sources: webSources,
       });

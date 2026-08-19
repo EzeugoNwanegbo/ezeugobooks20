@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { startGuestSession } from "@/lib/guest-session";
 import { useAuth } from "@/lib/auth-context";
 import { isNativeApp } from "@/lib/native";
 import { signInWithGoogleNative } from "@/lib/native-auth";
@@ -71,54 +70,31 @@ function useReducedMotion() {
 }
 
 /* ----------------------------------------------------------------- */
-/* Try for free - starts a no-signup guest session.                    */
+/* Nav action.                                                         */
+/*                                                                     */
+/* This was "Try for free", which opened a no-signup guest session.     */
+/* Anonymous sign-ins are disabled on the project, so that button could */
+/* only ever fail - it advertised a door that was locked, and the owner */
+/* chose to remove it rather than switch the provider on.               */
+/*                                                                     */
+/* It is a plain route now, not nothing, because a signed-in student    */
+/* landing on the marketing page still needs a way back into the app;   */
+/* deleting the button outright would strand them with only the Google  */
+/* card. startGuestSession() has no callers left, but guest sessions    */
+/* still work everywhere else (isGuestUser, the upgrade flow) for       */
+/* anyone who already holds one.                                        */
 /* ----------------------------------------------------------------- */
-function TryForFreeButton({
-  className = "",
-  label = "Try for free",
-}: {
-  className?: string;
-  label?: string;
-}) {
-  const navigate = useNavigate();
+function NavAction({ className = "" }: { className?: string }) {
   const { user } = useAuth();
-  const [busy, setBusy] = useState(false);
 
-  const onClick = async () => {
-    if (busy) return;
-    if (user) {
-      navigate({ to: "/app/chat" });
-      return;
-    }
-    try {
-      setBusy(true);
-      await startGuestSession();
-      navigate({ to: "/app/chat" });
-    } catch (err) {
-      // Say why before moving them. This used to swallow the error and drop the
-      // student on the signup page with no explanation, which reads as the
-      // button having misfired rather than as a deliberate hand-off.
-      // startGuestSession() already phrases the disabled-provider case for a
-      // student ("Guest mode isn't available right now..."), so it is safe to
-      // show verbatim.
-      toast.error(err instanceof Error ? err.message : "Could not start a guest session.");
-      navigate({ to: "/auth", search: { mode: "signup" } });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      className={`gd-btn gd-btn-ghost ${className}`}
-      onClick={onClick}
-      disabled={busy}
-      aria-busy={busy}
-    >
-      {busy && <span className="gd-spinner" aria-hidden="true" />}
-      {busy ? "Starting…" : label}
-    </button>
+  return user ? (
+    <Link to="/app/chat" className={`gd-btn gd-btn-ghost ${className}`}>
+      Open G&amp;D
+    </Link>
+  ) : (
+    <Link to="/auth" search={{ mode: "signin" }} className={`gd-btn gd-btn-ghost ${className}`}>
+      Sign in
+    </Link>
   );
 }
 
@@ -346,7 +322,7 @@ function Landing() {
         <Link to="/" className="gd-logo">
           G&amp;D
         </Link>
-        <TryForFreeButton className="gd-nav-cta" label="Try for free" />
+        <NavAction className="gd-nav-cta" />
       </header>
 
       <main className="gd-hero">
