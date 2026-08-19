@@ -1,211 +1,97 @@
-// Friends and asynchronous challenges.
+// Friends: who you already know, plus your own handle.
 //
-// Every read and write on this page goes through src/lib/social.ts, which is
-// gated on SOCIAL_SCHEMA_APPLIED. With that flag false this component still
-// renders (the route exists, and somebody can always type a URL) but it renders
-// the "not switched on" panel and issues no query at all — the social helpers
-// return empty before they reach Supabase, and the effect below refuses to run.
+// This used to be the whole friends feature in one long scroll — handle
+// claiming, search, requests in/out, the friend list, and every open and
+// settled battle, all at once. It is now the landing page only: the people
+// you already have, and the one thing about you that makes you findable.
+// Searching and requests moved to -app.friends-add-page.tsx
+// (/app/friends-add); battle tracking moved to
+// -app.friends-battles-page.tsx (/app/friends-battles). The three share
+// -app.friends-shared.tsx's FriendsPageFrame for the header, the tab strip,
+// and the guest/pre-migration gate.
 //
-// "Challenge" -> Battle Royale (2026-08-13). This page used to open a dialog
-// here (ChallengeFriendDialog) that sent one of the student's own unfinished
-// MCQ sets. That inline flow is gone: tapping Challenge now hands off to
-// /app/battle-royale (-app.battle-royale-page.tsx), which builds a fresh match
-// (file, scope, count, timer, format) and sends it itself via
-// src/lib/social.ts's createChallenge(). This page's job stays exactly what the
-// top of the file always said — find and see a person — plus one button that
-// now navigates instead of opening a dialog. ChallengeFriendDialog itself is
-// untouched: My Coach's "Challenge a friend" quick action
-// (src/components/challenge-friend-button.tsx) still uses it for a set that is
-// already built and does not belong here.
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+// "Challenge" -> Battle Royale (2026-08-13). Tapping Challenge on a friend
+// hands off to /app/battle-royale (-app.battle-royale-page.tsx), which builds
+// a fresh match (file, scope, count, timer, format) and sends it itself via
+// src/lib/social.ts's createChallenge(). This page's job is find-and-see a
+// person, plus the button that gets you to Battle Royale with the opponent
+// already chosen.
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import {
-  AtSign,
-  Check,
-  Clock,
-  Loader2,
-  Search,
-  Swords,
-  Trophy,
-  UserMinus,
-  UserPlus,
-  X,
-} from "lucide-react";
-import { PageHeader } from "@/components/ui/page-header";
+import { Eye, EyeOff, Loader2, Pencil, Swords, UserMinus, UserPlus, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Segmented } from "@/components/ui/segmented";
 import { useAuth } from "@/lib/auth-context";
-import { isGuestUser } from "@/lib/guest-session";
-import { reconcileServerPoints } from "@/lib/points-ledger";
 import {
-  FRIEND_SEARCH_PREFIX_APPLIED,
-  SOCIAL_SCHEMA_APPLIED,
   USERNAME_PATTERN,
-  cancelChallenge,
   claimUsername,
-  declineChallenge,
-  findStudent,
-  findStudentsByPrefix,
-  normalizeHandle,
-  formatDuration,
   friendList,
   friendRequests,
-  listChallenges,
   removeFriend,
-  respondToFriendRequest,
-  sendFriendRequest,
   setDiscoverability,
-  beginChallenge,
-  socialEnabled,
-  type ChallengeSummary,
   type Discoverability,
-  type FoundStudent,
   type Friend,
   type FriendRequest,
 } from "@/lib/social";
+import { EmptyState, FriendsPageFrame } from "@/routes/-app.friends-shared";
+import { markSeenOnce, useSeenOnce } from "@/lib/seen-once";
 
-const VISIBILITY_OPTIONS = ["anyone", "nobody"] as const satisfies readonly Discoverability[];
+// First-visit-only opening line. Shown once per account, the same bargain
+// src/lib/feature-tour.ts and LIBRARY_INTRO_SEEN_KEY strike: a visit is the
+// signal, not an action, because a visit can never get stuck the way "has
+// added a friend" could.
+const FRIENDS_INTRO_SEEN_KEY = "gd_friends_intro_seen_v1";
 
-/** A settled challenge from the caller's side. Mirrors ChallengeSummary.outcome. */
-type ChallengeOutcome = "won" | "lost" | "draw";
-
-/** Wins, draws and losses — against one friend, or across the lot. */
-type Tally = { won: number; drawn: number; lost: number };
-
-// How many challenges to count the record over. The server clamps p_limit to
-// 100, so asking for more would quietly get 100 anyway; asking for it explicitly
-// is the difference between a record over the last 40 battles and the last 100.
-const CHALLENGE_HISTORY = 100;
+function markFriendsIntroSeen(userId: string): void {
+  try {
+    window.localStorage.setItem(`${FRIENDS_INTRO_SEEN_KEY}:${userId}`, "1");
+    markSeenOnce("friends", userId);
+  } catch {
+    // Nothing to do - worst case the line introduces itself once more.
+  }
+}
 
 export function FriendsPage() {
   const { user, profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
 
+  // "unknown" until the account's list has been read; nothing renders then.
+  // See src/lib/seen-once.ts.
+  const showIntro = useSeenOnce("friends", user?.id) === "unseen";
+  useEffect(() => {
+    if (!user || !showIntro) return;
+    markFriendsIntroSeen(user.id);
+  }, [user, showIntro]);
+
   const [friends, setFriends] = useState<Friend[]>([]);
   const [requests, setRequests] = useState<FriendRequest[]>([]);
-  const [challenges, setChallenges] = useState<ChallengeSummary[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const [handleDraft, setHandleDraft] = useState("");
-  const [savingHandle, setSavingHandle] = useState(false);
-
-  const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [searched, setSearched] = useState(false);
-  const [found, setFound] = useState<FoundStudent | null>(null);
-  // Handle-prefix hits. Always empty until the prefix migration is applied —
-  // findStudentsByPrefix() returns [] without a request — so the exact lookup
-  // above stays the search until then.
-  const [suggestions, setSuggestions] = useState<FoundStudent[]>([]);
-
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  // Hooks run unconditionally; the gate lives inside them and in the render.
-  const enabled = socialEnabled(user);
-  const isGuest = isGuestUser(user);
   const myHandle = profile?.username ?? null;
   // Defaults to "anyone" when the column is absent (flag off) or unset. Harmless
   // either way: with no handle claimed, find_student() returns nothing regardless.
   const myVisibility: Discoverability = profile?.discoverable_by === "nobody" ? "nobody" : "anyone";
 
   const refresh = useCallback(async () => {
-    if (!enabled) {
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     try {
-      const [f, r, c] = await Promise.all([
-        friendList(),
-        friendRequests(),
-        listChallenges(CHALLENGE_HISTORY),
-      ]);
+      const [f, r] = await Promise.all([friendList(), friendRequests()]);
       setFriends(f);
       setRequests(r);
-      setChallenges(c);
-      // listChallenges() sweeps first, which is where a finished contest is
-      // actually resolved - and therefore where a win is actually awarded. Pick
-      // the award up straight away so the points appear with the result rather
-      // than the next time the leaderboard is opened. A no-op until the ledger
-      // migration is applied, and it never throws.
-      if (user) await reconcileServerPoints(user.id);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not load your friends.");
     } finally {
       setLoading(false);
     }
-  }, [enabled, user]);
+  }, []);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  const incoming = useMemo(
-    () => requests.filter((request) => request.direction === "incoming"),
-    [requests],
-  );
-  const outgoing = useMemo(
-    () => requests.filter((request) => request.direction === "outgoing"),
-    [requests],
-  );
-  const openChallenges = useMemo(
-    () => challenges.filter((c) => c.status === "pending" || c.status === "active"),
-    [challenges],
-  );
-  const settledChallenges = useMemo(
-    () => challenges.filter((c) => c.status !== "pending" && c.status !== "active"),
-    [challenges],
-  );
-
-  // The win/draw/loss record: one per opponent, plus the total and the recent
-  // form strip. Counted here from the challenge list the page already loads, so
-  // there is no extra query and no server change behind any of it.
-  //
-  // The one honest limit: challenge_list_mine() caps at 100 rows, so a student
-  // past their hundredth challenge has a record over the most recent 100. The
-  // heading says "your battles" rather than "all time" for exactly that reason.
-  const { tallies, overall, form } = useMemo(() => {
-    const tallies = new Map<string, Tally>();
-    const overall: Tally = { won: 0, drawn: 0, lost: 0 };
-    const form: ChallengeOutcome[] = [];
-    for (const challenge of challenges) {
-      const outcome = challenge.outcome;
-      if (!outcome) continue;
-      const tally = tallies.get(challenge.opponent_user_id) ?? { won: 0, drawn: 0, lost: 0 };
-      if (outcome === "won") {
-        tally.won += 1;
-        overall.won += 1;
-      } else if (outcome === "lost") {
-        tally.lost += 1;
-        overall.lost += 1;
-      } else {
-        tally.drawn += 1;
-        overall.drawn += 1;
-      }
-      tallies.set(challenge.opponent_user_id, tally);
-      // Newest first, matching the server's ordering, and only the last five -
-      // "form" is meant to be read at a glance, not audited.
-      if (form.length < 5) form.push(outcome);
-    }
-    return { tallies, overall, form };
-  }, [challenges]);
-  const settledTotal = overall.won + overall.drawn + overall.lost;
-
-  const saveHandle = async () => {
-    setSavingHandle(true);
-    try {
-      const value = await claimUsername(handleDraft);
-      await refreshProfile();
-      setHandleDraft("");
-      toast.success(`Your handle is @${value}.`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not save that handle.");
-    } finally {
-      setSavingHandle(false);
-    }
-  };
+  const incomingCount = requests.filter((request) => request.direction === "incoming").length;
 
   const changeVisibility = async (mode: Discoverability) => {
     try {
@@ -216,99 +102,11 @@ export function FriendsPage() {
     }
   };
 
-  // What the box is actually asking for. Two forms, because they answer two
-  // different questions: the handle (@ and spaces forgiven) is what the server
-  // is asked for, and the raw text is what the on-device matching below reads,
-  // since a display name has spaces in it and a handle never does.
-  const handleNeedle = normalizeHandle(query);
-  const rawNeedle = query.trim().toLowerCase().replace(/^@+/, "");
-  const needleReady = USERNAME_PATTERN.test(handleNeedle);
-
-  // Search as you type. Nothing has to be pressed any more: 250ms after the
-  // last keystroke is under the point where a list stops feeling like it is
-  // responding to you, and it replaces "type the whole handle, press Search,
-  // wait" with "start typing". Every stale run is dropped by `active`, so a
-  // slow request for "ada" can never overwrite the results for "ada_l".
-  useEffect(() => {
-    if (!enabled) return;
-    if (!needleReady) {
-      setFound(null);
-      setSuggestions([]);
-      setSearched(false);
-      setSearching(false);
-      return;
-    }
-    let active = true;
-    setSearching(true);
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        try {
-          // Both at once: the prefix list, and the exact hit. Until the prefix
-          // migration is applied the first resolves to [] without touching the
-          // network, so this is one request, not two.
-          const [exact, list] = await Promise.all([
-            findStudent(handleNeedle),
-            findStudentsByPrefix(handleNeedle),
-          ]);
-          if (!active) return;
-          setFound(exact);
-          setSuggestions(list);
-        } catch {
-          if (!active) return;
-          setFound(null);
-          setSuggestions([]);
-        } finally {
-          if (active) {
-            setSearching(false);
-            setSearched(true);
-          }
-        }
-      })();
-    }, 250);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [handleNeedle, needleReady, enabled]);
-
-  // People already in your list, matched on the device against what has been
-  // typed so far. No round trip, so they appear on the second keystroke rather
-  // than after the debounce — and searching for somebody you have already added
-  // is the single most common thing this box is asked to do. Display names are
-  // matched here and nowhere else: these are people you are already connected
-  // to, so nothing is disclosed that you cannot already see.
-  const localMatches = useMemo(() => {
-    if (rawNeedle.length < 2) return [];
-    const hits: Array<{ user: Friend | FriendRequest; tag: string }> = [];
-    const matches = (username: string | null, name: string) =>
-      (username ?? "").includes(handleNeedle) || name.toLowerCase().includes(rawNeedle);
-    for (const friend of friends) {
-      if (matches(friend.username, friend.display_name)) hits.push({ user: friend, tag: "Friend" });
-    }
-    for (const request of requests) {
-      if (!matches(request.username, request.display_name)) continue;
-      hits.push({
-        user: request,
-        tag: request.direction === "incoming" ? "Asked you" : "Request sent",
-      });
-    }
-    return hits.slice(0, 5);
-  }, [rawNeedle, handleNeedle, friends, requests]);
-
-  // One list either way: up to five prefix hits once the migration is applied,
-  // or the single exact match until then. Anyone already shown above is dropped
-  // rather than rendered twice.
-  const results = useMemo(() => {
-    const base = FRIEND_SEARCH_PREFIX_APPLIED ? suggestions : found ? [found] : [];
-    const shown = new Set(localMatches.map((hit) => hit.user.user_id));
-    return base.filter((student) => !shown.has(student.user_id));
-  }, [suggestions, found, localMatches]);
-
-  const act = async (id: string, work: () => Promise<unknown>, done?: string) => {
+  const removeOne = async (id: string) => {
     setBusyId(id);
     try {
-      await work();
-      if (done) toast.success(done);
+      await removeFriend(id);
+      toast.success("Removed.");
       await refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "That didn't work.");
@@ -317,20 +115,8 @@ export function FriendsPage() {
     }
   };
 
-  const play = async (challenge: ChallengeSummary) => {
-    setBusyId(challenge.id);
-    try {
-      const { sessionId, planId } = await beginChallenge(challenge.id);
-      navigate({ to: "/app/practice", search: { session: sessionId, plan: planId, mode: "exam" } });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not open that challenge.");
-      setBusyId(null);
-    }
-  };
-
   // Hands off to Battle Royale with the target already chosen, so the setup
   // screen skips straight to "which file" instead of asking who to fight again.
-  // Battle Royale itself calls createChallenge() once the match is built.
   const openBattle = (friend: Friend) => {
     if (!friend.username) {
       toast.error(`${friend.display_name} hasn't picked a handle yet, so they can't be battled.`);
@@ -346,651 +132,206 @@ export function FriendsPage() {
     });
   };
 
-  const shell = (children: React.ReactNode) => (
-    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-        <PageHeader
-          eyebrow="Friends"
-          title="Study against someone"
-          subtitle="Find a classmate by their handle, then send them a question set. You each play it whenever you like — highest score wins, fastest finish breaks a tie."
-        />
-        {children}
-      </div>
-    </div>
-  );
-
-  if (!SOCIAL_SCHEMA_APPLIED) {
-    return shell(
-      <Panel>
-        <p className="text-sm text-muted-foreground">
-          Friends and challenges aren&apos;t switched on yet. They&apos;ll appear here once
-          they&apos;re live.
-        </p>
-      </Panel>,
-    );
-  }
-
-  if (isGuest) {
-    return shell(
-      <Panel>
-        <p className="text-sm text-muted-foreground">
-          You&apos;re in a guest session. Guest sessions disappear when you sign out, so they
-          can&apos;t hold friendships — create a free account and everything you&apos;ve made comes
-          with you.
-        </p>
-      </Panel>,
-    );
-  }
-
-  return shell(
-    <>
-      {/* ── Your handle ─────────────────────────────────────────────────── */}
-      <Panel>
-        <SectionTitle icon={<AtSign className="h-4 w-4" />} title="Your handle" />
-        <p className="mt-1 text-xs text-muted-foreground">
-          This is how friends find you. It&apos;s the only thing about you that&apos;s searchable —
-          your email is never shown to anyone, and never will be.
-        </p>
-
-        {myHandle ? (
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <span className="rounded-full border border-pop/40 bg-pop/10 px-3 py-1.5 font-mono text-sm text-pop">
-              @{myHandle}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              Handles can be changed once every 30 days.
-            </span>
-          </div>
-        ) : (
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <Input
-              value={handleDraft}
-              onChange={(event) => setHandleDraft(event.target.value.toLowerCase())}
-              placeholder="pick_a_handle"
-              maxLength={20}
-              className="font-mono"
-              aria-label="Choose your handle"
-            />
-            <Button
-              onClick={() => void saveHandle()}
-              disabled={savingHandle || !USERNAME_PATTERN.test(handleDraft.trim().toLowerCase())}
-              className="shrink-0"
+  return (
+    <FriendsPageFrame
+      active="friends"
+      title={showIntro ? "Study with friends" : "Friends"}
+      subtitle={
+        showIntro ? "Add a classmate by their handle, then challenge them to a set." : undefined
+      }
+      actions={
+        <div className="flex flex-wrap items-center gap-2">
+          {incomingCount > 0 && (
+            <Link
+              to="/app/friends-add"
+              className="inline-flex items-center gap-1.5 rounded-full border border-pop/40 bg-pop/10 px-3 py-1.5 text-xs font-semibold text-pop transition-colors hover:bg-pop/15"
             >
-              {savingHandle ? <Loader2 className="h-4 w-4 animate-spin" /> : "Claim it"}
-            </Button>
-          </div>
-        )}
-        <p className="mt-2 text-xs text-muted-foreground">
-          3–20 characters: lowercase letters, numbers and underscores. First come, first served, so
-          treat it as permanent.
-        </p>
-
-        {myHandle && (
-          <div className="mt-5 border-t border-border/60 pt-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Who can find me
-            </div>
-            <div className="mt-2 max-w-xs">
-              <Segmented<Discoverability>
-                value={myVisibility}
-                onChange={(value) => void changeVisibility(value)}
-                options={VISIBILITY_OPTIONS}
-                getLabel={(option) => (option === "anyone" ? "Anyone with my handle" : "Nobody")}
-              />
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              &ldquo;Nobody&rdquo; hides you from search without giving up your handle. Friends you
-              already have are unaffected.
-            </p>
-          </div>
-        )}
-      </Panel>
-
-      {/* ── Find a student ──────────────────────────────────────────────── */}
-      <Panel>
-        <SectionTitle icon={<Search className="h-4 w-4" />} title="Find a student" />
-        <p className="mt-1 text-xs text-muted-foreground">
-          {FRIEND_SEARCH_PREFIX_APPLIED
-            ? "Type the first few letters of a handle and matches appear as you go. Real names aren’t searchable, and only students who have left themselves findable show up here."
-            : "Exact handle only. There’s no browse or partial search on purpose — it would let anyone page through the whole student list."}
-        </p>
-        <div className="relative mt-4">
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={FRIEND_SEARCH_PREFIX_APPLIED ? "start typing a handle" : "their_handle"}
-            maxLength={21}
-            className="pr-9 font-mono"
-            aria-label="Search by handle"
+              <UserPlus className="h-3.5 w-3.5" />
+              {incomingCount} request{incomingCount === 1 ? "" : "s"}
+            </Link>
+          )}
+          <HandleBlock
+            handle={myHandle}
+            visibility={myVisibility}
+            onVisibilityChange={(mode) => void changeVisibility(mode)}
+            onSaved={refreshProfile}
           />
-          {/* The spinner stands in for the Search button, which had nothing left
-              to do once the box searched by itself. */}
-          {searching && (
-            <Loader2 className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
-          )}
         </div>
-
-        {/* On-device, so it lands on the keystroke rather than after the
-            debounce. Searching for somebody already added is the most common
-            thing this box is asked to do, and it used to answer it with a round
-            trip that said "Already friends". */}
-        {localMatches.length > 0 && (
-          <div className="mt-4">
-            <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Already in your list
-            </p>
-            <div className="space-y-2">
-              {localMatches.map((hit) => (
-                <Row
-                  key={hit.user.user_id}
-                  title={hit.user.display_name}
-                  subtitle={hit.user.username ? `@${hit.user.username}` : ""}
-                  action={<span className="text-xs text-muted-foreground">{hit.tag}</span>}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {needleReady && searched && !searching && (
-          <div className="mt-4">
-            {results.length === 0 ? (
-              // Silent when the local list already answered the question -
-              // "no student found" under a row showing the student is nonsense.
-              localMatches.length > 0 ? null : (
-                <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-                  {FRIEND_SEARCH_PREFIX_APPLIED
-                    ? "No handle starts with that. Check the spelling, or ask them to make themselves findable in their settings."
-                    : "No student found with that handle. Check the spelling — handles are exact."}
-                </p>
-              )
-            ) : (
-              <div className="space-y-2">
-                {results.map((student) => (
-                  <Row
-                    key={student.user_id}
-                    title={student.display_name}
-                    subtitle={`@${student.username} · ${student.points.toLocaleString()} pts`}
-                    action={
-                      student.relationship === "self" ? (
-                        <span className="text-xs text-muted-foreground">That&apos;s you</span>
-                      ) : student.relationship === "friends" ? (
-                        <span className="text-xs text-leaf">Already friends</span>
-                      ) : student.relationship === "pending_out" ? (
-                        <span className="text-xs text-muted-foreground">Request sent</span>
-                      ) : student.relationship === "pending_in" ? (
-                        <span className="text-xs text-muted-foreground">They asked you</span>
-                      ) : (
-                        <Button
-                          size="sm"
-                          disabled={busyId === student.user_id}
-                          onClick={() =>
-                            void act(
-                              student.user_id,
-                              () => sendFriendRequest(student.username),
-                              "Request sent.",
-                            )
-                          }
-                        >
-                          <UserPlus className="mr-1.5 h-3.5 w-3.5" />
-                          Add
-                        </Button>
-                      )
-                    }
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </Panel>
-
-      {/* ── Requests ────────────────────────────────────────────────────── */}
-      {(incoming.length > 0 || outgoing.length > 0) && (
-        <Panel>
-          <SectionTitle icon={<UserPlus className="h-4 w-4" />} title="Requests" />
-          <div className="mt-3 space-y-2">
-            {incoming.map((request) => (
-              <Row
-                key={request.user_id}
-                title={request.display_name}
-                subtitle={request.username ? `@${request.username}` : "wants to be friends"}
-                action={
-                  <div className="flex gap-1.5">
-                    <Button
-                      size="sm"
-                      disabled={busyId === request.user_id}
-                      onClick={() =>
-                        void act(
-                          request.user_id,
-                          () => respondToFriendRequest(request.user_id, true),
-                          "You're friends.",
-                        )
-                      }
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                      <span className="sr-only">Accept</span>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={busyId === request.user_id}
-                      onClick={() =>
-                        void act(request.user_id, () =>
-                          respondToFriendRequest(request.user_id, false),
-                        )
-                      }
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      <span className="sr-only">Decline</span>
-                    </Button>
-                  </div>
-                }
-              />
-            ))}
-            {outgoing.map((request) => (
-              <Row
-                key={request.user_id}
-                title={request.display_name}
-                subtitle={request.username ? `@${request.username}` : ""}
-                action={
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Waiting</span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={busyId === request.user_id}
-                      onClick={() => void act(request.user_id, () => removeFriend(request.user_id))}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      <span className="sr-only">Cancel request</span>
-                    </Button>
-                  </div>
-                }
-              />
-            ))}
-          </div>
-        </Panel>
-      )}
-
-      {/* ── Record ──────────────────────────────────────────────────────── */}
-      {settledTotal > 0 && <RecordPanel overall={overall} form={form} />}
-
-      {/* ── Friends ─────────────────────────────────────────────────────── */}
-      <Panel>
-        <SectionTitle icon={<Trophy className="h-4 w-4" />} title="Your friends" />
-        <div className="mt-3 space-y-2">
-          {loading ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
-          ) : friends.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-              No friends yet. Ask a classmate for their handle and search for it above.
-            </p>
-          ) : (
-            friends.map((friend) => (
-              <FriendRow
-                key={friend.user_id}
-                friend={friend}
-                tally={tallies.get(friend.user_id) ?? null}
-                busy={busyId === friend.user_id}
-                onBattle={() => openBattle(friend)}
-                onRemove={() =>
-                  void act(friend.user_id, () => removeFriend(friend.user_id), "Removed.")
-                }
-              />
-            ))
-          )}
-        </div>
-      </Panel>
-
-      {/* ── Challenges ──────────────────────────────────────────────────── */}
-      {openChallenges.length > 0 && (
-        <Panel>
-          <SectionTitle icon={<Swords className="h-4 w-4" />} title="Open challenges" />
-          <div className="mt-3 space-y-2">
-            {openChallenges.map((challenge) => (
-              <ChallengeRow
-                key={challenge.id}
-                challenge={challenge}
-                busy={busyId === challenge.id}
-                onPlay={() => void play(challenge)}
-                onDecline={() =>
-                  void act(challenge.id, () => declineChallenge(challenge.id), "Declined.")
-                }
-                onCancel={() =>
-                  void act(challenge.id, () => cancelChallenge(challenge.id), "Withdrawn.")
-                }
-              />
-            ))}
-          </div>
-        </Panel>
-      )}
-
-      {settledChallenges.length > 0 && (
-        <Panel>
-          <SectionTitle icon={<Clock className="h-4 w-4" />} title="Results" />
-          <div className="mt-3 space-y-2">
-            {settledChallenges.map((challenge) => (
-              <ChallengeRow key={challenge.id} challenge={challenge} busy={false} />
-            ))}
-          </div>
-        </Panel>
-      )}
-    </>,
-  );
-}
-
-function Panel({ children }: { children: React.ReactNode }) {
-  return (
-    <section className="rounded-2xl border border-border bg-surface p-4 sm:p-5">{children}</section>
-  );
-}
-
-function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
-  return (
-    <h2 className="flex items-center gap-2 text-sm font-semibold tracking-[-0.01em]">
-      <span className="text-pop">{icon}</span>
-      {title}
-    </h2>
-  );
-}
-
-// One list row. The 360px case is what the wrapping and min-w-0 are for: the
-// name truncates and the action keeps its full width rather than being squeezed.
-function Row({
-  title,
-  subtitle,
-  action,
-}: {
-  title: string;
-  subtitle?: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-border bg-background/40 px-3 py-2.5">
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold tracking-[-0.01em]">{title}</div>
-        {subtitle && (
-          <div className="truncate font-mono text-xs text-muted-foreground">{subtitle}</div>
-        )}
-      </div>
-      {action && <div className="shrink-0">{action}</div>}
-    </div>
-  );
-}
-
-// Your record across every settled battle: the three counts, the split as one
-// bar, and the last five results newest first. It is a read of what the page
-// already fetched - no extra call, and nothing here is stored anywhere.
-function RecordPanel({ overall, form }: { overall: Tally; form: ChallengeOutcome[] }) {
-  const total = overall.won + overall.drawn + overall.lost;
-  // A draw counts as half a win, the usual convention. Counting it as a loss
-  // would make a drawn-heavy record read as a losing one, which it is not.
-  const winRate = Math.round(((overall.won + overall.drawn / 2) / total) * 100);
-
-  return (
-    <Panel>
-      <div className="flex items-center justify-between gap-3">
-        <SectionTitle icon={<Swords className="h-4 w-4" />} title="Your record" />
-        <span className="shrink-0 font-mono text-xs text-muted-foreground">
-          {total} battle{total === 1 ? "" : "s"}
-        </span>
-      </div>
-
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <Stat value={overall.won} label="Won" tone="border-leaf/30 bg-leaf/10 text-leaf" />
-        {/* Neutral rather than copper: --leaf and --pop resolve to the SAME hex
-            in the light theme, so a copper "drawn" tile would be a win tile. */}
-        <Stat value={overall.drawn} label="Drawn" tone="border-border bg-foreground/[0.04]" />
-        <Stat
-          value={overall.lost}
-          label="Lost"
-          tone="border-destructive/30 bg-destructive/5 text-destructive"
+      }
+    >
+      {loading ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
+      ) : friends.length === 0 ? (
+        <EmptyState
+          icon={<Users className="h-8 w-8" />}
+          text="No friends yet."
+          action={
+            <Button onClick={() => void navigate({ to: "/app/friends-add" })}>
+              <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+              Find people
+            </Button>
+          }
         />
-      </div>
+      ) : (
+        <div className="space-y-2">
+          {friends.map((friend) => (
+            <FriendRow
+              key={friend.user_id}
+              friend={friend}
+              busy={busyId === friend.user_id}
+              onBattle={() => openBattle(friend)}
+              onRemove={() => void removeOne(friend.user_id)}
+            />
+          ))}
+        </div>
+      )}
+    </FriendsPageFrame>
+  );
+}
 
-      <SplitBar tally={overall} className="mt-3" />
+// Your handle: a claim box before one exists, a plain chip with an edit
+// affordance after. No paragraph either way — the format is carried by the
+// placeholder, and a rejected handle surfaces its own reason via toast.
+function HandleBlock({
+  handle,
+  visibility,
+  onVisibilityChange,
+  onSaved,
+}: {
+  handle: string | null;
+  visibility: Discoverability;
+  onVisibilityChange: (mode: Discoverability) => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
 
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs text-muted-foreground">{winRate}% win rate</span>
-        {form.length > 0 && (
-          <span className="flex items-center gap-1">
-            <span className="mr-1 text-xs text-muted-foreground">Form</span>
-            {form.map((outcome, index) => (
-              <FormPip key={index} outcome={outcome} />
-            ))}
-          </span>
+  const showInput = !handle || editing;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const value = await claimUsername(draft);
+      await onSaved();
+      setEditing(false);
+      setDraft("");
+      toast.success(`Your handle is @${value}.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save that handle.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (showInput) {
+    return (
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
+        <Input
+          value={draft}
+          onChange={(event) => setDraft(event.target.value.toLowerCase())}
+          placeholder="pick_a_handle"
+          maxLength={20}
+          className="h-9 w-40 font-mono text-sm"
+          aria-label={handle ? "Change your handle" : "Choose your handle"}
+          autoFocus={editing}
+        />
+        <Button
+          type="submit"
+          size="sm"
+          disabled={saving || !USERNAME_PATTERN.test(draft.trim().toLowerCase())}
+          className="shrink-0"
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : handle ? "Save" : "Claim"}
+        </Button>
+        {handle && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setEditing(false);
+              setDraft("");
+            }}
+          >
+            <X className="h-3.5 w-3.5" />
+            <span className="sr-only">Cancel</span>
+          </Button>
         )}
-      </div>
-    </Panel>
-  );
-}
+      </form>
+    );
+  }
 
-function Stat({ value, label, tone }: { value: number; label: string; tone: string }) {
   return (
-    <div className={`rounded-xl border p-2 text-center ${tone}`}>
-      <div className="font-display text-2xl font-light">{value}</div>
-      <div className="text-[11px] opacity-80">{label}</div>
+    <div className="flex items-center gap-1.5">
+      <span className="rounded-full border border-pop/40 bg-pop/10 px-3 py-1.5 font-mono text-sm text-pop">
+        @{handle}
+      </span>
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="grid h-8 w-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+        aria-label="Change your handle"
+        title="Change your handle"
+      >
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => onVisibilityChange(visibility === "anyone" ? "nobody" : "anyone")}
+        className="grid h-8 w-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+        aria-label={
+          visibility === "anyone" ? "Findable by handle — hide me" : "Hidden — make me findable"
+        }
+        title={visibility === "anyone" ? "Findable by handle" : "Hidden from search"}
+      >
+        {visibility === "anyone" ? (
+          <Eye className="h-3.5 w-3.5" />
+        ) : (
+          <EyeOff className="h-3.5 w-3.5" />
+        )}
+      </button>
     </div>
   );
 }
 
-// Won / drawn / lost as one bar. Decorative — every number it draws is written
-// out beside it, so it is hidden from screen readers rather than duplicated.
-function SplitBar({ tally, className = "" }: { tally: Tally; className?: string }) {
-  const total = tally.won + tally.drawn + tally.lost;
-  if (total === 0) return null;
-  const width = (part: number) => `${(part / total) * 100}%`;
-  return (
-    <div
-      aria-hidden
-      className={`flex h-1.5 w-full overflow-hidden rounded-full bg-foreground/[0.06] ${className}`}
-    >
-      <span className="bg-leaf" style={{ width: width(tally.won) }} />
-      <span className="bg-foreground/30" style={{ width: width(tally.drawn) }} />
-      <span className="bg-destructive/70" style={{ width: width(tally.lost) }} />
-    </div>
-  );
-}
-
-function FormPip({ outcome }: { outcome: ChallengeOutcome }) {
-  const label = outcome === "won" ? "Won" : outcome === "lost" ? "Lost" : "Draw";
-  const tone =
-    outcome === "won"
-      ? "border-leaf/40 bg-leaf/15 text-leaf"
-      : outcome === "lost"
-        ? "border-destructive/40 bg-destructive/10 text-destructive"
-        : "border-border bg-foreground/[0.06] text-foreground";
-  return (
-    <span
-      title={label}
-      className={`grid h-5 w-5 place-items-center rounded-md border text-[10px] font-bold ${tone}`}
-    >
-      {label[0]}
-    </span>
-  );
-}
-
-// A friend, plus the head-to-head against them. The record only appears once
-// there is one: a friend you have never battled reads exactly as it did before.
 function FriendRow({
   friend,
-  tally,
   busy,
   onBattle,
   onRemove,
 }: {
   friend: Friend;
-  tally: Tally | null;
   busy: boolean;
   onBattle: () => void;
   onRemove: () => void;
 }) {
-  const played = tally ? tally.won + tally.drawn + tally.lost : 0;
-  const shortName = friend.username ? `@${friend.username}` : friend.display_name.split(" ")[0];
-
-  let leadText = "";
-  let leadTone = "text-pop";
-  if (tally && played > 0) {
-    if (tally.won > tally.lost) {
-      leadText = `You lead ${tally.won}–${tally.lost}`;
-      leadTone = "text-leaf";
-    } else if (tally.lost > tally.won) {
-      leadText = `${shortName} leads ${tally.lost}–${tally.won}`;
-      leadTone = "text-destructive";
-    } else if (tally.won > 0) {
-      leadText = `All square ${tally.won}–${tally.lost}`;
-    } else {
-      // Nothing but draws, where "all square 0–0" would read as never played.
-      leadText = `Level — ${tally.drawn} draw${tally.drawn === 1 ? "" : "s"}`;
-    }
-  }
-
   return (
-    <div className="rounded-xl border border-border bg-background/40 px-3 py-2.5">
-      <div className="flex items-center gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold tracking-[-0.01em]">
-            {friend.display_name}
-          </div>
-          <div className="truncate font-mono text-xs text-muted-foreground">
-            {friend.username ? `@${friend.username} · ` : ""}
-            {friend.points.toLocaleString()} pts · {friend.current_streak}d
-          </div>
-        </div>
-        <div className="flex shrink-0 gap-1.5">
-          <Button size="sm" variant="secondary" onClick={onBattle}>
-            <Swords className="mr-1.5 h-3.5 w-3.5" />
-            Challenge
-          </Button>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={onRemove}>
-            <UserMinus className="h-3.5 w-3.5" />
-            <span className="sr-only">Remove friend</span>
-          </Button>
-        </div>
-      </div>
-
-      {tally && played > 0 && (
-        <div className="mt-2.5 border-t border-border/60 pt-2">
-          <div className="flex items-center justify-between gap-2 text-xs">
-            <span className={`min-w-0 truncate font-semibold ${leadTone}`}>{leadText}</span>
-            <span className="shrink-0 font-mono text-muted-foreground">
-              {tally.won}W · {tally.drawn}D · {tally.lost}L
-            </span>
-          </div>
-          <SplitBar tally={tally} className="mt-1.5" />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ChallengeRow({
-  challenge,
-  busy,
-  onPlay,
-  onDecline,
-  onCancel,
-}: {
-  challenge: ChallengeSummary;
-  busy: boolean;
-  onPlay?: () => void;
-  onDecline?: () => void;
-  onCancel?: () => void;
-}) {
-  const opponent = challenge.opponent_username
-    ? `@${challenge.opponent_username}`
-    : challenge.opponent_name;
-
-  // The scoreline is only ever rendered from what the server chose to return.
-  // their_score is null until you have played or the challenge has settled, so
-  // there is no branch here that could show it early.
-  // Level on score and still not a draw means the clock separated the two of
-  // you, which is the one result that reads as a mistake unless it says so.
-  const decidedOnTime =
-    (challenge.outcome === "won" || challenge.outcome === "lost") &&
-    challenge.my_score != null &&
-    challenge.their_score != null &&
-    challenge.my_score === challenge.their_score;
-
-  const scoreline =
-    challenge.my_finished_at || challenge.status === "complete"
-      ? `${challenge.my_score ?? 0}–${challenge.their_score ?? "?"} of ${challenge.question_count}` +
-        (challenge.my_duration_ms != null ? ` · ${formatDuration(challenge.my_duration_ms)}` : "") +
-        (decidedOnTime ? " · level on score, decided on time" : "")
-      : `${challenge.question_count} questions`;
-
-  const outcomeTone =
-    challenge.outcome === "won"
-      ? "border-leaf/40 bg-leaf/10 text-leaf"
-      : challenge.outcome === "lost"
-        ? "border-border bg-foreground/[0.04] text-muted-foreground"
-        : // A draw. Not copper: --pop and --leaf are the same hex in the light
-          // theme, so a copper badge here would read as a win.
-          "border-border bg-foreground/[0.08] text-foreground";
-
-  // Spelled out rather than a capitalised "draw": a one-word badge next to a
-  // scoreline is read as the score's label, and a tie has to be unmistakable.
-  const verdict =
-    challenge.outcome === "won"
-      ? "You won"
-      : challenge.outcome === "lost"
-        ? "You lost"
-        : challenge.outcome === "draw"
-          ? "It's a draw"
-          : null;
-
-  return (
-    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-background/40 px-3 py-2.5">
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-background/40 px-3 py-2.5">
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold tracking-[-0.01em]">{challenge.title}</div>
-        <div className="truncate text-xs text-muted-foreground">
-          {challenge.i_am_challenger ? "You challenged" : "Challenge from"} {opponent} · {scoreline}
+        <div className="truncate text-sm font-semibold tracking-[-0.01em]">
+          {friend.display_name}
+        </div>
+        <div className="truncate font-mono text-xs text-muted-foreground">
+          {friend.username ? `@${friend.username} · ` : ""}
+          {friend.points.toLocaleString()} pts · {friend.current_streak}d
         </div>
       </div>
-
-      <div className="flex shrink-0 items-center gap-1.5">
-        {verdict && (
-          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${outcomeTone}`}>
-            {verdict}
-          </span>
-        )}
-        {challenge.status === "expired" && (
-          <span className="text-xs text-muted-foreground">Expired</span>
-        )}
-        {challenge.status === "declined" && (
-          <span className="text-xs text-muted-foreground">Declined</span>
-        )}
-
-        {(challenge.status === "pending" || challenge.status === "active") && (
-          <>
-            {challenge.my_finished_at ? (
-              <span className="text-xs text-muted-foreground">Waiting for {opponent}</span>
-            ) : (
-              <Button size="sm" disabled={busy} onClick={onPlay}>
-                {busy ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : challenge.my_started ? (
-                  "Continue"
-                ) : (
-                  "Play"
-                )}
-              </Button>
-            )}
-            {!challenge.my_started && !challenge.i_am_challenger && onDecline && (
-              <Button size="sm" variant="ghost" disabled={busy} onClick={onDecline}>
-                <X className="h-3.5 w-3.5" />
-                <span className="sr-only">Decline</span>
-              </Button>
-            )}
-            {challenge.i_am_challenger && !challenge.their_finished && onCancel && (
-              <Button size="sm" variant="ghost" disabled={busy} onClick={onCancel}>
-                <X className="h-3.5 w-3.5" />
-                <span className="sr-only">Withdraw</span>
-              </Button>
-            )}
-          </>
-        )}
+      <div className="flex shrink-0 gap-1.5">
+        <Button size="sm" variant="secondary" onClick={onBattle}>
+          <Swords className="mr-1.5 h-3.5 w-3.5" />
+          Challenge
+        </Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={onRemove}>
+          <UserMinus className="h-3.5 w-3.5" />
+          <span className="sr-only">Remove friend</span>
+        </Button>
       </div>
     </div>
   );

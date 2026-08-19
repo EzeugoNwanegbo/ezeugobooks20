@@ -22,6 +22,8 @@ import { Route as AppLibraryRouteImport } from './routes/app.library'
 import { Route as AppLeaderboardRouteImport } from './routes/app.leaderboard'
 import { Route as AppLastMinuteRouteImport } from './routes/app.last-minute'
 import { Route as AppHistoryRouteImport } from './routes/app.history'
+import { Route as AppFriendsBattlesRouteImport } from './routes/app.friends-battles'
+import { Route as AppFriendsAddRouteImport } from './routes/app.friends-add'
 import { Route as AppFriendsRouteImport } from './routes/app.friends'
 import { Route as AppFeedbackRouteImport } from './routes/app.feedback'
 import { Route as AppChatRouteImport } from './routes/app.chat'
@@ -93,6 +95,16 @@ const AppHistoryRoute = AppHistoryRouteImport.update({
   path: '/history',
   getParentRoute: () => AppRoute,
 } as any)
+const AppFriendsBattlesRoute = AppFriendsBattlesRouteImport.update({
+  id: '/friends-battles',
+  path: '/friends-battles',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFriendsAddRoute = AppFriendsAddRouteImport.update({
+  id: '/friends-add',
+  path: '/friends-add',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppFriendsRoute = AppFriendsRouteImport.update({
   id: '/friends',
   path: '/friends',
@@ -131,6 +143,8 @@ export interface FileRoutesByFullPath {
   '/app/chat': typeof AppChatRoute
   '/app/feedback': typeof AppFeedbackRoute
   '/app/friends': typeof AppFriendsRoute
+  '/app/friends-add': typeof AppFriendsAddRoute
+  '/app/friends-battles': typeof AppFriendsBattlesRoute
   '/app/history': typeof AppHistoryRoute
   '/app/last-minute': typeof AppLastMinuteRoute
   '/app/leaderboard': typeof AppLeaderboardRoute
@@ -151,6 +165,8 @@ export interface FileRoutesByTo {
   '/app/chat': typeof AppChatRoute
   '/app/feedback': typeof AppFeedbackRoute
   '/app/friends': typeof AppFriendsRoute
+  '/app/friends-add': typeof AppFriendsAddRoute
+  '/app/friends-battles': typeof AppFriendsBattlesRoute
   '/app/history': typeof AppHistoryRoute
   '/app/last-minute': typeof AppLastMinuteRoute
   '/app/leaderboard': typeof AppLeaderboardRoute
@@ -172,6 +188,8 @@ export interface FileRoutesById {
   '/app/chat': typeof AppChatRoute
   '/app/feedback': typeof AppFeedbackRoute
   '/app/friends': typeof AppFriendsRoute
+  '/app/friends-add': typeof AppFriendsAddRoute
+  '/app/friends-battles': typeof AppFriendsBattlesRoute
   '/app/history': typeof AppHistoryRoute
   '/app/last-minute': typeof AppLastMinuteRoute
   '/app/leaderboard': typeof AppLeaderboardRoute
@@ -194,6 +212,8 @@ export interface FileRouteTypes {
     | '/app/chat'
     | '/app/feedback'
     | '/app/friends'
+    | '/app/friends-add'
+    | '/app/friends-battles'
     | '/app/history'
     | '/app/last-minute'
     | '/app/leaderboard'
@@ -214,6 +234,8 @@ export interface FileRouteTypes {
     | '/app/chat'
     | '/app/feedback'
     | '/app/friends'
+    | '/app/friends-add'
+    | '/app/friends-battles'
     | '/app/history'
     | '/app/last-minute'
     | '/app/leaderboard'
@@ -234,6 +256,8 @@ export interface FileRouteTypes {
     | '/app/chat'
     | '/app/feedback'
     | '/app/friends'
+    | '/app/friends-add'
+    | '/app/friends-battles'
     | '/app/history'
     | '/app/last-minute'
     | '/app/leaderboard'
@@ -345,6 +369,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppHistoryRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/friends-battles': {
+      id: '/app/friends-battles'
+      path: '/friends-battles'
+      fullPath: '/app/friends-battles'
+      preLoaderRoute: typeof AppFriendsBattlesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/friends-add': {
+      id: '/app/friends-add'
+      path: '/friends-add'
+      fullPath: '/app/friends-add'
+      preLoaderRoute: typeof AppFriendsAddRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/friends': {
       id: '/app/friends'
       path: '/friends'
@@ -389,6 +427,8 @@ interface AppRouteChildren {
   AppChatRoute: typeof AppChatRoute
   AppFeedbackRoute: typeof AppFeedbackRoute
   AppFriendsRoute: typeof AppFriendsRoute
+  AppFriendsAddRoute: typeof AppFriendsAddRoute
+  AppFriendsBattlesRoute: typeof AppFriendsBattlesRoute
   AppHistoryRoute: typeof AppHistoryRoute
   AppLastMinuteRoute: typeof AppLastMinuteRoute
   AppLeaderboardRoute: typeof AppLeaderboardRoute
@@ -404,6 +444,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppChatRoute: AppChatRoute,
   AppFeedbackRoute: AppFeedbackRoute,
   AppFriendsRoute: AppFriendsRoute,
+  AppFriendsAddRoute: AppFriendsAddRoute,
+  AppFriendsBattlesRoute: AppFriendsBattlesRoute,
   AppHistoryRoute: AppHistoryRoute,
   AppLastMinuteRoute: AppLastMinuteRoute,
   AppLeaderboardRoute: AppLeaderboardRoute,

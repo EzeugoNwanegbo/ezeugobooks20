@@ -310,10 +310,85 @@ function questionNeedsWebCurriculumGuidance(
     return true;
   }
 
-  return !hasDocs && content.trim().split(/\s+/).length <= 6;
+  // A BARE TOPIC ("pharmacology", "cardiac cycle") is a request for direction
+  // and genuinely wants the curriculum lookup. A short QUESTION ("what is a
+  // nephron?") is a request for an answer, and a greeting is neither.
+  //
+  // This used to be a flat "six words or fewer with no documents", which caught
+  // every one of those alike - so typing "hi" fired a web search, then a full
+  // blocking research draft, then the styling stream. Three model round trips
+  // before a single character reached the student, to say hello back.
+  const trimmed = content.trim();
+  if (hasDocs || !trimmed || isSmallTalk(trimmed)) return false;
+  if (trimmed.split(/\s+/).length > 6) return false;
+  if (trimmed.endsWith("?")) return false;
+  return !/^(what|whats|what's|who|whose|when|where|why|how|which|is|are|was|were|does|do|did|can|could|should|would|will|define|explain|list|name|give|tell|compare|contrast|describe|summarise|summarize)\b/i.test(
+    trimmed,
+  );
+}
+
+/**
+ * Is this ordinary conversation rather than a study question?
+ *
+ * Greetings, thanks, acknowledgements, sign-offs, and "what are you" questions.
+ * These do not need retrieval, a research draft, or a styling pass - they need
+ * one short answer, quickly. Deliberately conservative: anything that is not
+ * clearly small talk falls through to the full pipeline, because answering a
+ * real question with the fast path would be the worse mistake.
+ */
+function isSmallTalk(content: string): boolean {
+  const t = content
+    .trim()
+    .toLowerCase()
+    .replace(/[!.,\u2019']/g, "");
+  if (!t || t.split(/\s+/).length > 6) return false;
+  // A greeting may carry an address after it - "hello there", "hi gd". Without
+  // the optional tail, "hello there" missed here AND then failed the bare-topic
+  // test below it, so a two-word hello went out to a web search.
+  const greeting =
+    /^(hi|hey+|hello+|yo|sup|hiya|howdy|greetings|good\s+(morning|afternoon|evening|day)|gm|gn)(\s+(there|gd|g\s*&\s*d|guys|team|again|mate|man))?$/;
+  const chatter =
+    /^(how\s+are\s+you( doing)?|how\s+far|hows\s+it\s+going|whats\s+up|wassup|thank\s*(you|s)|thanks?|thx|ty|much\s+appreciated|ok(ay)?|kk|cool|nice|great|awesome|perfect|lovely|got\s+it|understood|alright|lol|haha+|bye|goodbye|see\s+you|later|good\s*night|who\s+are\s+you|what\s+are\s+you|what\s+can\s+you\s+do|what\s+do\s+you\s+do|who\s+made\s+you|test|testing)$/;
+  return greeting.test(t) || chatter.test(t);
 }
 
 // ─── Prompt builders ──────────────────────────────────────────────────────────
+
+/**
+ * G&D used to hard-branch this into a medicine block and a law block, chosen by
+ * a discipline picker in onboarding. That picker is gone - the product is free
+ * for all fields now, and a fixed two-way switch could only ever serve two of
+ * them. What replaced it is not a weaker generic block; it is the same demand
+ * for real disciplinary reasoning, with the choice of framework handed to the
+ * model and driven by the student's own free-text course.
+ *
+ * The exemplars below are deliberately concrete. A vague instruction to "use
+ * the conventions of their field" produces a generic explainer wearing the
+ * subject's vocabulary; naming what the framework actually looks like in
+ * several fields shows the model the standard being asked for, and it
+ * generalises from there. A medicine student still gets pathophysiology and
+ * differentials, a law student still gets IRAC - and an engineering or
+ * economics student now gets theirs too.
+ *
+ * `discipline` still exists on the row and is deliberately ignored here.
+ */
+function fieldFramework(p: Profile): string {
+  const course = (p.course ?? "").trim();
+  const track = (p.study_track ?? "").trim();
+  const field = course || "their field";
+  const trackNote = track ? ` They are on the "${track}" track - pitch depth accordingly.` : "";
+
+  return `
+HOW TO REASON IN THEIR FIELD (${field}):${trackNote}
+- Answer the way a strong tutor in ${field} would, using that field's own reasoning framework, structure, and vocabulary - not a general-purpose explanation with the subject's words sprinkled on top.
+- Pick the framework the field actually uses, and follow it. For example: medicine and health -> definition, aetiology, pathophysiology, clinical features, investigations, management (first-line vs definitive), complications, plus a differential and the single feature that best separates the candidates; law -> IRAC/CREAC with the governing statute (name + section) and leading authority named, ratio distinguished from obiter, and the jurisdiction stated when it matters; engineering and the physical sciences -> governing principle, assumptions, derivation, worked numbers, units, sanity check; economics and business -> model, assumptions, mechanism, evidence, limitations; humanities -> thesis, evidence, strongest counter-argument, conclusion. If their field is not in that list, use its equivalent - every field has one.
+- Use the field's correct technical terminology, and gloss each term in plain English the first time it appears.
+- Lead with the high-yield, exam-relevant core. Flag the classic presentations or leading cases, the key discriminators, and the mistakes examiners see most often.
+- Add a short applied note ("in practice:", "clinical correlation:", "worked example:") when an abstract fact maps onto something concrete in their field.
+- Offer the mnemonics and memory hooks students in that field actually use, where a genuinely useful one exists. Never invent a forced one.
+- Tailor exam framing to their format: MCQ -> single-best-answer discriminators and buzzwords; OSCE or practical -> stepwise stations and what the examiner is scoring; viva/SAQ -> concise, well-structured spoken or short answers; essay -> a clear thesis argued from authority; problem question -> the framework applied to the given facts step by step; calculation -> full working, units, and a check.
+- This is exam and education support, not professional advice on a real case. If they ask you to manage a real patient, client, dispute, or safety-critical design, add one line pointing them to local guidelines and qualified supervision, then carry on teaching.`;
+}
 
 /**
  * THE single source of truth for "who this student is". Every prompt builder
@@ -325,45 +400,6 @@ function questionNeedsWebCurriculumGuidance(
  * every answer. Until the memory store is wired up this is simply empty, and
  * the block degrades gracefully to the saved profile.
  */
-/**
- * G&D is specialised for medical and law students. The discipline switches the
- * AI from a generic explainer into a subject tutor that reasons with the right
- * framework (clinical reasoning vs legal IRAC), uses the right vocabulary, and
- * frames revision for the right kind of exam. Legacy users with no discipline
- * set degrade gracefully to the generic block (empty string here).
- */
-function disciplineFramework(p: Profile): string {
-  const track = (p.study_track ?? "").trim();
-  const trackNote = track ? ` They are on the "${track}" track - pitch depth accordingly.` : "";
-
-  if (p.discipline === "medicine") {
-    return `
-DISCIPLINE - MEDICINE (reason like a clinician teaching a medical student):${trackNote}
-- For a disease/condition, structure the explanation as: definition -> aetiology/risk factors -> pathophysiology (mechanism) -> clinical features -> investigations -> management (first-line vs definitive) -> complications. Skip parts that do not apply.
-- Lead with the high-yield, exam-relevant core. Flag classic/textbook presentations, key discriminators, and common exam pitfalls.
-- Use correct medical terminology, but gloss each term in plain English the first time it appears.
-- Where it fits, give a differential-diagnosis framing: what else could this be, and the single feature that best tells them apart.
-- Add a short "Clinical correlation:" note when a basic-science fact maps onto a real patient scenario.
-- Offer the high-yield mnemonics and memory hooks students actually use, when a genuinely useful one exists.
-- Tailor exam framing to their format: MCQ -> single-best-answer discriminators and buzzwords; OSCE -> stepwise stations and what the examiner is scoring; Viva/SAQ -> concise, well-structured spoken/short answers.
-- This is exam and education support, not clinical advice for a real patient. If asked to manage a real patient, add one line reminding them to follow local guidelines and senior/clinical supervision, then continue teaching.`;
-  }
-
-  if (p.discipline === "law") {
-    return `
-DISCIPLINE - LAW (reason like a law tutor):${trackNote}
-- Analyse with IRAC/CREAC: Issue -> Rule -> Application -> Conclusion. For a problem question, apply the law to the given facts step by step; for an essay, argue a clear thesis supported by authority.
-- State the governing rule with its source: statute (name + section) and leading case authority. Distinguish ratio decidendi from obiter dicta.
-- Be jurisdiction-aware. If the jurisdiction matters and is not given, state which legal system you are assuming.
-- For a case brief use: Facts / Issue / Holding / Ratio / Significance.
-- Compare and distinguish authorities, and flag where the law is unsettled or subject to judicial/academic debate.
-- Tailor exam framing to their format: problem question -> IRAC applied to the facts; essay -> structured argument with authorities; case note -> critical analysis of the judgment.
-- This is educational support to build legal reasoning, not legal advice for a real dispute.`;
-  }
-
-  return "";
-}
-
 function buildStudentIdentity(
   p: Profile,
   opts: { usingWebCurriculum?: boolean; memories?: string[] } = {},
@@ -381,21 +417,16 @@ function buildStudentIdentity(
     ? `\nTHE STUDENT'S OWN BACKGROUND (they brought this from another study AI - treat as an accurate description of them):\n${background}`
     : "";
 
-  const disciplineLabel = p.discipline
-    ? `${p.discipline === "medicine" ? "Medicine" : "Law"}${p.study_track ? ` (${p.study_track})` : ""}`
-    : p.course || "Unknown";
-
   return `WHO THIS STUDENT IS:
 - Name: ${p.name || "Student"}
 - School: ${p.university || "Unknown"}
 - Level: ${p.year || "Unknown"}
-- Discipline: ${disciplineLabel}
 - Course / field of study: ${p.course || "Unknown"}
 - Assessment format: ${p.exam_format || "MCQ"}
 - ${curriculumRule(p, Boolean(opts.usingWebCurriculum))}
 - Weak areas: ${(p.weak_areas || []).join(", ") || "none recorded"}
 - Recent topics: ${(p.recent_topics || []).slice(0, 8).join(", ") || "none yet"}${backgroundBlock}${memoryBlock}
-${disciplineFramework(p)}
+${fieldFramework(p)}
 PERSONALIZE FOR THEM:
 - Pitch the depth, vocabulary, and pace to their level and course.
 - Prefer examples, analogies, and framing that fit their field of study and anything we remember they connect with.
@@ -585,11 +616,48 @@ OUTPUT RULES:
 - Write as if you are talking directly to ${p.name || "the student"} - warm and clear, but the notes themselves stay structural. No filler, no "in conclusion" waffle.`;
 }
 
+/**
+ * The small-talk voice. No research draft, no citations, no mode styling.
+ *
+ * Deliberately NOT built on buildStudentIdentity(): that block carries the full
+ * field-reasoning framework, and handing it to a model that was asked "hi"
+ * produces a lecture. A greeting gets a person, not a syllabus.
+ *
+ * This prompt also owns the one place G&D explains itself, under the owner's
+ * rule: say what G&D is for AFTER answering, never as a greeting of its own,
+ * and never twice in the same conversation.
+ */
+function buildConversationalSystemPrompt(p: Profile): string {
+  const who = [
+    p.name ? `They are called ${p.name}.` : "",
+    p.course ? `They study ${p.course}.` : "",
+    p.university ? `They are at ${p.university}.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return `You are G&D, a study companion for students. ${who}
+
+HOW TO REPLY HERE:
+- This is ordinary conversation, not a study question. Be calm, warm and brief - one or two short sentences is almost always right.
+- Answer what they actually said. Do not turn a greeting into a lecture, do not open with a heading, a bulleted list, a diagram or a wall of text, and never ask them to upload anything before you will talk to them.
+- Sound like a person who is glad they turned up, not like a product tour.
+- If they ask what you are or what you can do, say it plainly and in your own words: you are G&D, built to read a student's own material - lecture notes, past papers, whole textbooks - and answer from it with the page it came from, a search engine for their own books. Add that you also answer ordinary questions with no file at all.
+- CLOSING NOTE - at most ONCE in a conversation, and only when it genuinely fits: after your reply, you may add one short friendly line that G&D is at its best with their own material to search. Never say it twice. Never say it if any earlier reply in this conversation already did. Never let it become the whole reply, and never repeat it to someone who has already uploaded something.
+- Never mention, name or hint at any underlying model, provider or internal step. If asked what powers you, you are G&D.
+- Never output asterisk characters.`;
+}
+
 function buildGPTRewriterSystemPrompt(
   p: Profile,
   mode: Mode,
   interlink: boolean,
   usingWebCurriculum: boolean,
+  // Whether any of the student's own files are in play for THIS answer. Without
+  // it the prompt talked about documents and citations either way, which is how
+  // a plain question with nothing uploaded ended up being answered as though a
+  // file had failed to produce the answer.
+  hasDocs: boolean,
 ): string {
   const interlinkBlock = interlink
     ? `
@@ -631,7 +699,15 @@ RULES:
 - Mermaid label syntax is strict: if a node label contains anything other than letters, numbers, and spaces - parentheses, brackets, colons, slashes, commas, quotes - wrap the whole label in double quotes, e.g. A["Adrenaline (1:1000 IM)"] not A[Adrenaline (1:1000 IM)]. An unquoted label with punctuation is a syntax error and the diagram will not render.
 - Never output asterisk characters. Do not use asterisks for emphasis, bullets, multiplication, footnotes, or decoration. Use plain labels, hyphen bullets, and the x symbol for multiplication.
 - For maths, write equations clearly using plain text or fenced code/math blocks, define every variable, then explain the steps in order.
-- If the research summary says it is uncertain about something, reflect that uncertainty honestly.`;
+- If the research summary says it is uncertain about something, reflect that uncertainty honestly.
+- CONVERSE. Answer the question they actually asked, in a calm and friendly voice, with the teaching underneath it rather than on top of it. React to what they said before diving in. A reference manual is not the target.${
+    hasDocs
+      ? ""
+      : `
+NO FILES ARE IN PLAY FOR THIS ANSWER:
+- The student attached none of their own material, so answer directly and well from what you know. Do NOT say the answer could not be found in their files, do NOT ask them to upload something before helping, and do NOT produce a "Source:" line - there is no document to cite.
+- At most ONCE in a conversation, and only after the answer is complete, you may close with one short friendly line noting that G&D is built to read their own textbooks, notes and past papers and answer with the page. Skip it entirely if an earlier reply already said it, or if the moment does not suit it. It is a footnote, never the point.`
+  }`;
 }
 
 function buildGPTVisualScriptSystemPrompt(p: Profile): string {
@@ -1468,6 +1544,39 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ── Small talk: one call, straight to the student ──────────────────────
+    //
+    // Everything below this point is the study pipeline: retrieval, a research
+    // engine, then a styling pass. A greeting needs none of it, and paying for
+    // all of it is what made the app feel slow on the most ordinary message
+    // there is. Visuals is excluded because its whole output IS the pipeline.
+    if (
+      !candidateHasDocs &&
+      !body.forceWebSearch &&
+      body.mode !== "Visuals" &&
+      isSmallTalk(lastUserMessage?.content ?? "")
+    ) {
+      const fastResp = await callGPTStream(
+        OPENAI_API_KEY,
+        OPENAI_MODEL_FAST,
+        buildConversationalSystemPrompt(body.profile),
+        body.messages,
+      );
+      if (fastResp.ok) {
+        return new Response(streamWithSources(fastResp.body, []), {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "text/event-stream",
+            "X-Medai-Model": "gpt-conversational",
+            "X-Medai-Source": "general",
+          },
+        });
+      }
+      // Fall through to the full pipeline rather than failing: a student who
+      // said hello should never see an error screen for it.
+      console.error("conversational fast path failed:", fastResp.status);
+    }
+
     if (body.mode === "Visuals") {
       return visualStreamResponse(async () => {
         let researchText = "";
@@ -1642,6 +1751,7 @@ ${buildDeepSeekNotesSystemPrompt(body.profile, body.mode, interlink, useWebCurri
           body.mode,
           interlink,
           useWebCurriculum,
+          true,
         ),
         messages: [
           ...priorMessages,
@@ -1716,6 +1826,7 @@ Prepare the factual draft for a final teaching answer.`,
           body.mode,
           false,
           useWebCurriculum,
+          false,
         ),
         messages: [
           ...priorMessages,

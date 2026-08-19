@@ -1,6 +1,6 @@
 // ── THE MY COACH ENTRY POINT ────────────────────────────────────────────────
 //
-// This is the whole hook the "challenge a friend" entry inside My Coach needs.
+// This is the whole hook the "challenge a friend" entry inside PQ needs.
 // Wiring it up is one import and one line, in src/routes/-app.studybody-page.tsx
 // (deliberately not edited here — another change is in flight in that file):
 //
@@ -25,7 +25,7 @@
 //
 // It renders NOTHING when the social schema is not applied, when the user is a
 // guest, or when they have no friends yet — so it is safe to place
-// unconditionally, and My Coach needs no flag check of its own.
+// unconditionally, and PQ needs no flag check of its own.
 import { useEffect, useState } from "react";
 import { Swords } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -67,7 +67,7 @@ export function ChallengeFriendButton({
         if (active) setFriends(rows);
       })
       .catch(() => {
-        // A friends list that will not load is not a reason to break My Coach.
+        // A friends list that will not load is not a reason to break PQ.
         if (active) setFriends([]);
       });
     return () => {

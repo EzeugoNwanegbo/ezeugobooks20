@@ -2,7 +2,7 @@
 //
 // Mirrors gandd-mobile/lib/battle-royale-client.ts: the host configures a
 // fresh match (file or roadmap, scope, question count, time limit), this
-// module turns that into the shape My Coach already writes
+// module turns that into the shape PQ already writes
 // (study_plans -> study_topics -> study_sessions -> study_questions) via
 // createStraightInSession (src/lib/studybody-data.ts — the website HAS this
 // helper, mobile did not, which is why mobile wrote its own buildQuestionSet
@@ -30,7 +30,7 @@ export type BattleScope = "whole" | "topic";
 
 // ── Roadmap picking ──────────────────────────────────────────────────────────
 //
-// Same tables and shape as My Coach's own plan/topic reads (see
+// Same tables and shape as PQ's own plan/topic reads (see
 // -app.practice-page.tsx's ConfigView) — a roadmap battle sends one round per
 // EXISTING roadmap topic, it never builds a new roadmap. Not gated on
 // BATTLE_SCHEMA_APPLIED: study_plans/study_topics predate this migration
@@ -40,7 +40,9 @@ export type BattleScope = "whole" | "topic";
 export async function loadBattlePlans(userId: string): Promise<PlanRow[]> {
   const { data, error } = await db
     .from("study_plans")
-    .select("id, title, course_outline, source_type, source_document_ids, status, created_at, updated_at")
+    .select(
+      "id, title, course_outline, source_type, source_document_ids, status, created_at, updated_at",
+    )
     .eq("user_id", userId)
     .eq("status", "active")
     .order("updated_at", { ascending: false });
@@ -51,7 +53,9 @@ export async function loadBattlePlans(userId: string): Promise<PlanRow[]> {
 export async function loadPlanTopics(userId: string, planId: string): Promise<TopicRow[]> {
   const { data, error } = await db
     .from("study_topics")
-    .select("id, plan_id, title, summary, objectives, source_refs, position, status, mastery_score, last_practiced_at")
+    .select(
+      "id, plan_id, title, summary, objectives, source_refs, position, status, mastery_score, last_practiced_at",
+    )
     .eq("user_id", userId)
     .eq("plan_id", planId)
     .order("position", { ascending: true });
@@ -59,7 +63,12 @@ export async function loadPlanTopics(userId: string, planId: string): Promise<To
   return (data as TopicRow[]) ?? [];
 }
 
-export function buildBattleTitle(doc: DocRow, scope: BattleScope, focus: string, minutes: number): string {
+export function buildBattleTitle(
+  doc: DocRow,
+  scope: BattleScope,
+  focus: string,
+  minutes: number,
+): string {
   const base = scope === "topic" && focus ? `${doc.file_name} — ${focus}` : doc.file_name;
   // challenge_create() truncates whatever it reads from here to 80 chars, so a
   // long file name + focus is never a hard failure — just a title that loses
@@ -130,7 +139,9 @@ async function fetchSessionAndQuestions(
 ): Promise<{ session: SessionRow; questions: QuestionRow[] }> {
   const { data: sessionData, error: sessionErr } = await db
     .from("study_sessions")
-    .select("id, plan_id, topic_id, question_type, score, requested_count, total_questions, status, feedback")
+    .select(
+      "id, plan_id, topic_id, question_type, score, requested_count, total_questions, status, feedback",
+    )
     .eq("id", sessionId)
     .single();
   if (sessionErr) throw new Error(sessionErr.message);
@@ -169,7 +180,12 @@ export async function createSingleBattle({
   timeLimitMinutes: number;
   opponentUsername: string;
   onProgress?: OnBattleProgress;
-}): Promise<{ session: SessionRow; questions: QuestionRow[]; challengeId: string; sessionId: string }> {
+}): Promise<{
+  session: SessionRow;
+  questions: QuestionRow[];
+  challengeId: string;
+  sessionId: string;
+}> {
   const focus = topicFocus.trim();
   const topicScoped = scope === "topic" && Boolean(focus);
   const title = buildBattleTitle(doc, scope, focus, timeLimitMinutes);

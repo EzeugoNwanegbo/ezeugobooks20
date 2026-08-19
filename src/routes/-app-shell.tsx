@@ -1,14 +1,16 @@
 import { Link, Outlet, useLocation, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   BookOpen,
-  BrainCircuit,
   ChevronLeft,
+  ChevronUp,
   Clock,
   Heart,
+  ListChecks,
   LogOut,
   Map,
   Menu,
   MessageSquare,
+  MoreHorizontal,
   Plus,
   Settings,
   ShieldCheck,
@@ -46,11 +48,11 @@ import { ThemePicker, ThemeToggle } from "@/components/theme-toggle";
 import { AppShellSkeleton } from "@/components/app-skeletons";
 import { FeatureTour } from "@/components/feature-tour";
 import { hasSeenTour } from "@/lib/feature-tour";
+import { primeSeenOnce } from "@/lib/seen-once";
 import { RankUpCelebration } from "@/components/rank-up-celebration";
-import { StreakOpening } from "@/components/streak-opening";
 import { RankBadge, RankProgressBar } from "@/components/rank-badge";
 import { rankProgress, type AcademicRank } from "@/lib/ranks";
-import { takeRankCelebration, takeStreakOpening } from "@/lib/progression-moments";
+import { takeRankCelebration } from "@/lib/progression-moments";
 import { useAuth } from "@/lib/auth-context";
 import { isGuestUser } from "@/lib/guest-session";
 import { socialEnabled } from "@/lib/social";
@@ -58,9 +60,7 @@ import { rememberRoute } from "@/lib/last-route";
 import {
   emptyGamificationStats,
   loadGamificationStats,
-  pointsAvailableToday,
   recordGamificationEvent,
-  weekendMissionFor,
   type GamificationStats,
 } from "@/lib/gamification";
 import { getCached, setCached } from "@/lib/data-cache";
@@ -125,12 +125,15 @@ function AppLayout() {
   // already been filled in (the in-chat card disappears once it is set).
   const [personalizeOpen, setPersonalizeOpen] = useState(false);
   const [gamification, setGamification] = useState<GamificationStats>(emptyGamificationStats);
-  // The two progression moments. Both are centred cards, and both decide
-  // whether they may run at all in src/lib/progression-moments.ts.
+  // The one progression moment the shell still owns. A rank-up is rare and
+  // worth interrupting for; it decides whether it may run at all in
+  // src/lib/progression-moments.ts. The old centred streak card that opened on
+  // top of the app is gone - the streak now reads as an inline moment on the
+  // chat page, which does not stand between a student and what they came for.
   const [rankUp, setRankUp] = useState<AcademicRank | null>(null);
-  const [streakOpeningOpen, setStreakOpeningOpen] = useState(false);
-  // The opening streak card is offered once per mount, not once per navigation.
-  const streakOfferedRef = useRef(false);
+  // The tail of the sidebar nav - the things a student touches once a term -
+  // stays folded away until asked for. See the nav block below.
+  const [navMoreOpen, setNavMoreOpen] = useState(false);
 
   useEffect(() => {
     const handleChatScroll = (e: Event) => {
@@ -149,29 +152,29 @@ function AppLayout() {
   }, [location.pathname]);
 
   // First run: once the profile is in (so onboarding is behind them and the
-  // shell has actually rendered its nav), offer the guided tour. Seen-state
-  // lives in localStorage, so it never fires twice on a device.
+  // shell has actually rendered its nav), offer the guided tour - once per
+  // account, for good. The flag is banked by FeatureTour the moment it opens
+  // rather than when it is finished, so abandoning it half-way (reload, tab
+  // closed, sign-out) still counts; see src/lib/feature-tour.ts. The Guide
+  // button in the footer is the only way back in.
   useEffect(() => {
-    if (loading || !profile || hasSeenTour()) return;
-    const timer = window.setTimeout(() => setTourOpen(true), 900);
-    return () => window.clearTimeout(timer);
-  }, [loading, profile]);
-
-  // Theme the whole app to the student's discipline (medicine/law) via a
-  // root attribute, parallel to the .dark/.light theme classes. Guests and
-  // pre-discipline profiles get no attribute -> the neutral default theme.
-  useEffect(() => {
-    const root = document.documentElement;
-    const discipline = profile?.discipline;
-    if (discipline === "medicine" || discipline === "law") {
-      root.dataset.discipline = discipline;
-    } else {
-      delete root.dataset.discipline;
-    }
+    if (loading || !profile || hasSeenTour(user?.id)) return;
+    let active = true;
+    let timer = 0;
+    // Ask the ACCOUNT before offering it. hasSeenTour() above reads only this
+    // browser's cache, which is empty on a new device or after a cleared cache
+    // even for a student who was toured months ago. primeSeenOnce() fills that
+    // cache from user_profiles.seen_intros, so the check below is the one that
+    // decides. It resolves inside the 900ms beat this already waited.
+    void primeSeenOnce(user?.id).then(() => {
+      if (!active || hasSeenTour(user?.id)) return;
+      timer = window.setTimeout(() => setTourOpen(true), 900);
+    });
     return () => {
-      delete root.dataset.discipline;
+      active = false;
+      window.clearTimeout(timer);
     };
-  }, [profile?.discipline]);
+  }, [loading, profile, user?.id]);
 
   // Touch-gesture trackers (declared up here so the Hook order is stable across
   // the early returns below).
@@ -212,24 +215,6 @@ function AppLayout() {
     const earned = takeRankCelebration(gamification.points);
     if (earned) setRankUp(earned);
   }, [user, gamification.points]);
-
-  // The opening streak card. Gated hard, because it sits between a student and
-  // the thing they opened the app to do:
-  //   - never during the first-run tour (one at a time)
-  //   - never for a brand-new student who has not seen the tour yet
-  //   - never on a 0-day streak, and at most once per device per day, both
-  //     enforced by takeStreakOpening()
-  useEffect(() => {
-    if (loading || !user || !profile || streakOfferedRef.current) return;
-    if (tourOpen || !hasSeenTour()) return;
-    if (gamification.currentStreak < 1) return;
-    streakOfferedRef.current = true;
-    if (!takeStreakOpening(gamification.currentStreak)) return;
-    // Behind the shell's own paint, so it arrives beside the app rather than
-    // in front of it. Nothing waits on this.
-    const timer = window.setTimeout(() => setStreakOpeningOpen(true), 700);
-    return () => window.clearTimeout(timer);
-  }, [loading, user, profile, tourOpen, gamification.currentStreak]);
 
   // The one conversation query in the app. It feeds the desktop sidebar's
   // grouped history and the mobile drawer's; the chat page no longer keeps a
@@ -276,8 +261,9 @@ function AppLayout() {
     rememberRoute(location.pathname);
   }, [location.pathname]);
 
-  // My Coach and Practice are content-heavy - collapse the sidebar on entry so
-  // they get the full width. The user can still expand it with the logo.
+  // Practice Questions (PQ) and Practice are content-heavy - collapse the
+  // sidebar on entry so they get the full width. The user can still expand it
+  // with the logo.
   // Deliberately *not* persisted: this is the app's doing, not the student's
   // choice, so it must not overwrite the remembered preference below.
   useEffect(() => {
@@ -397,6 +383,8 @@ function AppLayout() {
       | "/app/friends"
       | "/app/battle-royale"
       | "/app/feedback"
+      | "/app/leaderboard"
+      | "/app/admin"
       | "/app/settings",
   ) => {
     setMobileMenuOpen(false);
@@ -486,18 +474,22 @@ function AppLayout() {
   };
 
   // Same row as navItem, but for entries that open something in place instead
-  // of routing (currently just Personalize). `dot` is the quiet unset marker -
-  // no badge, no count, just a small accent pip.
+  // of routing (Personalize, and the More fold at the foot of the nav). `dot`
+  // is the quiet unset marker - no badge, no count, just a small accent pip.
+  // `expanded` is only passed by a row that discloses others, so screen readers
+  // hear the fold open and shut.
   const navAction = (
     icon: ReactNode,
     label: string,
     onPick: () => void,
     accent: "blue" | "violet" | "coral" | "amber" | "slate" = "slate",
     dot = false,
+    expanded?: boolean,
   ) => (
     <button
       type="button"
       onClick={onPick}
+      aria-expanded={expanded}
       className={`gd-side-nav-item gd-side-nav-${accent} group/nav relative flex w-full items-center overflow-hidden rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors duration-200 hover:bg-foreground/[0.045] hover:text-foreground ${
         isSidebarCollapsed ? "justify-center gap-0" : "gap-3"
       }`}
@@ -672,8 +664,14 @@ function AppLayout() {
             always reachable no matter how short the viewport or how tall the
             skin makes the rows. */}
         <div className="gd-no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain">
-          <nav className="shrink-0 space-y-6 px-3 py-2">
-            {!isSidebarCollapsed && <p className="gd-nav-label px-3">Study space</p>}
+          {/* The map of the app, in one falling order rather than two labelled
+              groups. The labels ("Study space" / "Your work") were doing no
+              work a student could use - every row already says what it is - and
+              they split the six places people actually go across two headings.
+              Order now carries the meaning: the daily six first, then the two
+              you reach for occasionally, then a fold for the once-a-term rows.
+              Nine rows at rest instead of eleven plus two headings. */}
+          <nav className="shrink-0 space-y-4 px-3 py-2">
             <div className="space-y-1">
               {navItem("/app/chat", <MessageSquare className="h-4 w-4 shrink-0" />, "Chat", "blue")}
               {navItem(
@@ -683,13 +681,48 @@ function AppLayout() {
                 "blue",
                 "nav-library",
               )}
+              {/* "PQ" in the rail, "Practice Questions" as the page's own
+                  heading - the short form is what students call it and it fits
+                  the collapsed rail; the icon is a checklist because that is
+                  what sitting questions looks like. */}
               {navItem(
                 "/app/studybody",
-                <BrainCircuit className="h-4 w-4 shrink-0" />,
-                "My Coach",
+                <ListChecks className="h-4 w-4 shrink-0" />,
+                "PQ",
                 "violet",
-                "nav-studybody",
+                "nav-pq",
               )}
+              {navItem(
+                "/app/leaderboard",
+                <Trophy className="h-4 w-4 shrink-0" />,
+                "Leaderboard",
+                "amber",
+                "nav-leaderboard",
+              )}
+              {/* Hidden entirely until the social migration is applied, and
+                  hidden from guests always — see socialEnabled(). The route
+                  still exists; this only decides whether it is advertised. */}
+              {socialEnabled(user) &&
+                navItem(
+                  "/app/friends",
+                  <Users className="h-4 w-4 shrink-0" />,
+                  "Friends",
+                  "coral",
+                  "nav-friends",
+                )}
+              {/* Same gate as Friends — a battle needs an opponent, which needs
+                  the same schema. It sits directly under Friends because the
+                  opponent comes from there. */}
+              {socialEnabled(user) &&
+                navItem(
+                  "/app/battle-royale",
+                  <Swords className="h-4 w-4 shrink-0" />,
+                  "Battle Royale",
+                  "coral",
+                  "nav-battle-royale",
+                )}
+            </div>
+            <div className="space-y-1 border-t border-border/60 pt-4">
               {navItem(
                 "/app/last-minute",
                 <TimerReset className="h-4 w-4 shrink-0" />,
@@ -697,9 +730,6 @@ function AppLayout() {
                 "coral",
                 "nav-last-minute",
               )}
-            </div>
-            <div className="space-y-1 border-t border-border/60 pt-5">
-              {!isSidebarCollapsed && <p className="gd-nav-label px-3">Your work</p>}
               {navItem(
                 "/app/history",
                 <Clock className="h-4 w-4 shrink-0" />,
@@ -707,46 +737,45 @@ function AppLayout() {
                 "slate",
                 "nav-history",
               )}
-              {navItem(
-                "/app/leaderboard",
-                <Trophy className="h-4 w-4 shrink-0" />,
-                "Leaderboard",
-                "amber",
-              )}
-              {/* Hidden entirely until the social migration is applied, and
-                  hidden from guests always — see socialEnabled(). The route
-                  still exists; this only decides whether it is advertised. */}
-              {socialEnabled(user) &&
-                navItem("/app/friends", <Users className="h-4 w-4 shrink-0" />, "Friends", "coral")}
-              {/* Same gate as Friends — a battle needs an opponent, which needs
-                  the same schema. Last Minute keeps its own slot below
-                  unchanged; unlike mobile (four tabs only), the sidebar has
-                  room to add this rather than replace anything. */}
-              {socialEnabled(user) &&
-                navItem(
-                  "/app/battle-royale",
-                  <Swords className="h-4 w-4 shrink-0" />,
-                  "Battle Royale",
-                  "coral",
-                )}
+              {/* Personalize, Feedback and Admin are set-once or once-a-term
+                  rows. Folded away, they stop competing with the six above;
+                  the unset-personalization pip rides up onto More while it is
+                  closed so the nudge is not hidden with them. */}
               {navAction(
-                <Sparkles className="h-4 w-4 shrink-0" />,
-                "Personalize",
-                () => setPersonalizeOpen(true),
-                "violet",
-                !profile?.personalization_background,
+                navMoreOpen ? (
+                  <ChevronUp className="h-4 w-4 shrink-0" />
+                ) : (
+                  <MoreHorizontal className="h-4 w-4 shrink-0" />
+                ),
+                "More",
+                () => setNavMoreOpen((open) => !open),
+                "slate",
+                !navMoreOpen && !profile?.personalization_background,
+                navMoreOpen,
               )}
-              {navItem("/app/feedback", <Heart className="h-4 w-4 shrink-0" />, "Feedback")}
-              {/* Settings is not in this list any more - it lives with the account,
-                as the gear in the footer user row (and at the foot of the
-                collapsed rail). Same /app/settings route, one entry point. */}
-              {profile?.is_admin &&
-                navItem(
-                  "/app/admin",
-                  <ShieldCheck className="h-4 w-4 shrink-0" />,
-                  "Admin",
-                  "amber",
-                )}
+              {navMoreOpen && (
+                <>
+                  {navAction(
+                    <Sparkles className="h-4 w-4 shrink-0" />,
+                    "Personalize",
+                    () => setPersonalizeOpen(true),
+                    "violet",
+                    !profile?.personalization_background,
+                  )}
+                  {navItem("/app/feedback", <Heart className="h-4 w-4 shrink-0" />, "Feedback")}
+                  {/* Settings is not in this list at all - it lives with the
+                    account, as the gear in the footer user row (and at the foot
+                    of the collapsed rail). Same /app/settings route, one entry
+                    point. */}
+                  {profile?.is_admin &&
+                    navItem(
+                      "/app/admin",
+                      <ShieldCheck className="h-4 w-4 shrink-0" />,
+                      "Admin",
+                      "amber",
+                    )}
+                </>
+              )}
             </div>
           </nav>
 
@@ -1008,6 +1037,10 @@ function AppLayout() {
               New chat
             </button>
 
+            {/* The drawer is the whole map below md, so it reads in exactly the
+                sidebar's order and folds the same tail away. Kept in step
+                deliberately: a student who learns the app on a laptop should
+                not have to relearn it on a phone. */}
             <nav className="mt-3 grid gap-0.5">
               <MobileDrawerNavItem
                 active={location.pathname.includes("chat")}
@@ -1023,47 +1056,32 @@ function AppLayout() {
                 tourAnchor="nav-library"
               />
               <MobileDrawerNavItem
-                active={location.pathname.includes("last-minute")}
-                icon={<TimerReset className="h-4 w-4" />}
-                label="Last Minute"
-                onPick={() => goToMobileRoute("/app/last-minute")}
-                tourAnchor="nav-last-minute"
-              />
-              <MobileDrawerNavItem
                 active={location.pathname.includes("studybody")}
-                icon={<BrainCircuit className="h-4 w-4" />}
-                label="My Coach"
+                icon={<ListChecks className="h-4 w-4" />}
+                label="PQ"
                 onPick={() => goToMobileRoute("/app/studybody")}
-                tourAnchor="nav-studybody"
-              />
-              <MobileDrawerNavItem
-                active={location.pathname.includes("history")}
-                icon={<Clock className="h-4 w-4" />}
-                label="History"
-                onPick={() => goToMobileRoute("/app/history")}
-                tourAnchor="nav-history"
+                tourAnchor="nav-pq"
               />
               <MobileDrawerNavItem
                 active={location.pathname.includes("leaderboard")}
                 icon={<Trophy className="h-4 w-4" />}
                 label="Leaderboard"
-                onPick={() => {
-                  setMobileMenuOpen(false);
-                  navigate({ to: "/app/leaderboard" });
-                }}
+                onPick={() => goToMobileRoute("/app/leaderboard")}
+                tourAnchor="nav-leaderboard"
               />
               {/* Same gate as the desktop sidebar's Friends and Battle Royale
                   entries — see socialEnabled(). Kept in step with the sidebar
                   deliberately: the route resolves at any width, so it must be
                   reachable at any width too, and the drawer is the only nav
-                  below md. Same order as the sidebar: Friends, then Battle
-                  Royale, which is the opponent you pick from it. */}
+                  below md. Friends, then Battle Royale, which is the opponent
+                  you pick from it. */}
               {socialEnabled(user) && (
                 <MobileDrawerNavItem
                   active={location.pathname.includes("friends")}
                   icon={<Users className="h-4 w-4" />}
                   label="Friends"
                   onPick={() => goToMobileRoute("/app/friends")}
+                  tourAnchor="nav-friends"
                 />
               )}
               {socialEnabled(user) && (
@@ -1072,39 +1090,88 @@ function AppLayout() {
                   icon={<Swords className="h-4 w-4" />}
                   label="Battle Royale"
                   onPick={() => goToMobileRoute("/app/battle-royale")}
+                  tourAnchor="nav-battle-royale"
                 />
               )}
-              <MobileDrawerNavItem
-                active={false}
-                icon={<Sparkles className="h-4 w-4" />}
-                label="Personalize"
-                onPick={() => {
-                  setMobileMenuOpen(false);
-                  setPersonalizeOpen(true);
-                }}
-              />
-              <MobileDrawerNavItem
-                active={location.pathname.includes("feedback")}
-                icon={<Heart className="h-4 w-4" />}
-                label="Feedback"
-                onPick={() => goToMobileRoute("/app/feedback")}
-              />
-              <MobileDrawerNavItem
-                active={location.pathname.includes("settings")}
-                icon={<Settings className="h-4 w-4" />}
-                label="Settings"
-                onPick={() => goToMobileRoute("/app/settings")}
-              />
-              <MobileDrawerNavItem
-                active={false}
-                icon={<Map className="h-4 w-4" />}
-                label="Guide"
-                onPick={() => {
-                  setMobileMenuOpen(false);
-                  setTourOpen(true);
-                }}
-                tourAnchor="tour-launcher"
-              />
+
+              <div className="mt-2 grid gap-0.5 border-t border-border/50 pt-2">
+                <MobileDrawerNavItem
+                  active={location.pathname.includes("last-minute")}
+                  icon={<TimerReset className="h-4 w-4" />}
+                  label="Last Minute"
+                  onPick={() => goToMobileRoute("/app/last-minute")}
+                  tourAnchor="nav-last-minute"
+                />
+                <MobileDrawerNavItem
+                  active={location.pathname.includes("history")}
+                  icon={<Clock className="h-4 w-4" />}
+                  label="History"
+                  onPick={() => goToMobileRoute("/app/history")}
+                  tourAnchor="nav-history"
+                />
+                <MobileDrawerNavItem
+                  active={location.pathname.includes("settings")}
+                  icon={<Settings className="h-4 w-4" />}
+                  label="Settings"
+                  onPick={() => goToMobileRoute("/app/settings")}
+                />
+                {/* Guide stays out of the fold: the tour's closing step points
+                    at it, and on a phone this row is the only copy of it. */}
+                <MobileDrawerNavItem
+                  active={false}
+                  icon={<Map className="h-4 w-4" />}
+                  label="Guide"
+                  onPick={() => {
+                    setMobileMenuOpen(false);
+                    setTourOpen(true);
+                  }}
+                  tourAnchor="tour-launcher"
+                />
+                <MobileDrawerNavItem
+                  active={false}
+                  expanded={navMoreOpen}
+                  icon={
+                    navMoreOpen ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <MoreHorizontal className="h-4 w-4" />
+                    )
+                  }
+                  label="More"
+                  dot={!navMoreOpen && !profile?.personalization_background}
+                  onPick={() => setNavMoreOpen((open) => !open)}
+                />
+                {navMoreOpen && (
+                  <>
+                    <MobileDrawerNavItem
+                      active={false}
+                      icon={<Sparkles className="h-4 w-4" />}
+                      label="Personalize"
+                      dot={!profile?.personalization_background}
+                      onPick={() => {
+                        setMobileMenuOpen(false);
+                        setPersonalizeOpen(true);
+                      }}
+                    />
+                    <MobileDrawerNavItem
+                      active={location.pathname.includes("feedback")}
+                      icon={<Heart className="h-4 w-4" />}
+                      label="Feedback"
+                      onPick={() => goToMobileRoute("/app/feedback")}
+                    />
+                    {/* Was desktop-only before; the drawer is the phone's whole
+                        nav, so an admin on a phone had no way in. */}
+                    {profile?.is_admin && (
+                      <MobileDrawerNavItem
+                        active={location.pathname.includes("admin")}
+                        icon={<ShieldCheck className="h-4 w-4" />}
+                        label="Admin"
+                        onPick={() => goToMobileRoute("/app/admin")}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
             </nav>
           </div>
 
@@ -1268,8 +1335,8 @@ function AppLayout() {
         </DialogContent>
       </Dialog>
 
-      {/* A rank-up outranks the daily streak note, so it suppresses it: two
-          centred cards at once is two things to dismiss. */}
+      {/* The only card the shell still puts in front of the app. It is rare -
+          one per rank, ever - which is what earns it the interruption. */}
       <RankUpCelebration
         rank={rankUp}
         points={gamification.points}
@@ -1277,18 +1344,11 @@ function AppLayout() {
           setRankUp(null);
         }}
       />
-      <StreakOpening
-        open={streakOpeningOpen && !rankUp}
-        streak={gamification.currentStreak}
-        points={gamification.points}
-        mission={weekendMissionFor()}
-        pointsAvailable={pointsAvailableToday(gamification)}
-        onDismiss={() => setStreakOpeningOpen(false)}
-      />
-
       <FeatureTour
         open={tourOpen}
         onClose={() => setTourOpen(false)}
+        userId={user?.id}
+        social={socialEnabled(user)}
         onOpenMobileNav={() => setMobileMenuOpen(true)}
         onCloseMobileNav={() => setMobileMenuOpen(false)}
       />
@@ -1302,6 +1362,8 @@ function MobileDrawerNavItem({
   label,
   onPick,
   tourAnchor,
+  dot = false,
+  expanded,
 }: {
   active: boolean;
   icon: ReactNode;
@@ -1310,19 +1372,32 @@ function MobileDrawerNavItem({
   // On mobile the drawer holds the only copy of these entries, so the tour
   // spotlights them here instead of in the (hidden) sidebar.
   tourAnchor?: string;
+  /** The quiet unset marker - a small accent pip on the icon, no badge or count. */
+  dot?: boolean;
+  /** Only passed by a row that discloses others, so the fold is announced. */
+  expanded?: boolean;
 }) {
   return (
     <button
       type="button"
       data-tour={tourAnchor}
       onClick={onPick}
+      aria-expanded={expanded}
       className={`flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors ${
         active
           ? "bg-primary/10 text-foreground shadow-[inset_2px_0_0_var(--primary)]"
           : "text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
       }`}
     >
-      {icon}
+      <span className="relative flex shrink-0 items-center">
+        {icon}
+        {dot && (
+          <span
+            aria-hidden="true"
+            className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-pop"
+          />
+        )}
+      </span>
       {label}
     </button>
   );

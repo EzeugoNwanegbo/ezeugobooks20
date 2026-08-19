@@ -33,6 +33,16 @@ export type GamificationDaily = {
 export type GamificationStats = {
   points: number;
   weeklyPoints: number;
+  /**
+   * The Monday (YYYY-MM-DD) that `weeklyPoints` is counting from.
+   *
+   * Without this, `weeklyPoints` was only ever incremented - there was no
+   * rollover anywhere in either app - so it silently became a second copy of
+   * the lifetime total wearing a weekly label, and `user_profiles.weekly_points`
+   * inherited that from every sync. Stamped and compared exactly like
+   * `daily.date` below.
+   */
+  weekStartedOn: string | null;
   currentStreak: number;
   longestStreak: number;
   lastActiveDate: string | null;
@@ -69,7 +79,7 @@ export const EVENT_POINTS: Record<GamificationEvent, number> = {
   streak_milestone: 0, // the real value comes from STREAK_MILESTONES below
   roadmap_completed: 100,
   streak_broken: -5,
-  // Deliberately the same as one correct My Coach answer. Sharing is generous,
+  // Deliberately the same as one correct PQ answer. Sharing is generous,
   // not heroic: the student gives up nothing (they keep the file and every
   // search over it) and the pool saves G&D one stored copy. Pricing it above a
   // question would turn the upload page into the fastest way to earn points.
@@ -80,9 +90,9 @@ export const EVENT_POINTS: Record<GamificationEvent, number> = {
 
 const EVENT_LABELS: Record<GamificationEvent, string> = {
   chat_entered: "Entered chat",
-  coach_question_correct: "Correct My Coach answer",
-  coach_question_failed: "Missed My Coach question",
-  coach_session_completed: "Completed My Coach session",
+  coach_question_correct: "Correct PQ answer",
+  coach_question_failed: "Missed PQ question",
+  coach_session_completed: "Completed PQ session",
   coach_timed_challenge: "Timed challenge completed",
   coach_beat_timer: "Beat the clock",
   weekend_mission: "Weekend mission",
@@ -171,6 +181,34 @@ function todayKey(date = new Date()) {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * The Monday of `date`'s week, as YYYY-MM-DD.
+ *
+ * UTC throughout, matching todayKey() and - importantly - matching
+ * `date_trunc('week', CURRENT_DATE)` in leaderboard_week(), which is also
+ * Monday-based. A local-time week here would put a student's own "this week"
+ * total and their rank on the weekly board on different boundaries.
+ */
+function weekKey(date = new Date()): string {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  // getUTCDay(): Sunday is 0, so Sunday belongs to the week that began 6 days ago.
+  const offset = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - offset);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Zero `weeklyPoints` when the week has turned over. Call before adding to it,
+ * and on load, so a student who earns nothing this week still reads zero rather
+ * than last week's total.
+ */
+function rollWeek(stats: GamificationStats): void {
+  const monday = weekKey();
+  if (stats.weekStartedOn === monday) return;
+  stats.weekStartedOn = monday;
+  stats.weeklyPoints = 0;
+}
+
 function daysBetween(from: string, to: string) {
   const start = new Date(`${from}T00:00:00Z`).getTime();
   const end = new Date(`${to}T00:00:00Z`).getTime();
@@ -189,6 +227,7 @@ export function emptyGamificationStats(): GamificationStats {
   return {
     points: 0,
     weeklyPoints: 0,
+    weekStartedOn: null,
     currentStreak: 0,
     longestStreak: 0,
     lastActiveDate: null,
@@ -234,6 +273,10 @@ function migrate(raw: Partial<GamificationStats>): GamificationStats {
   } else {
     stats.daily = { date: today, earned: { ...daily.earned }, once: { ...daily.once } };
   }
+
+  // A stat that is read far more often than it is written, so the rollover has
+  // to happen on the way out too - not only when the next award lands.
+  rollWeek(stats);
 
   return stats;
 }
@@ -320,6 +363,7 @@ function applyPoints(
   }
   if (awarded === 0) return 0;
 
+  rollWeek(stats);
   stats.points = Math.max(0, stats.points + awarded);
   stats.weeklyPoints = Math.max(0, stats.weeklyPoints + awarded);
   stats.events.unshift({
@@ -458,6 +502,7 @@ export function reconcilePointsFromServer(userId: string, awards: ServerAward[])
   }
 
   if (applied === 0) return 0;
+  rollWeek(stats);
   stats.points = Math.max(0, stats.points + applied);
   stats.weeklyPoints = Math.max(0, stats.weeklyPoints + applied);
   stats.events = stats.events.slice(0, 30);

@@ -34,11 +34,40 @@ const OCR_WORKER_INIT_MS = 20_000;
 
 type PdfDocument = Awaited<ReturnType<typeof getDocument>["promise"]>;
 
+/**
+ * How many pages to OCR at once.
+ *
+ * Sized by MEMORY, not by cores. Every page in flight holds a full-size canvas
+ * bitmap (~17 MB of RGBA at our render target) plus that worker's tesseract
+ * wasm heap, and mobile browsers kill the tab rather than throw, so phones stay
+ * low however many cores they report. One core is left free so the tab stays
+ * responsive - an upload that freezes the UI reads as broken even when it is
+ * making progress.
+ */
+function ocrPoolSize(pageCount: number): number {
+  const nav = typeof navigator === "undefined" ? undefined : navigator;
+  const cores = nav?.hardwareConcurrency || 2;
+  const mobile = /Android|iPhone|iPad|iPod/i.test(nav?.userAgent ?? "");
+  return Math.max(1, Math.min(mobile ? 2 : 4, cores - 1, pageCount));
+}
+
 // OCR pass for scanned PDFs: render each page to an offscreen canvas via
 // pdf.js, then run tesseract over the pixels - the same engine and parameters
-// as image uploads (src/lib/image-ocr.ts), but with ONE worker reused across
-// all pages (worker boot costs several seconds; per-page boot would dominate).
-// tesseract is lazy-imported so text PDFs never pay for the OCR bundle.
+// as image uploads (src/lib/image-ocr.ts). tesseract is lazy-imported so text
+// PDFs never pay for the OCR bundle.
+//
+// WHY A POOL. This used to be a single worker walking the pages in order, on
+// the reasoning that worker boot costs several seconds so one boot beats fifty.
+// That reasoning is sound and still holds - but it put the entire job on one
+// core, and recognising a page costs far more than booting a worker does. A
+// 50-page scan ran for minutes with every other core idle. Now a small pool
+// boots once, concurrently, and each worker pulls the next page off a shared
+// counter, so the boot cost is still paid once while the recognise time
+// divides by the pool size.
+//
+// Each worker owns its own canvas for the whole run. Sharing one canvas is what
+// forced the old sequential shape: a canvas being recognised cannot also be the
+// canvas the next page renders onto.
 async function ocrPdfPages(
   pdf: PdfDocument,
   pageCount: number,
@@ -48,58 +77,104 @@ async function ocrPdfPages(
 ): Promise<string> {
   onStage?.("pdf:ocr-loading-engine");
   const { createWorker } = await import("tesseract.js");
-  const workerInit = createWorker("eng", 1, {});
+
+  const poolSize = ocrPoolSize(pageCount);
   const workerTimeout = new Promise<never>((_, reject) =>
     setTimeout(
       () =>
-        reject(
-          new Error(
-            "OCR engine took too long to load. Check your connection and try again.",
-          ),
-        ),
+        reject(new Error("OCR engine took too long to load. Check your connection and try again.")),
       OCR_WORKER_INIT_MS,
     ),
   );
-  const worker = await Promise.race([workerInit, workerTimeout]);
 
-  // One reusable canvas: assigning width/height resets it between pages, and
-  // reusing the backing bitmap keeps peak memory flat on a 50-page scan
-  // (mobile Safari/Chrome kill tabs long before they throw OOM).
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Could not prepare pages for OCR.");
+  // Boot the pool in parallel so the pool costs the same wall-clock wait as the
+  // single worker did. The timeout covers the whole boot, not each worker.
+  const workers = await Promise.race([
+    Promise.all(Array.from({ length: poolSize }, () => createWorker("eng", 1, {}))),
+    workerTimeout,
+  ]);
+
+  const canvases = workers.map(() => document.createElement("canvas"));
+  const contexts = canvases.map((canvas) => canvas.getContext("2d"));
+  if (contexts.some((context) => !context)) {
+    await Promise.all(workers.map((worker) => worker.terminate()));
+    throw new Error("Could not prepare pages for OCR.");
+  }
+
+  // Page text lands here by index, never by append order: with several workers
+  // in flight the pages finish out of order, and a scan reassembled out of
+  // order is worse than no scan at all.
+  //
+  // null means "never processed" (we halted before claiming it) and is skipped
+  // on reassembly; "" means "processed, genuinely blank" and still earns its
+  // [Page N] marker, because a blank page inside a scan is information.
+  const pageText = new Array<string | null>(pageCount).fill(null);
+
+  let nextPage = 1; // shared counter - JS is single-threaded, so ++ is atomic here
+  let charTotal = 0;
+  let halted = false;
+  let completed = 0;
 
   try {
-    await worker.setParameters({
-      preserve_interword_spaces: "1",
-      user_defined_dpi: "300",
-    });
+    await Promise.all(
+      workers.map(async (worker, slot) => {
+        const canvas = canvases[slot];
+        const context = contexts[slot]!;
+
+        await worker.setParameters({
+          preserve_interword_spaces: "1",
+          user_defined_dpi: "300",
+        });
+
+        for (;;) {
+          if (halted) return;
+          const i = nextPage++;
+          if (i > pageCount) return;
+
+          const page = await pdf.getPage(i);
+          try {
+            const base = page.getViewport({ scale: 1 });
+            const scale = Math.min(
+              OCR_MAX_RENDER_SCALE,
+              Math.max(1, OCR_TARGET_LONG_EDGE_PX / Math.max(base.width, base.height)),
+            );
+            const viewport = page.getViewport({ scale });
+            canvas.width = Math.max(1, Math.ceil(viewport.width));
+            canvas.height = Math.max(1, Math.ceil(viewport.height));
+
+            // pdf.js renders onto a transparent canvas; tesseract needs an
+            // opaque white background or dark scans invert into noise.
+            context.fillStyle = "#ffffff";
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            await page.render({ canvasContext: context, viewport }).promise;
+
+            const result = await worker.recognize(canvas);
+            pageText[i - 1] = (result.data.text || "").trim();
+          } finally {
+            page.cleanup();
+          }
+
+          // Progress is pages DONE, not the page number just claimed: with a
+          // pool the highest claimed number runs ahead of the real count and
+          // the bar would jump.
+          completed += 1;
+          onStage?.(`pdf:ocr-page-${completed}/${pageCount}`);
+          onPage?.(completed, pageCount);
+
+          charTotal += pageText[i - 1]?.length ?? 0;
+          // Stop claiming new pages once we already have more text than the
+          // caller will keep. Pages already in flight still finish and are
+          // still used - they are paid for either way.
+          if (charTotal >= maxChars) halted = true;
+        }
+      }),
+    );
 
     let out = "";
     for (let i = 1; i <= pageCount; i++) {
-      onStage?.(`pdf:ocr-page-${i}/${pageCount}`);
-      onPage?.(i, pageCount);
-
-      const page = await pdf.getPage(i);
-      const base = page.getViewport({ scale: 1 });
-      const scale = Math.min(
-        OCR_MAX_RENDER_SCALE,
-        Math.max(1, OCR_TARGET_LONG_EDGE_PX / Math.max(base.width, base.height)),
-      );
-      const viewport = page.getViewport({ scale });
-      canvas.width = Math.max(1, Math.ceil(viewport.width));
-      canvas.height = Math.max(1, Math.ceil(viewport.height));
-
-      // pdf.js renders onto a transparent canvas; tesseract needs an opaque
-      // white background or dark scans invert into noise.
-      context.fillStyle = "#ffffff";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      await page.render({ canvasContext: context, viewport }).promise;
-
-      const result = await worker.recognize(canvas);
-      page.cleanup();
-
-      out += `\n\n[Page ${i}]\n${(result.data.text || "").trim()}`;
+      const text = pageText[i - 1];
+      if (text === null) continue; // never claimed - we stopped before reaching it
+      out += `\n\n[Page ${i}]\n${text}`;
       if (out.length >= maxChars) {
         out = out.slice(0, maxChars) + "\n\n[...truncated]";
         break;
@@ -107,10 +182,12 @@ async function ocrPdfPages(
     }
     return out;
   } finally {
-    await worker.terminate();
-    // Release the canvas bitmap eagerly - Safari holds it until GC otherwise.
-    canvas.width = 0;
-    canvas.height = 0;
+    await Promise.all(workers.map((worker) => worker.terminate()));
+    // Release the canvas bitmaps eagerly - Safari holds them until GC otherwise.
+    canvases.forEach((canvas) => {
+      canvas.width = 0;
+      canvas.height = 0;
+    });
   }
 }
 

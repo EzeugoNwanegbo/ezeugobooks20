@@ -16,7 +16,7 @@
 // Still replaces the old inline "New challenge" flow on the Friends page (pick
 // one of your own unfinished MCQ sets and send it — see -app.friends-page.tsx's
 // header comment). Here the host configures a FRESH match. Same document- and
-// scope-picking idiom as My Coach's practice screen
+// scope-picking idiom as PQ's practice screen
 // (-app.practice-page.tsx / ConfigView); the play view below is its own local
 // UI in the same idiom (card panels, MCQ option rows) rather than a port of
 // that screen's — Practice supports Learning mode, essays, flashcards and
@@ -63,7 +63,15 @@ import {
   type ChallengeSummary,
   type Friend,
 } from "@/lib/social";
-import { db, folderName, type DocRow, type PlanRow, type QuestionRow, type SessionRow, type TopicRow } from "@/lib/studybody-data";
+import {
+  db,
+  folderName,
+  type DocRow,
+  type PlanRow,
+  type QuestionRow,
+  type SessionRow,
+  type TopicRow,
+} from "@/lib/studybody-data";
 import { reviewStudyAnswers } from "@/lib/studybody-client";
 import { formatClock } from "@/lib/timed-challenge";
 import {
@@ -115,7 +123,7 @@ const BATTLE_MAX_QUESTIONS = BATTLE_SCHEMA_APPLIED
   ? BATTLE_MAX_QUESTIONS_POOLED
   : MAX_CHALLENGE_QUESTIONS; // 12
 // A 1- or 2-question "battle" is barely a contest, so 3 is the floor.
-// Deliberately not tied to My Coach's own smallest preset (10): that number
+// Deliberately not tied to PQ's own smallest preset (10): that number
 // plus this cap while the flag is off would leave a 10-12 range and make the
 // Custom field almost pointless.
 const BATTLE_MIN_QUESTIONS = 3;
@@ -163,7 +171,9 @@ const STAGE_LABEL: Record<BattleStage, string> = {
 function progressStages(event: BattleProgressEvent | null): ProgressStage[] {
   const prefix = event?.round ? `Round ${event.round.index} of ${event.round.total} — ` : "";
   const generatingNote =
-    event?.stage === "generating" && typeof event.made === "number" && typeof event.target === "number"
+    event?.stage === "generating" &&
+    typeof event.made === "number" &&
+    typeof event.target === "number"
       ? `${event.made} of ${event.target} questions written so far.`
       : "The long part — larger sets take a little longer.";
   return STAGE_ORDER.map((stage) => ({
@@ -259,7 +269,7 @@ export function BattleRoyalePage() {
   const [customCount, setCustomCount] = useState(String(BATTLE_MAX_QUESTIONS));
   const [minutes, setMinutes] = useState("15");
 
-  // Roadmap picking — same tables My Coach's own practice screen reads, but
+  // Roadmap picking — same tables PQ's own practice screen reads, but
   // this screen never builds a roadmap, only lists existing ones.
   const [plans, setPlans] = useState<PlanRow[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
@@ -323,11 +333,14 @@ export function BattleRoyalePage() {
   // so this effect's condition should never even see format === "roadmap",
   // but a stray state change must not turn into a query anyway.
   useEffect(() => {
-    if (!BATTLE_SCHEMA_APPLIED || format !== "roadmap" || !user || plans.length || plansLoading) return;
+    if (!BATTLE_SCHEMA_APPLIED || format !== "roadmap" || !user || plans.length || plansLoading)
+      return;
     setPlansLoading(true);
     loadBattlePlans(user.id)
       .then(setPlans)
-      .catch((err) => toast.error(err instanceof Error ? err.message : "Could not load your roadmaps"))
+      .catch((err) =>
+        toast.error(err instanceof Error ? err.message : "Could not load your roadmaps"),
+      )
       .finally(() => setPlansLoading(false));
   }, [format, user, plans.length, plansLoading]);
 
@@ -339,7 +352,9 @@ export function BattleRoyalePage() {
     setPlanTopicsLoading(true);
     loadPlanTopics(user.id, selectedPlanId)
       .then(setPlanTopics)
-      .catch((err) => toast.error(err instanceof Error ? err.message : "Could not load that roadmap's topics"))
+      .catch((err) =>
+        toast.error(err instanceof Error ? err.message : "Could not load that roadmap's topics"),
+      )
       .finally(() => setPlanTopicsLoading(false));
   }, [selectedPlanId, user]);
 
@@ -392,7 +407,9 @@ export function BattleRoyalePage() {
     });
   };
 
-  const roadmapDocIds = selectedPlan?.source_document_ids?.length ? selectedPlan.source_document_ids : [];
+  const roadmapDocIds = selectedPlan?.source_document_ids?.length
+    ? selectedPlan.source_document_ids
+    : [];
 
   const canSend =
     enabled &&
@@ -400,7 +417,10 @@ export function BattleRoyalePage() {
     !sending &&
     (format === "single"
       ? Boolean(selectedDoc) && (scope === "whole" || topicFocus.trim().length > 0)
-      : BATTLE_SCHEMA_APPLIED && Boolean(selectedPlan) && planTopics.length > 0 && roadmapDocIds.length > 0);
+      : BATTLE_SCHEMA_APPLIED &&
+        Boolean(selectedPlan) &&
+        planTopics.length > 0 &&
+        roadmapDocIds.length > 0);
 
   // ── Entering play / result ─────────────────────────────────────────────────
 
@@ -418,7 +438,8 @@ export function BattleRoyalePage() {
       } & Record<string, unknown>;
       const { draftAnswers, ...base } = fb;
       feedbackBaseRef.current = base;
-      const minutesInEffect = typeof fb.time_limit_minutes === "number" ? fb.time_limit_minutes : args.timeLimitMinutes;
+      const minutesInEffect =
+        typeof fb.time_limit_minutes === "number" ? fb.time_limit_minutes : args.timeLimitMinutes;
       setPlayState({
         session: args.session,
         questions: args.questions,
@@ -614,7 +635,8 @@ export function BattleRoyalePage() {
     try {
       const result = await reviewStudyAnswers({
         profile,
-        mode: (profile.preferred_mode as "Simplified" | "Detailed" | "Storytelling") || "Simplified",
+        mode:
+          (profile.preferred_mode as "Simplified" | "Detailed" | "Storytelling") || "Simplified",
         questions: playState.questions.map((q) => ({
           id: q.id,
           type: q.question_type,
@@ -630,7 +652,8 @@ export function BattleRoyalePage() {
 
       const gradingAnswers = result.grading.answers ?? [];
       const answerRows = playState.questions.map((q, index) => {
-        const grade = gradingAnswers.find((it) => it.question_id === q.id) ?? gradingAnswers[index] ?? {};
+        const grade =
+          gradingAnswers.find((it) => it.question_id === q.id) ?? gradingAnswers[index] ?? {};
         return {
           user_id: user.id,
           question_id: q.id,
@@ -697,8 +720,9 @@ export function BattleRoyalePage() {
 
   return shell(
     <>
-      {mode === "setup" && cameWithOpponent && (
-        sending ? (
+      {mode === "setup" &&
+        cameWithOpponent &&
+        (sending ? (
           <span className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground opacity-60">
             <ArrowLeft className="h-4 w-4" />
             Back to Friends
@@ -711,8 +735,7 @@ export function BattleRoyalePage() {
             <ArrowLeft className="h-4 w-4" />
             Back to Friends
           </Link>
-        )
-      )}
+        ))}
 
       {mode === "play" && playState ? (
         <PlayView
@@ -781,11 +804,7 @@ export function BattleRoyalePage() {
         </>
       ) : (
         <>
-          <PageHeader
-            eyebrow="Setting up a match"
-            title={`Battle @${opponent.username}`}
-            subtitle="Exam mode only — nothing is revealed until you both finish. Configure it, then send."
-          />
+          <PageHeader eyebrow="Setting up a match" title={`Battle @${opponent.username}`} />
 
           {/* Format */}
           <Panel>
@@ -849,7 +868,9 @@ export function BattleRoyalePage() {
               <Panel>
                 <SectionTitle icon={<FileText className="h-4 w-4" />} title="Which file" />
                 {docsLoading ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">Loading your files…</p>
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    Loading your files…
+                  </p>
                 ) : docs.length === 0 ? (
                   <Link
                     to="/app/library"
@@ -908,17 +929,12 @@ export function BattleRoyalePage() {
                     />
                   </div>
                   {scope === "topic" && (
-                    <div className="mt-3 space-y-2">
-                      <Input
-                        value={topicFocus}
-                        onChange={(event) => setTopicFocus(event.target.value)}
-                        placeholder="e.g. Cranial nerves, Consideration in contract law…"
-                      />
-                      <p className="text-xs leading-relaxed text-muted-foreground">
-                        We&apos;ll pull only the pages about this topic, so every question stays
-                        grounded on them.
-                      </p>
-                    </div>
+                    <Input
+                      value={topicFocus}
+                      onChange={(event) => setTopicFocus(event.target.value)}
+                      placeholder="e.g. Cranial nerves, Consideration in contract law…"
+                      className="mt-3"
+                    />
                   )}
                 </Panel>
               )}
@@ -928,13 +944,15 @@ export function BattleRoyalePage() {
             <Panel>
               <SectionTitle icon={<MapIcon className="h-4 w-4" />} title="Which roadmap" />
               {plansLoading ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">Loading your roadmaps…</p>
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  Loading your roadmaps…
+                </p>
               ) : plans.length === 0 ? (
                 <Link
                   to="/app/studybody"
                   className="mt-3 block rounded-xl border border-dashed border-border p-4 text-sm text-pop"
                 >
-                  Build a roadmap in My Coach first.
+                  Build a roadmap in PQ first.
                 </Link>
               ) : (
                 <div className="mt-3 space-y-2">
@@ -951,7 +969,9 @@ export function BattleRoyalePage() {
                             : "border-border bg-background/40 hover:border-pop/30 hover:bg-foreground/[0.02]"
                         }`}
                       >
-                        <MapIcon className={`h-4 w-4 shrink-0 ${selected ? "text-pop" : "text-muted-foreground"}`} />
+                        <MapIcon
+                          className={`h-4 w-4 shrink-0 ${selected ? "text-pop" : "text-muted-foreground"}`}
+                        />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-semibold tracking-[-0.01em]">
                             {plan.title}
@@ -970,17 +990,17 @@ export function BattleRoyalePage() {
               {selectedPlan && (
                 <div className="mt-3">
                   {planTopicsLoading ? (
-                    <p className="py-4 text-center text-sm text-muted-foreground">Loading topics…</p>
+                    <p className="py-4 text-center text-sm text-muted-foreground">
+                      Loading topics…
+                    </p>
                   ) : planTopics.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-border p-3 text-sm text-muted-foreground">
                       This roadmap has no topics yet.
                     </p>
                   ) : (
                     <>
-                      <p className="text-xs leading-relaxed text-muted-foreground">
-                        {planTopics.length} round{planTopics.length === 1 ? "" : "s"} — one battle per
-                        topic, a win for each. @{opponent.username} sees them arrive one at a time as
-                        they&apos;re built.
+                      <p className="text-xs font-medium text-muted-foreground">
+                        {planTopics.length} round{planTopics.length === 1 ? "" : "s"}
                       </p>
                       <ol className="mt-2 space-y-1">
                         {planTopics.map((t, i) => (
@@ -1002,76 +1022,72 @@ export function BattleRoyalePage() {
             </Panel>
           )}
 
-          {/* Question count */}
+          {/* Match settings */}
           <Panel>
-            <SectionTitle icon={<Swords className="h-4 w-4" />} title="Questions" />
-            <div className="mt-3 flex flex-wrap gap-2">
-              {COUNT_PRESETS.map((n) => {
-                const overCap = n > BATTLE_MAX_QUESTIONS;
-                return (
-                  <button
-                    key={n}
-                    type="button"
-                    disabled={overCap}
-                    onClick={() => setCountPreset(n)}
-                    className={`min-w-16 flex-1 rounded-xl border px-3 py-2 text-sm font-medium tabular-nums transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                      countPreset === n
-                        ? "border-pop/50 bg-pop/10 text-pop"
-                        : "border-border text-muted-foreground hover:border-pop/30 hover:bg-foreground/[0.02]"
-                    }`}
-                  >
-                    {n}
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                onClick={() => setCountPreset("custom")}
-                className={`min-w-16 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
-                  countPreset === "custom"
-                    ? "border-pop/50 bg-pop/10 text-pop"
-                    : "border-border text-muted-foreground hover:border-pop/30 hover:bg-foreground/[0.02]"
-                }`}
-              >
-                Custom
-              </button>
-            </div>
-            {countPreset === "custom" && (
-              <Input
-                value={customCount}
-                onChange={(event) => setCustomCount(event.target.value)}
-                inputMode="numeric"
-                placeholder={`${BATTLE_MIN_QUESTIONS}-${BATTLE_MAX_QUESTIONS}`}
-                className="mt-3"
-              />
-            )}
-            {/* Two different truths, and the copy must not tell the wrong one:
-                with the migration unapplied the cap really is 12 and the bigger
-                presets really are unreachable; once it lands they simply work,
-                and an apology for a limit that no longer exists reads as a bug. */}
-            <p className="mt-3 flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground">
-              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-              {BATTLE_SCHEMA_APPLIED
-                ? `Battles run up to ${BATTLE_MAX_QUESTIONS} questions — the largest set worth attempting against how long the AI takes to write one. This match will use ${resolvedCount}${format === "roadmap" ? " per round" : ""}.`
-                : `Battles are capped at ${BATTLE_MAX_QUESTIONS} questions for now — that is the server's own limit for a fair, gradeable contest. 20 and 30 will unlock once that cap is raised. This match will use ${resolvedCount}.`}
-            </p>
-          </Panel>
+            <SectionTitle icon={<Swords className="h-4 w-4" />} title="Match settings" />
 
-          {/* Time to finish */}
-          <Panel>
-            <SectionTitle icon={<Clock className="h-4 w-4" />} title="Time to finish" />
-            <Input
-              value={minutes}
-              onChange={(event) => setMinutes(event.target.value)}
-              inputMode="numeric"
-              placeholder="Minutes"
-              className="mt-3 max-w-40"
-            />
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              {BATTLE_MIN_MINUTES}-{BATTLE_MAX_MINUTES} minutes. This match will give{" "}
-              {resolvedMinutes} min{format === "roadmap" ? " per round" : ""} — shown to your
-              opponent, not force-submitted.
-            </p>
+            <div className="mt-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Questions{format === "roadmap" ? " per round" : ""}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {COUNT_PRESETS.map((n) => {
+                  const overCap = n > BATTLE_MAX_QUESTIONS;
+                  return (
+                    <button
+                      key={n}
+                      type="button"
+                      disabled={overCap}
+                      onClick={() => setCountPreset(n)}
+                      className={`min-w-16 flex-1 rounded-xl border px-3 py-2 text-sm font-medium tabular-nums transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                        countPreset === n
+                          ? "border-pop/50 bg-pop/10 text-pop"
+                          : "border-border text-muted-foreground hover:border-pop/30 hover:bg-foreground/[0.02]"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => setCountPreset("custom")}
+                  className={`min-w-16 flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                    countPreset === "custom"
+                      ? "border-pop/50 bg-pop/10 text-pop"
+                      : "border-border text-muted-foreground hover:border-pop/30 hover:bg-foreground/[0.02]"
+                  }`}
+                >
+                  Custom
+                </button>
+              </div>
+              {countPreset === "custom" && (
+                <Input
+                  value={customCount}
+                  onChange={(event) => setCustomCount(event.target.value)}
+                  inputMode="numeric"
+                  placeholder={`${BATTLE_MIN_QUESTIONS}-${BATTLE_MAX_QUESTIONS}`}
+                  className="mt-2"
+                />
+              )}
+            </div>
+
+            <div className="mt-4 border-t border-border pt-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Time limit{format === "roadmap" ? " per round" : ""}
+              </p>
+              <Input
+                value={minutes}
+                onChange={(event) => setMinutes(event.target.value)}
+                inputMode="numeric"
+                placeholder={`${BATTLE_MIN_MINUTES}-${BATTLE_MAX_MINUTES} min`}
+                className="mt-2 max-w-40"
+              />
+              <p className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground">
+                <Clock className="mt-0.5 h-3 w-3 shrink-0" />
+                Shown to your opponent — a pace, not a cutoff.
+              </p>
+            </div>
           </Panel>
 
           <div className="space-y-2">
@@ -1256,12 +1272,14 @@ function ResultView({
                   You
                 </div>
               </div>
-              <div className="text-sm text-muted-foreground">of {s?.question_count ?? resultState.questionCount}</div>
+              <div className="text-sm text-muted-foreground">
+                of {s?.question_count ?? resultState.questionCount}
+              </div>
               <div className="text-center">
                 <div
                   className={`text-3xl font-semibold tracking-[-0.01em] ${!theyFinished ? "text-muted-foreground" : ""}`}
                 >
-                  {theyFinished ? s?.their_score ?? 0 : "—"}
+                  {theyFinished ? (s?.their_score ?? 0) : "—"}
                 </div>
                 <div className="mt-1 font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
                   @{opponent.username}
@@ -1271,8 +1289,8 @@ function ResultView({
 
             {!theyFinished ? (
               <p className="mt-4 text-center text-sm text-muted-foreground">
-                Waiting for @{opponent.username} to play their set — their score only shows once they
-                finish.
+                Waiting for @{opponent.username} to play their set — their score only shows once
+                they finish.
               </p>
             ) : (
               outcome && (
@@ -1287,7 +1305,12 @@ function ResultView({
             )}
 
             <div className="mt-4 flex justify-center">
-              <Button variant="secondary" size="sm" onClick={onRefresh} disabled={resultState.loading}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onRefresh}
+                disabled={resultState.loading}
+              >
                 <RefreshCw className={`h-3.5 w-3.5 ${resultState.loading ? "animate-spin" : ""}`} />
                 Refresh
               </Button>
@@ -1300,8 +1323,8 @@ function ResultView({
         <Panel>
           <SectionTitle icon={<MapIcon className="h-4 w-4" />} title="Roadmap series" />
           <p className="mt-2 text-xs text-muted-foreground">
-            {roadmap.completedRounds} of {roadmap.totalRounds} round{roadmap.totalRounds === 1 ? "" : "s"}{" "}
-            sent to @{opponent.username}.
+            {roadmap.completedRounds} of {roadmap.totalRounds} round
+            {roadmap.totalRounds === 1 ? "" : "s"} sent to @{opponent.username}.
           </p>
           {nextRound ? (
             <Button
@@ -1328,8 +1351,8 @@ function ResultView({
           ) : (
             roadmap.completedRounds > 1 && (
               <p className="mt-3 text-xs text-muted-foreground">
-                That was the last round you&apos;ve played here — the rest (if any are still unplayed)
-                are in Friends.
+                That was the last round you&apos;ve played here — the rest (if any are still
+                unplayed) are in Friends.
               </p>
             )
           )}

@@ -4,7 +4,7 @@
 //
 // The generated text has three parts:
 //   1. A short lead-in that frames the situation for the receiving AI.
-//   2. The student's study context (discipline, level, goals, imported
+//   2. The student's study context (course/field, level, goals, imported
 //      "who I am" background) so the tone/depth carries over.
 //   3. The conversation transcript, followed by a clear ask to continue.
 //
@@ -38,7 +38,7 @@ function buildStudentContext(profile: Profile): string {
     if (text) lines.push(`- ${label}: ${text}`);
   };
 
-  add("Field / course", profile.discipline ?? profile.course);
+  add("Field / course", profile.course);
   add("Level", profile.year);
   add("Institution", profile.university);
   add("Working toward", profile.exam_format);

@@ -1,5 +1,5 @@
 // "Race the clock" — the opt-in timer, shared by the two screens that can start
-// a question set (My Coach → Go straight in, and the roadmap practice config) so
+// a question set (PQ → Go straight in, and the roadmap practice config) so
 // the two can never drift apart.
 //
 // Still optional, and still off by default. Off means the caller writes no timer

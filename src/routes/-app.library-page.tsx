@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,6 +11,7 @@ import {
 } from "@/lib/document-chunks";
 import { chunkSetContentHash, DEDUP_SCHEMA_APPLIED } from "@/lib/content-hash";
 import { backfillMissingEmbeddings } from "@/lib/embeddings";
+import { markSeenOnce, useSeenOnce } from "@/lib/seen-once";
 import { getCached, setCached } from "@/lib/data-cache";
 import { GUEST_DOCUMENT_LIMIT, isGuestUser } from "@/lib/guest-session";
 import { stageDocForChat } from "@/lib/chat-handoff";
@@ -27,10 +28,7 @@ import {
   loadGamificationStats,
   recordGamificationEvent,
 } from "@/lib/gamification";
-import {
-  ShareWithGdDialog,
-  type SharePromptFile,
-} from "@/components/share-with-gd-dialog";
+import { ShareWithGdDialog, type SharePromptFile } from "@/components/share-with-gd-dialog";
 import { toast } from "sonner";
 import {
   Upload,
@@ -199,8 +197,47 @@ function getUploadErrorMessage(error: unknown): string {
 // a guard against absurd uploads, not the fix.
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 
+// ── The first-run explainer ───────────────────────────────────────────────
+// Two pieces of teaching copy live on this page: the header paragraph that
+// says what a library IS ("Upload large files so G&D can search them..."), and
+// the dropzone's supporting line listing the formats and the drag-and-drop
+// hint. Both earn their keep exactly once. Somebody landing here for the first
+// time genuinely does not know what this screen is for; somebody on their
+// second visit does, and by then the paragraph is just furniture standing
+// between them and their own documents. So we remember, per user, that the
+// page has been opened, and from the next visit onwards the screen opens
+// straight into their material behind a compact "Library" label and a dropzone
+// that says nothing but "Upload file".
+//
+// The signal is "has opened this page before", not "has uploaded something".
+// It is the honest reading of the owner's "after the user uses it": a student
+// who arrives, reads the explanation and leaves without uploading has still
+// been told, and re-teaching them on every visit until they finally upload is
+// exactly the nagging we are removing. It is also the only signal that cannot
+// get stuck - an upload can fail, a document can be deleted, but a visit is a
+// visit.
+//
+// Keyed per user id, so a shared laptop does not hand one student's "seen" to
+// the next one. Storage-blocked browsers (private mode, hardened settings)
+// fall through to "already seen", the same bargain src/lib/feature-tour.ts
+// strikes: silently skipping one first run is a far smaller failure than an
+// explainer that reintroduces itself on every single navigation.
+const LIBRARY_INTRO_SEEN_KEY = "gd_library_intro_seen_v1";
+
+function markLibraryIntroSeen(ownerId: string): void {
+  try {
+    window.localStorage.setItem(`${LIBRARY_INTRO_SEEN_KEY}:${ownerId}`, "1");
+    markSeenOnce("library", ownerId);
+  } catch {
+    // Nothing to do - worst case the explainer introduces itself once more.
+  }
+}
+
 export function LibraryPage() {
-  const { user, profile } = useAuth();
+  // No `profile` here on purpose: this page used to read profile.discipline to
+  // decide which shared-library books a student was allowed to see. That
+  // demarcation is gone, so the library needs nothing from the profile at all.
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [folders, setFolders] = useState<FolderRow[]>([]);
   const [docs, setDocs] = useState<DocRow[]>([]);
@@ -246,6 +283,90 @@ export function LibraryPage() {
   // See src/lib/allowances.ts.
   const [gamification, setGamification] = useState(emptyGamificationStats);
   const [uploadsToday, setUploadsToday] = useState(0);
+
+  // Frozen for the length of this visit. We mark the intro seen the moment the
+  // page mounts, but the student reading it right now keeps it until they
+  // leave - copy that evaporates underneath a reader is worse than copy that
+  // overstays.
+  // "unknown" until the account's list has been read, and nothing renders in
+  // that state - see useSeenOnce. Showing by default would flash the intro at a
+  // returning student on a new device for as long as the query takes.
+  const showIntro = useSeenOnce("library", user?.id) === "unseen";
+
+  useEffect(() => {
+    if (!user || !showIntro) return;
+    markLibraryIntroSeen(user.id);
+  }, [user, showIntro]);
+
+  // Which shelf is on screen: the student's own uploads, or the built-in books
+  // everybody shares. They used to be stacked on one page, so the shared shelf
+  // sat wedged between the folder chips and the student's own documents and
+  // read like part of their library. They are two different collections owned
+  // by two different people; they get two tabs.
+  const [shelf, setShelf] = useState<"mine" | "shared">("mine");
+
+  // The document whose sheet is open. Everything you can do to one document -
+  // ask about it, share it, move it, delete it - lives in there rather than on
+  // the face of every card in the grid.
+  const [openDoc, setOpenDoc] = useState<DocRow | null>(null);
+
+  // Does this document actually hold searchable chunks? Keyed by document id;
+  // a missing entry means "not probed yet", and the card claims nothing either
+  // way until we know.
+  //
+  // This exists because extraction can fail silently. A book whose extraction
+  // died leaves extract_status NULL - which every reader in the codebase
+  // charitably treats as "fine, this row predates the column" - so the library
+  // showed it as Indexed and the student studied from an empty book and
+  // wondered why G&D knew nothing about it. The probe asks the one question
+  // that matters, through the same RLS path retrieval itself uses: can I see a
+  // single chunk of this document? If the answer is no here, chat cannot
+  // ground an answer on it either, and saying so is the honest thing.
+  const [hasText, setHasText] = useState<Record<string, boolean>>({});
+  const probedDocs = useRef(new Set<string>());
+
+  useEffect(() => {
+    if (!user) return;
+    const pending = docs
+      .filter((d) => isDocReady(d) && !probedDocs.current.has(d.id))
+      .map((d) => d.id);
+    if (pending.length === 0) return;
+    for (const id of pending) probedDocs.current.add(id);
+
+    let cancelled = false;
+    void (async () => {
+      // Six at a time. The browser caps concurrent requests per host at about
+      // that anyway, and a student with sixty books should not fire sixty
+      // requests down the same pipe the document list is still using. This is
+      // background colour on an already-rendered page; it is never awaited by
+      // anything the student is waiting for.
+      const queue = [...pending];
+      const worker = async () => {
+        while (queue.length > 0 && !cancelled) {
+          const id = queue.shift();
+          if (!id) return;
+          const { data, error } = await supabase
+            .from("document_chunks")
+            .select("document_id")
+            .eq("document_id", id)
+            .limit(1);
+          if (cancelled) return;
+          if (error) {
+            // Let a later render try again rather than recording a verdict we
+            // did not actually reach. Silence beats a false accusation.
+            probedDocs.current.delete(id);
+            continue;
+          }
+          const found = (data?.length ?? 0) > 0;
+          setHasText((cur) => (cur[id] === found ? cur : { ...cur, [id]: found }));
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(6, queue.length) }, worker));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, docs]);
 
   useEffect(() => {
     if (!user) return;
@@ -646,15 +767,7 @@ export function LibraryPage() {
     // bandwidth and bypasses the 50 MB Supabase storage default limit for
     // huge course materials). storage_path is a virtual marker.
     const path = `text-only/${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-    const fileType = isPdf
-      ? "pdf"
-      : isImage
-        ? "image"
-        : isDocx
-          ? "docx"
-          : isPptx
-            ? "pptx"
-            : "text";
+    const fileType = isPdf ? "pdf" : isImage ? "image" : isDocx ? "docx" : isPptx ? "pptx" : "text";
 
     return {
       fileName: file.name,
@@ -1207,27 +1320,27 @@ export function LibraryPage() {
     }
   };
 
-  // Built-in textbooks the student can search without uploading, scoped to
-  // their discipline (books with no discipline are shared with everyone).
+  // Built-in textbooks the student can search without uploading. These used to
+  // be scoped to the reader's own discipline - a medic never saw a law book and
+  // vice versa - but the medicine/law demarcation is gone product-wide and the
+  // shared library is free for all, so every approved book is offered to every
+  // student. The `discipline` column still exists on the row and older rows
+  // still carry a value; we simply stop reading it to decide who sees what,
+  // which is why this effect no longer depends on the profile at all.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const { data } = await supabase
         .from("library_documents")
-        .select("id, title, discipline")
+        .select("id, title")
         .eq("status", "approved");
       if (cancelled || !data) return;
-      const disc = profile?.discipline ?? null;
-      setLibraryBooks(
-        data
-          .filter((b) => !b.discipline || b.discipline === disc)
-          .map((b) => ({ id: b.id, title: b.title })),
-      );
+      setLibraryBooks(data.map((b) => ({ id: b.id, title: b.title })));
     })();
     return () => {
       cancelled = true;
     };
-  }, [profile?.discipline]);
+  }, []);
 
   // This user's own submissions. RLS already scopes library_documents to
   // "approved OR submitted_by = me", so filtering by the current user is what
@@ -1270,7 +1383,11 @@ export function LibraryPage() {
         file_type: doc.file_type,
         page_count: doc.page_count,
         file_size: doc.file_size,
-        discipline: profile?.discipline ?? null,
+        // Deliberately null rather than the sharer's own discipline. Nothing
+        // filters the shared library by discipline any more, and stamping a
+        // book "medicine" would only mislead the next person to read the row.
+        // The column stays in the insert because the schema is unchanged.
+        discipline: null,
         subject: doc.suggested_subject,
         source_document_id: doc.id,
         submitted_by: user.id,
@@ -1361,6 +1478,65 @@ export function LibraryPage() {
     fileRef.current?.click();
   };
 
+  // ── Drag and drop, promoted to the whole page ──
+  // The old design paid for drag-and-drop with a permanent dashed box the size
+  // of a poster, sitting above the student's own material on every visit. The
+  // capability is worth keeping; the furniture is not. The entire page is the
+  // drop target now, and it says so only while something is actually being
+  // dragged over it - an affordance that costs nothing until it is relevant.
+  //
+  // dragDepth, not a boolean: dragenter/dragleave fire for every child element
+  // the pointer crosses, so a naive flag flickers off the instant the cursor
+  // passes over a document card. Counting enters against leaves is the
+  // standard cure.
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
+  const dragHasFiles = (e: ReactDragEvent<HTMLDivElement>) =>
+    Array.from(e.dataTransfer?.types ?? []).includes("Files");
+
+  const onPageDragEnter = (e: ReactDragEvent<HTMLDivElement>) => {
+    if (uploading || !dragHasFiles(e)) return;
+    dragDepth.current += 1;
+    setDragging(true);
+  };
+  const onPageDragLeave = (e: ReactDragEvent<HTMLDivElement>) => {
+    if (!dragHasFiles(e)) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragging(false);
+  };
+  const onPageDragOver = (e: ReactDragEvent<HTMLDivElement>) => {
+    // Without preventDefault the browser navigates to the dropped file, which
+    // looks exactly like the app crashing.
+    if (dragHasFiles(e)) e.preventDefault();
+  };
+  const onPageDrop = (e: ReactDragEvent<HTMLDivElement>) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    if (uploading) return;
+    const files = Array.from(e.dataTransfer.files ?? []);
+    if (files.length) onUploadFiles(files);
+  };
+
+  // The one condition that decides the shape of the top of the page: a student
+  // with nothing yet needs a target to aim at, and a student with a shelf full
+  // of books needs their books, not a target. Folders and search are held back
+  // for the same reason - there is nothing to organise or search yet.
+  const isEmptyLibrary = docs.length === 0;
+  const sharedCount = libraryBooks.length;
+  const sharedBooks = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return libraryBooks;
+    return libraryBooks.filter((b) => b.title.toLowerCase().includes(q));
+  }, [libraryBooks, query]);
+
+  // Sharing hides behind the shared shelf's tab, so a student who is looking
+  // at that shelf is the one being told about it. Never force the tab bar on a
+  // student with no shared books to browse.
+  const showShelfTabs = sharedCount > 0 && !isEmptyLibrary;
+  const activeShelf = showShelfTabs ? shelf : "mine";
+
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
@@ -1377,8 +1553,15 @@ export function LibraryPage() {
 
         <PageHeader
           eyebrow="Library"
-          title="Your study material"
-          subtitle="Upload large files so G&D can search them and point answers back to the source."
+          // First visit is taught; every visit after opens straight into the
+          // student's own material. See LIBRARY_INTRO_SEEN_KEY above for why
+          // the signal is "has opened this page", not "has uploaded".
+          title={showIntro ? "Your study material" : "Library"}
+          subtitle={
+            showIntro
+              ? "Upload large files so G&D can search them and point answers back to the source."
+              : undefined
+          }
           actions={
             <>
               {docs.length > 0 && (
@@ -1468,7 +1651,9 @@ export function LibraryPage() {
                   className={`h-full rounded-full bg-pop transition-[width] duration-200 ease-out ${
                     uploadBar?.percent == null ? "w-full animate-pulse" : ""
                   }`}
-                  style={uploadBar?.percent != null ? { width: `${uploadBar.percent}%` } : undefined}
+                  style={
+                    uploadBar?.percent != null ? { width: `${uploadBar.percent}%` } : undefined
+                  }
                 />
               </div>
               {uploadBar?.percent != null && (
@@ -1491,12 +1676,16 @@ export function LibraryPage() {
                 <div className="text-base font-semibold text-pop sm:text-lg">
                   {isOnboarding && docs.length === 0
                     ? "Tap here to upload your first file"
-                    : "Drag files here, or click to browse"}
+                    : showIntro
+                      ? "Drag files here, or click to browse"
+                      : "Upload file"}
                 </div>
-                <div className="mt-1 text-sm text-muted-foreground">
-                  PDF, Word, PowerPoint, text, or image - pick several at once, drag & drop or tap to
-                  browse
-                </div>
+                {showIntro && (
+                  <div className="mt-1 text-sm text-muted-foreground">
+                    PDF, Word, PowerPoint, text, or image - pick several at once, drag & drop or tap
+                    to browse
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1522,7 +1711,10 @@ export function LibraryPage() {
                   ? Math.min(100, Math.round((job.pagesDone / job.pagesTotal) * 100))
                   : null;
               return (
-                <div key={docId} className="rounded-2xl border border-border bg-surface p-3 text-sm">
+                <div
+                  key={docId}
+                  className="rounded-2xl border border-border bg-surface p-3 text-sm"
+                >
                   <div className="flex items-center justify-between gap-2">
                     <span className="min-w-0 truncate font-medium">{job.fileName}</span>
                     {job.status !== "processing" && (
@@ -1705,7 +1897,9 @@ export function LibraryPage() {
                   <DocumentCard
                     key={d.id}
                     doc={d}
-                    folderName={d.folder_id ? (folderNameById.get(d.folder_id) ?? "Folder") : "Uncategorised"}
+                    folderName={
+                      d.folder_id ? (folderNameById.get(d.folder_id) ?? "Folder") : "Uncategorised"
+                    }
                     isProcessing={!!serverOcr[d.id]}
                     allFolders={folders}
                     onDelete={onDelete}
@@ -1805,11 +1999,7 @@ export function LibraryPage() {
                     disabled={saving}
                     className="btn-pop inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-xl font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {saving ? (
-                      <LoadingDots />
-                    ) : (
-                      <MessageSquare className="h-3.5 w-3.5" />
-                    )}
+                    {saving ? <LoadingDots /> : <MessageSquare className="h-3.5 w-3.5" />}
                     {saving ? "Saving..." : "Start Chatting"}
                   </button>
                 </>
@@ -1819,11 +2009,7 @@ export function LibraryPage() {
                   disabled={saving}
                   className="btn-pop inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-xl font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {saving ? (
-                    <LoadingDots />
-                  ) : (
-                    <Upload className="h-3.5 w-3.5" />
-                  )}
+                  {saving ? <LoadingDots /> : <Upload className="h-3.5 w-3.5" />}
                   {saving ? "Saving..." : `Add ${pendingBatch.length} files to Library`}
                 </button>
               )}
@@ -1963,7 +2149,11 @@ function DocumentCard({
       <div className="flex flex-wrap items-center gap-2">
         <span
           className={`inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-            failed ? "bg-destructive/12 text-destructive" : busy ? "bg-pop/12 text-pop" : "bg-leaf/12 text-leaf"
+            failed
+              ? "bg-destructive/12 text-destructive"
+              : busy
+                ? "bg-pop/12 text-pop"
+                : "bg-leaf/12 text-leaf"
           }`}
         >
           {statusLabel}

@@ -16,8 +16,6 @@ type MyDoc = {
   page_count: number | null;
   suggested_subject: string | null;
 };
-type DiscChoice = "medicine" | "law" | "all";
-
 const DISCIPLINE_LABEL: Record<string, string> = { medicine: "Medicine", law: "Law" };
 const LIBRARY_APPROVAL_POINTS = 50;
 
@@ -31,7 +29,6 @@ export function AdminPage() {
   const [pending, setPending] = useState<LibraryDoc[]>([]);
   const [approved, setApproved] = useState<LibraryDoc[]>([]);
   const [myDocs, setMyDocs] = useState<MyDoc[]>([]);
-  const [discChoice, setDiscChoice] = useState<Record<string, DiscChoice>>({});
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -41,10 +38,7 @@ export function AdminPage() {
     setLoading(true);
     try {
       const [libRes, docRes] = await Promise.all([
-        supabase
-          .from("library_documents")
-          .select("*")
-          .order("created_at", { ascending: false }),
+        supabase.from("library_documents").select("*").order("created_at", { ascending: false }),
         supabase
           .from("documents")
           .select("id, file_name, file_type, file_size, page_count, suggested_subject")
@@ -119,8 +113,6 @@ export function AdminPage() {
   // library (create -> approve -> ingest) with no review step.
   const addToLibrary = async (doc: MyDoc) => {
     if (!user || busyId) return;
-    const choice = discChoice[doc.id] ?? "medicine";
-    const discipline = choice === "all" ? null : choice;
     setBusyId(doc.id);
     try {
       const { data: inserted, error: insErr } = await supabase
@@ -132,7 +124,10 @@ export function AdminPage() {
           file_size: doc.file_size,
           page_count: doc.page_count,
           subject: doc.suggested_subject,
-          discipline,
+          // The product is free-for-all now — books are no longer split by
+          // discipline. The column stays (some older rows still carry a
+          // value), but anything added from here on is unmarked.
+          discipline: null,
           source_document_id: doc.id,
           submitted_by: user.id,
           status: "pending",
@@ -147,10 +142,10 @@ export function AdminPage() {
         .eq("id", inserted.id);
       if (updErr) throw updErr;
 
-      const { data: copied, error: promErr } = await supabase.rpc(
-        "promote_document_to_library",
-        { p_library_id: inserted.id, p_source_document_id: doc.id },
-      );
+      const { data: copied, error: promErr } = await supabase.rpc("promote_document_to_library", {
+        p_library_id: inserted.id,
+        p_source_document_id: doc.id,
+      });
       if (promErr) throw promErr;
 
       if (!copied) {
@@ -210,8 +205,8 @@ export function AdminPage() {
         <h2 className="text-xs font-semibold uppercase tracking-wider text-pop">Admin</h2>
         <h1 className="mt-1 text-2xl font-semibold text-foreground">Shared library</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Review books students submit and manage what appears in everyone&apos;s library.
-          Approve only material you have the right to share.
+          Review books students submit and manage what appears in everyone&apos;s library. Approve
+          only material you have the right to share.
         </p>
       </header>
 
@@ -227,9 +222,8 @@ export function AdminPage() {
               Add a textbook
             </h3>
             <p className="mb-3 text-xs text-muted-foreground">
-              Your uploads that aren&apos;t in the library yet. Pick who it&apos;s for and add it —
-              it goes live for students immediately. (Upload new books in the Library first so
-              they get indexed.)
+              Your uploads that aren&apos;t in the library yet. Adding one goes live for students
+              immediately.
             </p>
             {myDocs.length === 0 ? (
               <p className="rounded-2xl border border-dashed border-border bg-surface px-4 py-6 text-center text-sm text-muted-foreground">
@@ -241,50 +235,32 @@ export function AdminPage() {
               </p>
             ) : (
               <div className="space-y-3">
-                {myDocs.map((doc) => {
-                  const choice = discChoice[doc.id] ?? "medicine";
-                  return (
-                    <div key={doc.id} className="rounded-2xl border border-border bg-surface p-4">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-foreground">{doc.file_name}</p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">
-                            {[doc.suggested_subject, doc.page_count ? `${doc.page_count} pages` : null]
-                              .filter(Boolean)
-                              .join(" · ") || "Ready to add"}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="inline-flex rounded-lg border border-border bg-background p-0.5">
-                            {(["medicine", "law", "all"] as DiscChoice[]).map((d) => (
-                              <button
-                                key={d}
-                                type="button"
-                                onClick={() => setDiscChoice((m) => ({ ...m, [doc.id]: d }))}
-                                className={`rounded-md px-2.5 py-1 text-xs font-medium capitalize transition-colors ${
-                                  choice === d
-                                    ? "bg-pop/15 text-pop"
-                                    : "text-muted-foreground hover:text-foreground"
-                                }`}
-                              >
-                                {d}
-                              </button>
-                            ))}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => void addToLibrary(doc)}
-                            disabled={!!busyId}
-                            className="btn-pop inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
-                          >
-                            {busyId === doc.id ? <LoadingDots /> : <Plus className="h-3.5 w-3.5" />}
-                            Add
-                          </button>
-                        </div>
+                {myDocs.map((doc) => (
+                  <div key={doc.id} className="rounded-2xl border border-border bg-surface p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-foreground">{doc.file_name}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {[
+                            doc.suggested_subject,
+                            doc.page_count ? `${doc.page_count} pages` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "Ready to add"}
+                        </p>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => void addToLibrary(doc)}
+                        disabled={!!busyId}
+                        className="btn-pop inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                      >
+                        {busyId === doc.id ? <LoadingDots /> : <Plus className="h-3.5 w-3.5" />}
+                        Add
+                      </button>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             )}
           </section>

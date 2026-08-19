@@ -9,7 +9,7 @@ const PracticePage = lazy(() =>
 );
 
 export const Route = createFileRoute("/app/practice")({
-  head: () => ({ meta: [{ title: "Practice - My Coach" }] }),
+  head: () => ({ meta: [{ title: "Practice - PQ" }] }),
   validateSearch: (s: Record<string, unknown>): PracticeSearch => ({
     plan: typeof s.plan === "string" ? s.plan : undefined,
     session: typeof s.session === "string" ? s.session : undefined,

@@ -1,12 +1,16 @@
-// Shared data access for the My Coach experience. Both the My Coach page
-// (roadmap building + history) and the Practice page reuse these Supabase
-// helpers and row types, so the query logic lives in one place.
+// Shared data access for the Practice Questions experience. Both the build
+// page (roadmap building + history) and the Practice page reuse these
+// Supabase helpers and row types, so the query logic lives in one place.
 import { supabase } from "@/integrations/supabase/client";
 import { DEDUP_SCHEMA_APPLIED } from "@/lib/content-hash";
 import { embedQuery } from "@/lib/embeddings";
 import { generateStudyQuestions } from "@/lib/studybody-client";
 import type { Profile } from "@/lib/auth-context";
-import type { OnGenerationProgress, StudyDocument, StudyQuestionType } from "@/lib/studybody-client";
+import type {
+  OnGenerationProgress,
+  StudyDocument,
+  StudyQuestionType,
+} from "@/lib/studybody-client";
 
 type AnyDb = {
   from: (table: string) => DbQuery;
@@ -188,7 +192,7 @@ export async function finalizeTopicMastery(topicId: string, percentage: number):
 }
 
 // ── "Go straight in" ────────────────────────────────────────────────────────
-// The second way into My Coach: no roadmap, no AI planning call, no ordered
+// The second way into Practice Questions: no roadmap, no AI planning call, no ordered
 // topics — just questions from the whole of the selected material, now.
 //
 // What makes it *broad* rather than a linear progression is the retrieval, not
@@ -321,16 +325,16 @@ export async function createStraightInSession({
    * sampling evenly across the whole file. Added for Battle Royale's "a
    * specific topic" scope (-app.battle-royale-page.tsx) — omitted or blank
    * preserves this flow's original whole-file behaviour exactly, which is what
-   * every other caller (My Coach's "Go straight in", the challenge dialogs)
-   * still wants.
+   * every other caller (Practice Questions' "Go straight in", the challenge
+   * dialogs) still wants.
    */
   topicFocus?: string;
   /**
    * Cap on the characters of document context sent to the generator.
    *
    * Unset means the studybody function's own ceiling (100,000 chars, ~25,000
-   * tokens), which is what My Coach has always used and what its callers still
-   * get. Battle Royale passes a much smaller number, and has to: a WHOLE-FILE
+   * tokens), which is what Practice Questions has always used and what its
+   * callers still get. Battle Royale passes a much smaller number, and has to: a WHOLE-FILE
    * pull fills that ceiling, and the model then spends its entire output budget
    * reading before it writes a single question, returning an empty completion.
    *
@@ -372,6 +376,21 @@ export async function createStraightInSession({
     summary: focus
       ? `A set focused on "${focus}" from the selected material.`
       : "A broad set drawn from across the whole of the selected material.",
+    // The student's own words, carried to the model as an INSTRUCTION rather
+    // than only as a retrieval query.
+    //
+    // `focus` already narrowed which chunks were pulled, but that alone only
+    // decides what the model is allowed to see - it never tells the model what
+    // the student actually wanted done with it. "Ask me about the mechanisms,
+    // not the definitions" retrieves sensible pages and then gets ignored.
+    // questionUserPrompt() in supabase/functions/studybody/index.ts stringifies
+    // the whole `topic` object into the prompt, so an extra key here reaches the
+    // generator with no edge-function change.
+    //
+    // Deliberately NOT part of `summary`: that string is written to
+    // study_topics.summary and shown to the student on the "Pick a topic"
+    // screen, where prompt phrasing has no business appearing.
+    ...(focus ? { student_focus: focus } : {}),
     objectives: [],
     source_refs: [],
   };

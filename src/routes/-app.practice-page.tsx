@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Brain,
   CheckCircle2,
+  ChevronDown,
   Clock,
   FileText,
   GraduationCap,
@@ -348,7 +349,7 @@ export function PracticePage() {
             className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-pop transition-colors hover:text-pop/80"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to My Coach
+            Back to PQ
           </Link>
         </div>
       </div>
@@ -379,6 +380,9 @@ function ConfigView({ planId }: { planId: string }) {
   const [customMode, setCustomMode] = useState(false);
   const [practiceMode, setPracticeMode] = useState<PracticeMode>("learning");
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
+  // Whether the folded settings row is open. Purely presentational -
+  // every value inside it keeps its default whether it is shown or not.
+  const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [practiceLoading, setPracticeLoading] = useState(false);
   // An unfinished set for the selected topic, so the student can pick up where
   // they stopped instead of generating (and paying for) a brand-new one.
@@ -396,6 +400,23 @@ function ConfigView({ planId }: { planId: string }) {
   // The timer rides on the same sets that already keep an elapsed clock, so
   // flashcards and essay-only sets are untouched by it.
   const supportsTimer = supportsModes;
+
+  // What the folded row says when it is closed. It names the settings the
+  // student would otherwise have to open it to check, so the fold costs them no
+  // information - only the space the three rows used to take.
+  const optionsSummary =
+    [
+      supportsModes ? (practiceMode === "learning" ? "Learning" : "Exam") : null,
+      supportsDifficulty
+        ? difficulty === "easy"
+          ? "Easy"
+          : difficulty === "medium"
+            ? "Medium"
+            : "Hard"
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" \u00b7 ") || "Options";
 
   const requestedTotal = questionType === "mixed" ? mixedMcq + mixedEssay : count;
   // "Race the clock" — off by default, and off means the set is created with no
@@ -535,7 +556,9 @@ function ConfigView({ planId }: { planId: string }) {
   const start = async () => {
     if (!user || !profile || !plan || !activeTopic) return;
     if (schemaMissing) {
-      toast.error("My Coach tables are missing in Supabase. Apply the StudyBody migration first.");
+      toast.error(
+        "Practice Questions tables are missing in Supabase. Apply the StudyBody migration first.",
+      );
       return;
     }
     const ids = plan.source_document_ids ?? [];
@@ -695,10 +718,10 @@ function ConfigView({ planId }: { planId: string }) {
             className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to My Coach
+            Back to PQ
           </Link>
           <PageHeader
-            eyebrow="My Coach"
+            eyebrow="PQ"
             title={plan?.title || "Roadmap practice"}
             subtitle={plan ? `${topics.length} topics - ${plan.source_type}` : "Loading roadmap…"}
             actions={
@@ -715,7 +738,7 @@ function ConfigView({ planId }: { planId: string }) {
         {schemaMissing && (
           <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm">
             <div className="font-semibold text-destructive">
-              My Coach database tables are missing
+              Practice Questions database tables are missing
             </div>
             <p className="mt-1 text-muted-foreground">
               Apply the migration{" "}
@@ -848,55 +871,6 @@ function ConfigView({ planId }: { planId: string }) {
                     />
                   </div>
 
-                  {supportsModes && (
-                    <div className="mt-3">
-                      <div className="mb-1.5 text-xs font-medium text-muted-foreground">Mode</div>
-                      <Segmented
-                        options={["learning", "exam"] as const}
-                        value={practiceMode}
-                        onChange={setPracticeMode}
-                        getLabel={(value) => (value === "learning" ? "Learning" : "Exam")}
-                        getIcon={(value) =>
-                          value === "learning" ? (
-                            <Brain className="h-3.5 w-3.5" />
-                          ) : (
-                            <GraduationCap className="h-3.5 w-3.5" />
-                          )
-                        }
-                        className="h-10"
-                      />
-                      <p className="mt-1.5 text-[11px] text-muted-foreground">
-                        {practiceMode === "learning"
-                          ? "Instant feedback after each answer."
-                          : "Answers are graded when you submit."}
-                      </p>
-                    </div>
-                  )}
-
-                  {supportsDifficulty && (
-                    <div className="mt-3">
-                      <div className="mb-1.5 text-xs font-medium text-muted-foreground">
-                        Difficulty
-                      </div>
-                      <Segmented
-                        options={["easy", "medium", "hard"] as const}
-                        value={difficulty}
-                        onChange={setDifficulty}
-                        getLabel={(value) =>
-                          value === "easy" ? "Easy" : value === "medium" ? "Medium" : "Hard"
-                        }
-                        className="h-10"
-                      />
-                      <p className="mt-1.5 text-[11px] text-muted-foreground">
-                        {difficulty === "easy"
-                          ? "Recall the facts."
-                          : difficulty === "medium"
-                            ? "Apply & understand."
-                            : "Exam-topper level - tough, multi-step questions, but every one stays answerable from your uploaded files."}
-                      </p>
-                    </div>
-                  )}
-
                   <div className="mt-3">
                     {questionType === "mixed" ? (
                       <>
@@ -1027,9 +1001,74 @@ function ConfigView({ planId }: { planId: string }) {
                     )}
                   </div>
 
-                  {supportsTimer && (
+                  {/* Mode, difficulty and the timer all have working defaults
+                      and most students never touch them, but they used to sit
+                      between "question type" and "how many" as three more
+                      labelled rows - which pushed Start below the fold in a
+                      360px column. Folded here, with the current choices shown
+                      on the toggle, so nothing is hidden, only quiet. */}
+                  {(supportsModes || supportsDifficulty || supportsTimer) && (
                     <div className="mt-3">
-                      <TimerPicker choice={timer} />
+                      <button
+                        type="button"
+                        onClick={() => setShowMoreOptions((value) => !value)}
+                        aria-expanded={showMoreOptions}
+                        className="flex w-full items-center justify-between gap-2 rounded-xl border border-border px-3 py-2.5 text-left transition-colors hover:border-pop/30"
+                      >
+                        <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">
+                          {optionsSummary}
+                        </span>
+                        <ChevronDown
+                          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                            showMoreOptions ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+
+                      {showMoreOptions && (
+                        <div className="mt-2 space-y-3">
+                          {supportsModes && (
+                            <div>
+                              <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                                Mode
+                              </div>
+                              <Segmented
+                                options={["learning", "exam"] as const}
+                                value={practiceMode}
+                                onChange={setPracticeMode}
+                                getLabel={(value) => (value === "learning" ? "Learning" : "Exam")}
+                                getIcon={(value) =>
+                                  value === "learning" ? (
+                                    <Brain className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <GraduationCap className="h-3.5 w-3.5" />
+                                  )
+                                }
+                                className="h-10"
+                              />
+                            </div>
+                          )}
+
+                          {supportsDifficulty && (
+                            <div>
+                              <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                                Difficulty
+                              </div>
+                              <Segmented
+                                options={["easy", "medium", "hard"] as const}
+                                value={difficulty}
+                                onChange={setDifficulty}
+                                getLabel={(value) =>
+                                  value === "easy" ? "Easy" : value === "medium" ? "Medium" : "Hard"
+                                }
+                                className="h-10"
+                              />
+                            </div>
+                          )}
+
+                          {supportsTimer && <TimerPicker choice={timer} />}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1055,11 +1094,6 @@ function ConfigView({ planId }: { planId: string }) {
                           ? "Start new practice"
                           : "Start practice"}
                   </button>
-                  {practiceLoading && (
-                    <p className="mt-2 text-center text-xs text-muted-foreground">
-                      Larger sets take a little longer to build from your files.
-                    </p>
-                  )}
                 </>
               ) : (
                 <div className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
@@ -1873,7 +1907,7 @@ function SessionView({
             Back to topics
           </button>
           <PageHeader
-            eyebrow="My Coach"
+            eyebrow="PQ"
             title={topicTitle || "Practice session"}
             subtitle={
               isFlashcards

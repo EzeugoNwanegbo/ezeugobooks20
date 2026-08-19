@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Clock, MessageSquare, Search, Trash2 } from "lucide-react";
 import { LoadingDots } from "@/components/loading-dots";
+import { PageHeader } from "@/components/ui/page-header";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -12,12 +13,26 @@ type ConversationRow = {
   updated_at: string | null;
 };
 
+// The sidebar already shows a "Recent" list (capped, titles only, no search -
+// see SIDEBAR_CONVO_LIMIT in -app-shell.tsx). This page earns its keep by
+// being the other two things: the *full* archive, and searchable by what was
+// actually said, not just the title.
+const HISTORY_LOAD_LIMIT = 1000;
+
+// How long after the last keystroke we search message content server-side.
+// Title filtering is instant (it just filters what's already loaded); this
+// is the part that needs a network round trip.
+const CONTENT_SEARCH_DEBOUNCE_MS = 300;
+
 export function HistoryPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [convos, setConvos] = useState<ConversationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  // Conversation ids whose message content (not title) matched the current
+  // search - the thing the sidebar's list has no way to do at all.
+  const [contentMatches, setContentMatches] = useState<Set<string>>(new Set());
 
   const refresh = async () => {
     if (!user) return;
@@ -26,7 +41,7 @@ export function HistoryPage() {
       .select("id, title, updated_at")
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false })
-      .limit(200);
+      .limit(HISTORY_LOAD_LIMIT);
     if (error) {
       console.warn("load history", error);
       toast.error("Couldn't load your chat history");
@@ -41,32 +56,66 @@ export function HistoryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // Search what was actually said, not just the conversation title.
+  useEffect(() => {
+    const q = query.trim();
+    if (!user || q.length < 2) {
+      setContentMatches(new Set());
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("conversation_id")
+        .eq("user_id", user.id)
+        .ilike("content", `%${q}%`)
+        .limit(200);
+      if (cancelled) return;
+      if (error) {
+        console.warn("search message content", error);
+        return;
+      }
+      setContentMatches(new Set((data ?? []).map((m) => m.conversation_id)));
+    }, CONTENT_SEARCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [query, user]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return convos;
-    return convos.filter((c) => (c.title || "New conversation").toLowerCase().includes(q));
-  }, [convos, query]);
+    return convos.filter(
+      (c) => (c.title || "New conversation").toLowerCase().includes(q) || contentMatches.has(c.id),
+    );
+  }, [convos, query, contentMatches]);
 
   const grouped = useMemo(() => {
     const today: ConversationRow[] = [];
-    const week: ConversationRow[] = [];
+    const yesterday: ConversationRow[] = [];
+    const thisWeek: ConversationRow[] = [];
+    const thisMonth: ConversationRow[] = [];
     const older: ConversationRow[] = [];
     const now = Date.now();
     for (const c of filtered) {
       const t = c.updated_at ? new Date(c.updated_at).getTime() : 0;
       const ageDays = (now - t) / (1000 * 60 * 60 * 24);
       if (ageDays < 1) today.push(c);
-      else if (ageDays < 7) week.push(c);
+      else if (ageDays < 2) yesterday.push(c);
+      else if (ageDays < 7) thisWeek.push(c);
+      else if (ageDays < 30) thisMonth.push(c);
       else older.push(c);
     }
-    return { today, week, older };
+    return { today, yesterday, thisWeek, thisMonth, older };
   }, [filtered]);
 
   const open = (id: string) => navigate({ to: "/app/chat", search: { c: id } });
 
   const remove = async (id: string) => {
     if (!user) return;
-    if (!confirm("Delete this chat?")) return;
+    if (!window.confirm("Delete this chat?")) return;
     await supabase.from("messages").delete().eq("conversation_id", id);
     const { error } = await supabase.from("conversations").delete().eq("id", id);
     if (error) {
@@ -79,22 +128,22 @@ export function HistoryPage() {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-3 py-5 sm:px-4 sm:py-8 md:px-8">
-        <div className="mb-6 sm:mb-8">
-          <h1 className="font-display text-4xl font-light leading-none sm:text-5xl">History</h1>
-          <p className="mt-2 text-sm text-muted-foreground sm:mt-1">
-            Every conversation you've had with G&D.
-          </p>
-        </div>
-
-        <div className="relative mb-5">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search conversations..."
-            className="h-11 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
-        </div>
+        <PageHeader
+          eyebrow="History"
+          title="History"
+          className="mb-6 sm:mb-8"
+          actions={
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search"
+                className="h-11 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+          }
+        />
 
         {loading ? (
           <div className="flex justify-center py-16">
@@ -121,8 +170,20 @@ export function HistoryPage() {
           <div className="space-y-6">
             <HistoryGroup title="Today" items={grouped.today} onOpen={open} onDelete={remove} />
             <HistoryGroup
-              title="Last 7 days"
-              items={grouped.week}
+              title="Yesterday"
+              items={grouped.yesterday}
+              onOpen={open}
+              onDelete={remove}
+            />
+            <HistoryGroup
+              title="This week"
+              items={grouped.thisWeek}
+              onOpen={open}
+              onDelete={remove}
+            />
+            <HistoryGroup
+              title="This month"
+              items={grouped.thisMonth}
               onOpen={open}
               onDelete={remove}
             />

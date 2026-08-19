@@ -10,7 +10,7 @@
 // That migration is applied by hand by the owner, so the app must not assume it
 // has run. Naming a column, view or function that does not exist makes PostgREST
 // reject the WHOLE statement - not the one field, the statement - which is how
-// web uploads, mobile uploads and My Coach retrieval went down together once
+// web uploads, mobile uploads and PQ retrieval went down together once
 // already. Every reference to the new schema is therefore behind this flag.
 //
 // Flip it to true in the SAME commit that applies the migration. Not before,
@@ -48,22 +48,31 @@ export const SOCIAL_SCHEMA_APPLIED = true;
 export const BATTLE_SCHEMA_APPLIED = true;
 
 /**
- * Is supabase/migrations/20260815120000_friend_search_prefix.sql applied in
- * production yet?
+ * Has supabase/migrations/20260815120000_friend_search_prefix.sql landed?
  *
- * FALSE until it has been run BY HAND — same contract as the two flags above.
  * That migration adds public.find_students(), a handle-PREFIX search: three
  * characters minimum, ten results maximum, opt-in students only, handles never
- * display names. Until this is true, findStudentsByPrefix() below returns an
- * empty list without making a network call, and the search box falls back to
- * the exact-handle lookup it has always used — which is why the fallback is
- * kept working rather than replaced.
+ * display names.
  *
- * Flip it in the SAME commit that applies the migration, and only alongside
- * mobile's copy of this flag (gandd-mobile/lib/social.ts) — both apps hit the
- * same schema.
+ * DETECTED, not hand-flipped. This was `FRIEND_SEARCH_PREFIX_APPLIED = false`,
+ * a constant to be flipped in the same commit that applied the SQL. Migrations
+ * here are applied by hand, so that made running the SQL do nothing until a
+ * second code change also shipped — and mobile carries its own copy of the same
+ * constant, so "flip both together" was one more thing to get wrong. The first
+ * call now just tries the RPC; PostgREST's PGRST202 latches this for the rest
+ * of the session and the search box falls back to the exact-handle lookup it
+ * has always used.
+ *
+ * Only a missing FUNCTION latches it. A network blip must not, or one bad
+ * moment would disable suggestions until a reload.
  */
-export const FRIEND_SEARCH_PREFIX_APPLIED = false;
+let prefixSearchMissing = false;
+
+function isMissingFunction(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === "PGRST202") return true;
+  return /could not find the function|does not exist/i.test(error.message ?? "");
+}
 
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
@@ -217,25 +226,32 @@ export async function findStudent(handle: string): Promise<FoundStudent | null> 
 /**
  * Students whose handle STARTS with what has been typed — the type-ahead.
  *
- * Empty, with no network call at all, until FRIEND_SEARCH_PREFIX_APPLIED is
- * true: find_students() does not exist in the database before then, and naming
- * a function that is not there fails the call rather than returning nothing.
- * Callers are expected to keep findStudent() as their fallback, which is why
- * this returns [] rather than throwing — an empty suggestion list degrades into
- * "type the whole handle", which is exactly the behaviour that came before it.
+ * Empty until 20260815120000_friend_search_prefix.sql is applied: find_students()
+ * does not exist before then, and PostgREST answers a missing function with an
+ * error rather than an empty result. Callers keep findStudent() as their
+ * fallback, which is why this returns [] rather than throwing — an empty
+ * suggestion list degrades into "type the whole handle", which is exactly the
+ * behaviour that came before it.
  *
  * The three-character minimum is the server's, mirrored here only so a shorter
  * prefix does not cost a round trip. Everything that decides who is findable —
  * the opt-in flag, guests, blocks — is decided by the database.
  */
 export async function findStudentsByPrefix(prefix: string, limit = 5): Promise<FoundStudent[]> {
-  if (!SOCIAL_SCHEMA_APPLIED || !FRIEND_SEARCH_PREFIX_APPLIED) return [];
+  if (!SOCIAL_SCHEMA_APPLIED || prefixSearchMissing) return [];
   const value = normalizeHandle(prefix);
   if (!USERNAME_PATTERN.test(value)) return [];
-  const rows = unwrap<FoundStudent[] | null>(
-    await db.rpc("find_students", { p_prefix: value, p_limit: limit }),
-  );
-  return rows ?? [];
+
+  // Never throws, unlike its neighbours. The search box runs this alongside the
+  // exact-handle lookup in ONE Promise.all, so a rejection here would discard
+  // the exact result too and break a search that works perfectly well without
+  // suggestions.
+  const result = await db.rpc("find_students", { p_prefix: value, p_limit: limit });
+  if (result.error) {
+    if (isMissingFunction(result.error)) prefixSearchMissing = true;
+    return [];
+  }
+  return (result.data as FoundStudent[] | null) ?? [];
 }
 
 // ── Friends ─────────────────────────────────────────────────────────────────

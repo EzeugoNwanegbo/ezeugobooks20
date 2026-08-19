@@ -25,13 +25,7 @@ import {
 } from "@/lib/chat-client";
 import { takePendingChatDoc } from "@/lib/chat-handoff";
 import { buildContinuationPrompt, buildExplainLastAnswerPrompt } from "@/lib/chat-portability";
-import {
-  savePersonalizationBackground as writePersonalizationBackground,
-  isPersonalizationNudgeSnoozed,
-  snoozePersonalizationNudge,
-} from "@/lib/personalization";
-import { PersonalizationPanel } from "@/components/personalization-panel";
-import { ProgressionCard } from "@/components/progression-card";
+import { StreakOpening, useStreakOpening } from "@/components/streak-opening";
 import {
   emptyGamificationStats,
   loadGamificationStats,
@@ -80,7 +74,6 @@ import {
   Pause,
   Play,
   RotateCcw,
-  Layers,
   Mic,
   Volume2,
   ChevronDown,
@@ -867,12 +860,6 @@ export function ChatPage() {
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const [fileSearch, setFileSearch] = useState("");
   const [libraryNotice, setLibraryNotice] = useState<LibraryNotice>(null);
-  const [flashPillDismissed, setFlashPillDismissed] = useState(false);
-  // Starts hidden and is un-hidden after mount, for the same reason the tour
-  // reads its storage in an effect: localStorage does not exist during the
-  // server render, so deciding this at first render would either throw or
-  // hydrate to a different answer than the server gave.
-  const [personalizationDismissed, setPersonalizationDismissed] = useState(true);
   const [sessionReady, setSessionReady] = useState(false);
   // The composer is absolutely positioned and its height varies (mode tabs,
   // library row, multi-line input). Track it so the message list can reserve
@@ -914,29 +901,11 @@ export function ChatPage() {
     }
   };
 
-  const savePersonalizationBackground = async (text: string) => {
-    if (!user || !savedProfile) return;
-    // Shared write path with the sidebar's Personalize panel (see
-    // src/lib/personalization.ts) so the two entry points can't drift.
-    const error = await writePersonalizationBackground(savedProfile.id, text);
-    if (error) {
-      toast.error("Couldn't save your background — try again.");
-      return;
-    }
-    await refreshProfile();
-    toast.success("Saved — G&D now studies with you in mind.");
-  };
-
-  // The nudge is throttled to once a week per device (see
-  // isPersonalizationNudgeSnoozed). Runs once on mount, after hydration.
-  useEffect(() => {
-    setPersonalizationDismissed(isPersonalizationNudgeSnoozed());
-  }, []);
-
-  const dismissPersonalizationNudge = () => {
-    snoozePersonalizationNudge();
-    setPersonalizationDismissed(true);
-  };
+  // The personalization nudge used to open here, on top of a blank chat, the
+  // first time a student started one. It is gone: a new chat is the greeting
+  // and the composer, and nothing else gets to stand in front of that.
+  // Personalize is still reachable whenever the student wants it, from the
+  // sidebar — the panel component and its storage helpers are untouched.
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1394,9 +1363,15 @@ export function ChatPage() {
   // composer doesn't jump up and back down.
   const emptyChat = messages.length === 0 && !loadingConvo;
 
-  // Progression, for the strip above the greeting on a blank chat. Read from
-  // the same localStorage the shell reads and refreshed off the same event, so
-  // the two never disagree.
+  // Progression, read from the same localStorage the shell reads and refreshed
+  // off the same event so the two can never disagree.
+  //
+  // There is no longer a permanent rank/streak row on this screen. It was a
+  // scoreboard sitting on top of the one surface in the app that was actually
+  // calm, and for a student two days into a streak it mostly said "you are
+  // nowhere". All that survives is the opening moment below: it runs for about
+  // four seconds on a blank chat, once a day, and then the screen is just the
+  // greeting and the composer. These stats exist only to feed it.
   const [progressStats, setProgressStats] = useState<GamificationStats>(emptyGamificationStats);
   useEffect(() => {
     if (!user) {
@@ -1408,6 +1383,12 @@ export function ChatPage() {
     window.addEventListener("gd:gamification", onChange);
     return () => window.removeEventListener("gd:gamification", onChange);
   }, [user]);
+
+  // Self-gating (see src/components/streak-opening.tsx): the shell no longer
+  // mounts this, so the once-per-day-per-device gate lives inside the hook. It
+  // is only offered on a blank chat, so it can never appear over a conversation
+  // the student came back to read.
+  const streakMoment = useStreakOpening(progressStats.currentStreak, emptyChat && Boolean(user));
 
   // Build a self-contained prompt from this conversation and copy it, so the
   // student can paste it into any other AI and keep going without starting over.
@@ -1554,10 +1535,15 @@ export function ChatPage() {
     signal?.addEventListener("abort", abortFromCaller, { once: true });
     try {
       if (signal?.aborted) throw new Error(CHAT_CANCELLED);
-      // Search the student's own files and, in smart mode, the shared library
-      // (built-in textbooks) scoped to their discipline, then merge both. When
-      // the student manually selected specific files we respect that and skip
-      // the library.
+      // Search the student's own files and, in smart mode, the whole shared
+      // library (built-in textbooks), then merge both. When the student
+      // manually selected specific files we respect that and skip the library.
+      //
+      // The library search used to be scoped to the student's discipline, back
+      // when the product was medicine-and-law only. It is free for all now, so
+      // every student reaches every shared book: a nursing student is welcome
+      // to the pharmacology text. The RPC keeps its match_discipline argument
+      // (the database signature is unchanged) and we simply always pass null.
       const [ownRes, libRes] = await Promise.all([
         supabase
           .rpc("search_document_chunks_hybrid", {
@@ -1574,7 +1560,7 @@ export function ChatPage() {
               .rpc("search_library_chunks_hybrid", {
                 query_terms: terms,
                 query_embedding: queryEmbedding,
-                match_discipline: profile.discipline ?? null,
+                match_discipline: null,
                 match_count: 12,
               })
               .abortSignal(controller.signal),
@@ -2210,21 +2196,16 @@ export function ChatPage() {
             className="mx-auto max-w-3xl px-3 pt-4 sm:px-4 md:px-8 md:pt-8"
             style={{ paddingBottom: emptyChat ? 0 : (composerHeight || 150) + 24 }}
           >
+            {/* A blank chat is blank. The personalization panel used to open
+                here on a new chat, which meant the cleanest screen in the
+                product greeted you with a form before you had asked anything.
+                Personalize still lives in the sidebar, where a student reaches
+                for it when they actually want it. */}
             {loadingConvo && messages.length === 0 ? (
               <div className="flex justify-center py-12">
                 <LoadingDots size="md" className="text-primary" />
               </div>
-            ) : messages.length === 0 ? (
-              user &&
-              !savedProfile?.personalization_background &&
-              !personalizationDismissed && (
-                <PersonalizationPanel
-                  initialBackground={savedProfile?.personalization_background ?? ""}
-                  onSave={savePersonalizationBackground}
-                  onDismiss={dismissPersonalizationNudge}
-                />
-              )
-            ) : (
+            ) : messages.length === 0 ? null : (
               <div className="space-y-8 sm:space-y-10">
                 {messages.map((m, i) => (
                   <div key={i} className="gd-msg-in">
@@ -2267,38 +2248,27 @@ export function ChatPage() {
               [data-tour="composer"], and the greeting is not part of the input. */}
           {emptyChat && (
             <div className="pointer-events-auto mx-auto w-full max-w-3xl">
-              {/* One compact row above the greeting. It is inside the same
-                  centred group, which already scrolls itself
-                  (overflow-y-auto on the composer block), so on a short phone
-                  it costs a little scroll rather than pushing the composer off
-                  screen. It renders nothing for a student with no points and
-                  no streak, so a first run is unchanged. */}
-              <ProgressionCard stats={progressStats} />
+              {/* The opening streak moment - and nothing else above the
+                  greeting. The permanent progression row that used to sit here
+                  is gone: a bar that is always on screen turns a small streak
+                  into a standing reminder of how little you have done. This
+                  one sweeps, holds for about four seconds, then collapses
+                  itself and leaves the blank chat clean. It is in normal flow
+                  inside the centred group, so its exit glides the greeting and
+                  composer back to centre rather than snapping them.
+                  See src/components/streak-opening.tsx. */}
+              {streakMoment.visible && (
+                <StreakOpening stats={progressStats} leaving={streakMoment.leaving} />
+              )}
               <ChatGreeting name={savedProfile?.name ?? ""} />
             </div>
           )}
           <div data-tour="composer" className="pointer-events-auto max-w-3xl mx-auto w-full">
-            {messages.some((m) => m.role === "user") && !flashPillDismissed && (
-              <div className="mb-2 flex justify-center">
-                <div className="inline-flex items-center gap-1 rounded-xl border border-border/70 bg-background px-1 py-1 text-xs shadow-sm">
-                  <Link
-                    to="/app/studybody"
-                    className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-medium text-primary transition-colors hover:bg-primary/10"
-                  >
-                    <Layers className="h-3.5 w-3.5" />
-                    Learn with flash cards
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => setFlashPillDismissed(true)}
-                    aria-label="Dismiss"
-                    className="inline-flex h-6 w-6 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* The "Learn with flash cards" pill that used to float above the
+                composer is gone. It advertised another page from the middle of
+                the one you were already using, and it needed its own dismiss
+                button to make that bearable - the sign that it should not have
+                been there. PQ is in the sidebar. */}
             {/* The row above the input. The answer-style and answer-source
                 pills that used to live here are gone: they were the mobile form
                 of the same two segmented controls the header carried, and the
@@ -2525,7 +2495,13 @@ export function ChatPage() {
                 )}
                 <textarea
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    // A student who has started typing has told us what they
+                    // came for, so the streak strip gets out of the way early
+                    // rather than sitting out its four seconds.
+                    streakMoment.dismiss();
+                  }}
                   onFocus={() => {
                     setIsInputFocused(true);
                     setHideComposer(false);
@@ -2545,7 +2521,7 @@ export function ChatPage() {
                   autoComplete="off"
                   spellCheck={!nativeApp}
                   rows={1}
-                  placeholder="Ask for an explanation, source, example, or exam question..."
+                  placeholder="Ask anything"
                   className="gd-composer-field min-h-[44px] max-h-[180px] min-w-0 flex-1 resize-none border-0 bg-transparent px-2 py-2.5 text-sm focus:outline-none sm:px-3"
                   style={{ height: "auto" }}
                   onInput={(e) => {
@@ -4134,7 +4110,6 @@ function Message({
       window.removeEventListener("touchstart", dismissOnOutside);
       window.removeEventListener("keydown", dismissOnEsc);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [termPopover]);
 
   // Abort any in-flight lookup if the message unmounts.

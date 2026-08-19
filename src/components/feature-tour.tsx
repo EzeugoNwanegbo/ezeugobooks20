@@ -6,10 +6,10 @@
 // the mobile drawer sliding open, smooth scrolling, resize, and lazy content,
 // without any of them needing to notify the tour.
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, ArrowRight, Check, X } from "lucide-react";
-import { TOUR_STEPS, markTourSeen } from "@/lib/feature-tour";
+import { markTourSeen, tourStepsFor } from "@/lib/feature-tour";
 
 type Box = { top: number; left: number; width: number; height: number };
 
@@ -38,11 +38,19 @@ function sameBox(a: Box | null, b: Box | null): boolean {
 export function FeatureTour({
   open,
   onClose,
+  userId,
+  social,
   onOpenMobileNav,
   onCloseMobileNav,
 }: {
   open: boolean;
   onClose: () => void;
+  /** Scopes the seen-flag to the account, so a second login here still gets one run. */
+  userId?: string | null;
+  /** Whether Friends and Battle Royale are advertised for this student. The
+   *  tour drops those steps when they are not, so the map never points at a
+   *  room the student cannot enter. */
+  social?: boolean;
   /** Reveals drawer-only anchors on small screens. */
   onOpenMobileNav?: () => void;
   onCloseMobileNav?: () => void;
@@ -56,20 +64,32 @@ export function FeatureTour({
   const boxRef = useRef<Box | null>(null);
   const scrolledForStep = useRef<string | null>(null);
 
-  const step = TOUR_STEPS[Math.min(index, TOUR_STEPS.length - 1)]!;
-  const isLast = index >= TOUR_STEPS.length - 1;
+  const steps = useMemo(() => tourStepsFor({ social: Boolean(social) }), [social]);
+  const step = steps[Math.min(index, steps.length - 1)]!;
+  const isLast = index >= steps.length - 1;
 
   const finish = useCallback(() => {
-    markTourSeen();
+    markTourSeen(userId);
     onCloseMobileNav?.();
     setIndex(0);
     onClose();
-  }, [onClose, onCloseMobileNav]);
+  }, [onClose, onCloseMobileNav, userId]);
 
-  // Restart from the top whenever the tour is reopened.
+  // Restart from the top whenever the tour is reopened, and bank the seen-flag
+  // the instant it opens rather than when it ends.
+  //
+  // It used to be written only by finish(), which meant it took an explicit
+  // dismissal in that same mounted session to stick: reload the page on step
+  // three, close the tab, or sign out mid-tour and nothing was ever written, so
+  // the shell armed it again on the next visit. That is the "it keeps coming
+  // back" report. Marking on open makes every exit path - including the ones
+  // that never run our code - permanent. Replaying from the Guide button
+  // re-writes a flag that is already set, which is harmless.
   useEffect(() => {
-    if (open) setIndex(0);
-  }, [open]);
+    if (!open) return;
+    setIndex(0);
+    markTourSeen(userId);
+  }, [open, userId]);
 
   // Put the app in the state this step describes: right route, drawer open or
   // shut. Kept separate from the measuring loop so it runs once per step.
@@ -151,7 +171,7 @@ export function FeatureTour({
         finish();
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
-        setIndex((i) => Math.min(TOUR_STEPS.length - 1, i + 1));
+        setIndex((i) => Math.min(steps.length - 1, i + 1));
       } else if (event.key === "ArrowLeft") {
         event.preventDefault();
         setIndex((i) => Math.max(0, i - 1));
@@ -159,7 +179,7 @@ export function FeatureTour({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, finish]);
+  }, [open, finish, steps.length]);
 
   if (!open) return null;
 
@@ -216,7 +236,7 @@ export function FeatureTour({
       >
         <div className="mb-1.5 flex items-start justify-between gap-3">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            {index + 1} of {TOUR_STEPS.length}
+            {index + 1} of {steps.length}
           </p>
           <button
             type="button"
@@ -235,7 +255,7 @@ export function FeatureTour({
 
         <div className="mt-3.5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-1" aria-hidden="true">
-            {TOUR_STEPS.map((item, itemIndex) => (
+            {steps.map((item, itemIndex) => (
               <span
                 key={item.id}
                 className={`h-1.5 rounded-full transition-all duration-200 ${

@@ -1,4 +1,4 @@
-// The optional "race the clock" timer on a My Coach question set.
+// The optional "race the clock" timer on a PQ question set.
 //
 // Genuinely optional, and the default is off. An untimed set behaves exactly as
 // it did before this existed: no timer key is written into the session, the

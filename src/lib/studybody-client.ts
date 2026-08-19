@@ -72,7 +72,7 @@ async function callStudyBody<T>(payload: Record<string, unknown>): Promise<T> {
   try {
     const { data: sess } = await supabase.auth.getSession();
     const token = sess.session?.access_token;
-    if (!token) throw new Error("Sign in again before using My Coach.");
+    if (!token) throw new Error("Sign in again before using Practice Questions.");
 
     const response = await fetch(STUDYBODY_URL, {
       method: "POST",
@@ -85,7 +85,7 @@ async function callStudyBody<T>(payload: Record<string, unknown>): Promise<T> {
     });
 
     if (!response.ok) {
-      let message = "My Coach AI request failed";
+      let message = "Practice Questions AI request failed";
       try {
         const json = await response.json();
         message = json.error ?? message;
@@ -133,7 +133,7 @@ async function streamStudyBody<T>(
   try {
     const { data: sess } = await supabase.auth.getSession();
     const token = sess.session?.access_token;
-    if (!token) throw new Error("Sign in again before using My Coach.");
+    if (!token) throw new Error("Sign in again before using Practice Questions.");
 
     const response = await fetch(STUDYBODY_URL, {
       method: "POST",
@@ -146,7 +146,7 @@ async function streamStudyBody<T>(
     });
 
     if (!response.ok) {
-      let message = "My Coach AI request failed";
+      let message = "Practice Questions AI request failed";
       try {
         const j = await response.json();
         message = j.error ?? message;
@@ -161,7 +161,8 @@ async function streamStudyBody<T>(
       // buffered read and parse every line out of the whole payload at once.
       const text = await response.text();
       const outcome = { result: undefined as T | undefined, error: null as string | null };
-      for (const line of text.split("\n")) applyStudyBodySseLine(line, doneKey, onProgress, outcome);
+      for (const line of text.split("\n"))
+        applyStudyBodySseLine(line, doneKey, onProgress, outcome);
       if (outcome.error) throw new Error(outcome.error);
       if (outcome.result === undefined) {
         throw new Error("The AI stream ended before it finished. Please try again.");
@@ -221,7 +222,8 @@ function applyStudyBodySseLine<T>(
     } else if (parsed.event === "done") {
       outcome.result = parsed[doneKey] as T;
     } else if (parsed.event === "error") {
-      outcome.error = typeof parsed.error === "string" ? parsed.error : "My Coach AI request failed";
+      outcome.error =
+        typeof parsed.error === "string" ? parsed.error : "Practice Questions AI request failed";
     }
   } catch {
     /* ignore malformed keep-alive fragments */
@@ -282,8 +284,8 @@ export async function generateStudyQuestions({
   // Optional: how many questions exist so far, out of how many were asked
   // for, fired once per completed AI batch. Always streams under the hood
   // now (see streamStudyBody) for the reliability win even if the caller
-  // does not pass this - Battle Royale wires it into its progress bar; My
-  // Coach gets the streaming reliability for free without wiring it up.
+  // does not pass this - Battle Royale wires it into its progress bar;
+  // Practice Questions gets the streaming reliability for free without wiring it up.
   onProgress?: OnGenerationProgress;
 }) {
   const questions = await streamStudyBody<GeneratedQuestion[]>(

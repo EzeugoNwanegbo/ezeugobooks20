@@ -2,7 +2,7 @@
 //
 // It has two ways in, because the two callers arrive holding different things:
 //
-//   1. WITH a sessionId (the My Coach entry point). The student has just built a
+//   1. WITH a sessionId (the PQ entry point). The student has just built a
 //      question set and wants to send it. Nothing is generated; the dialog only
 //      asks who.
 //   2. WITHOUT one (the Friends page). The student picked a friend first, so the
@@ -90,7 +90,7 @@ export function ChallengeFriendDialog({
   }, [open, presetFriend, friends]);
 
   // Only loads when the dialog is open AND it actually has a set to build, so
-  // the My Coach entry point never pays for a query it will not use.
+  // the PQ entry point never pays for a query it will not use.
   useEffect(() => {
     if (!open || !buildsSet || !user) return;
     let active = true;
