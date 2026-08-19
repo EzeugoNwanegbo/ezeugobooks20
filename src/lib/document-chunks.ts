@@ -12,6 +12,12 @@ const DOCUMENT_PREVIEW_CHARS = 120_000;
 
 type PageBlock = {
   page: number | null;
+  /**
+   * The page number printed on the page itself, when the document supports one.
+   * Distinct from `page`, which is the sheet's position in the file - they
+   * differ by the length of the front matter. See src/lib/book-pages.ts.
+   */
+  bookPage: number | null;
   text: string;
 };
 
@@ -44,7 +50,10 @@ export function sanitizeExtractedText(text: string): string {
     out += text[i];
   }
 
-  return out.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").trim();
+  return out
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
 }
 
 export function documentPreview(text: string): string {
@@ -68,7 +77,10 @@ export function chunkDocumentText(text: string): DocumentChunkInput[] {
 }
 
 function parsePageBlocks(text: string): PageBlock[] {
-  const marker = /\[Page\s+(\d+)\]\s*/g;
+  // The book-page half is optional: documents with no consistent folio (slide
+  // decks, lecture notes) keep the plain `[Page N]` marker, and so does every
+  // document extracted before book pages existed.
+  const marker = /\[Page\s+(\d+)(?:\s*\|\s*Book page\s+(\d+))?\]\s*/g;
   const matches: RegExpExecArray[] = [];
   let match: RegExpExecArray | null;
 
@@ -76,7 +88,7 @@ function parsePageBlocks(text: string): PageBlock[] {
     matches.push(match);
   }
 
-  if (matches.length === 0) return [{ page: null, text }];
+  if (matches.length === 0) return [{ page: null, bookPage: null, text }];
 
   return matches.map((match, index) => {
     const page = Number(match[1]);
@@ -85,6 +97,7 @@ function parsePageBlocks(text: string): PageBlock[] {
       index + 1 < matches.length ? (matches[index + 1].index ?? text.length) : text.length;
     return {
       page,
+      bookPage: match[2] ? Number(match[2]) : null,
       text: text.slice(start, end).trim(),
     };
   });
@@ -108,7 +121,13 @@ function chunkPages(
   };
 
   for (const page of pages) {
-    const labelled = `[Page ${page.page ?? "?"}]\n${page.text.trim()}`;
+    // Re-stamped rather than carried through verbatim, because a chunk can span
+    // several pages and each one has to name itself inside the chunk text - that
+    // label is what the model copies into a citation.
+    const sheet = page.page ?? "?";
+    const marker =
+      page.bookPage === null ? `[Page ${sheet}]` : `[Page ${sheet} | Book page ${page.bookPage}]`;
+    const labelled = `${marker}\n${page.text.trim()}`;
     if (labelled.length > CHUNK_CHARS) {
       flush();
       chunks.push(...chunkPlainText(labelled, page.page));

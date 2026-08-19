@@ -79,9 +79,16 @@ html {
   --font-display: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
   /* Plate numerals, source keys, measurements. Tabular by default (see below). */
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  /* Answers read in the same face as the interface, distinguished by measure
-     and leading rather than by a friendlier shape. */
-  --font-reading: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  /* Answers are the one place that does NOT use the interface face.
+     The rule above - one family, distinguished by measure and leading - still
+     governs the app. Long-form reading is the deliberate exception: the owner
+     matched this to the reference they read every day, and a native humanist
+     face is what a wall of prose is designed around. It applies to .medai-prose
+     and nothing else; revert this one line to put answers back on the
+     interface face. */
+  --font-reading:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
   /* The G&D mark only. Never apply to headings or UI. */
   --font-wordmark: "Varsity", "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
 }
@@ -1295,14 +1302,18 @@ html.gd-low-power .gd-forming-orb::after {
 .medai-prose {
   color: var(--foreground);
   line-height: 1.75;
-  /* Friendly, rounded reading face - warm and a little fun, still professional. */
   font-family: var(--font-reading);
-  /* AI replies read a touch bolder than the thin 300 body weight for legibility. */
-  font-weight: 500;
-  letter-spacing: 0.002em;
+  /* 400, not the old 500. A native humanist face at 500 reads as semi-bold in a
+     long answer and made the column look heavy; the emphasis now comes from
+     `strong` alone, which is what makes bold lead-ins carry. */
+  font-weight: 400;
+  letter-spacing: normal;
 }
+/* A full line of air between blocks, not a half one. The old 0.65rem let
+   paragraphs, lists and headings run together into one grey mass at the exact
+   moment an answer got long enough to need scanning. */
 .medai-prose p {
-  margin: 0.65rem 0;
+  margin: 1rem 0;
 }
 .medai-prose strong {
   color: var(--foreground);
@@ -1310,10 +1321,12 @@ html.gd-low-power .gd-forming-orb::after {
 }
 .medai-prose ul,
 .medai-prose ol {
-  margin: 0.5rem 0 0.75rem 1.25rem;
+  margin: 1rem 0 1rem 1.35rem;
 }
+/* Bullets need room between them or a six-item list reads as a block of text
+   with dots in it. */
 .medai-prose li {
-  margin: 0.25rem 0;
+  margin: 0.4rem 0;
 }
 .medai-prose h1,
 .medai-prose h2,

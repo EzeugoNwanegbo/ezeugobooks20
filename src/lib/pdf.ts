@@ -3,6 +3,7 @@
 // pdfjs 4.x/5.x). UMD `.js` files instead of `.mjs`.
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist/legacy/build/pdf.js";
 import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.js?url";
+import { annotateBookPages } from "@/lib/book-pages";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -261,7 +262,12 @@ export async function extractPdfText(
       }
     }
 
-    return { text: out, pageCount };
+    // The sheet number is not the number printed on the page: a scanned
+    // textbook carries a cover, contents and preface first, so sheet 47 is
+    // printed page 23. Citing the sheet sends a student to the wrong chapter of
+    // the physical book. Done here, once, so the text layer and the OCR pool
+    // both get it. A no-op when no consistent offset exists.
+    return { text: annotateBookPages(out), pageCount };
   } catch (error) {
     // Always log the raw error - invaluable when a future PDF fails.
     console.error("extract pdf text", {

@@ -514,9 +514,10 @@ The student wants connections drawn ACROSS subjects/folders.
   const outputTask = opts.finalAnswer
     ? `3. Then write the student's final answer yourself, following the STYLE INSTRUCTIONS that appear below this section. Nothing runs after you - do not produce a draft, a summary for another step, or any "Exact answer:" / "Where found:" / "Evidence:" scaffolding.
 4. Put the source on the very first line as "Source: <document name>, Page N", copied verbatim from the excerpts, above everything else. If an excerpt carries no page number, cite the document name alone - never invent a page, and never cite an internal chunk or excerpt index.
+4b. TWO PAGE NUMBERS. Excerpt labels look like "[Page 47 | Book page 23]". 47 is the sheet in the PDF; 23 is the number printed on the page itself, and they differ by the length of the book's front matter. When a label carries both, cite both - "Source: <document name>, PDF page 47 (book page 23)" - because a student reading the PDF needs the first and a student holding the physical book needs the second. When a label carries only "[Page N]", cite that one alone and do not invent the other.
 5. Only after genuinely checking every excerpt, if the relevant info is truly not in the files, say so plainly in the answer before adding anything from general knowledge. Do not give up early.`
     : `3. Start with "Exact answer:" and give the answer in one or two clear sentences.
-4. Then write "Where found:" and list document names plus page numbers wherever available. If an excerpt has no page number, give the document name alone - never cite an internal chunk or excerpt index.
+4. Then write "Where found:" and list document names plus page numbers wherever available, copying BOTH numbers when a label shows "[Page 47 | Book page 23]" (PDF sheet and the page printed on the page). If an excerpt has no page number, give the document name alone - never cite an internal chunk or excerpt index.
 5. Then write "Evidence:" and include the relevant facts. Keep quotes short; prefer paraphrase with source labels.
 6. Only after genuinely checking every excerpt, if the relevant info is truly not in the files, clearly say "I could not find an exact hit in your files" before adding any "[General knowledge]". Do not give up early.
 7. Do not apply Simplified, Detailed, Detailed+, or Storytelling style. A later step will do the final explanation.`;
@@ -592,7 +593,7 @@ INTERLINK STYLE:
     ? `
 GROUNDING (mandatory):
 - Build the notes from the document content supplied below. Do not add facts that are not in it.
-- Reproduce the source as a "Source: <document name>, Page N" line as the very first line, above the title. Copy the page number verbatim; never invent one. If the draft gives no page, cite the document name alone.
+- Reproduce the source as a "Source: <document name>, Page N" line as the very first line, above the title. Copy the page number verbatim; never invent one. If the draft gives both a PDF page and a book page, keep both as "PDF page 47 (book page 23)". If the draft gives no page, cite the document name alone.
 - If the material does not cover part of the question, say so plainly in the notes rather than filling the gap from general knowledge.`
     : `
 GROUNDING:
@@ -690,6 +691,7 @@ RULES:
 - Preserve every fact from the research summary; do not drop important evidence.
 - Lead with the direct answer, then the source evidence, then the explanation.
 - CITATION (mandatory, overrides every mode length/format limit): whenever the research draft contains a "Where found:" section or any document name with a page number, you MUST reproduce it as a short "Source:" line near the top of the answer, formatted exactly as "Source: <document name>, Page N". This line is required even in Simplified mode and never counts against the paragraph limit. Never drop, summarise away, or bury the source in prose.
+- TWO PAGE NUMBERS, when the draft has them: write "Source: <document name>, PDF page 47 (book page 23)". The first is where it sits in the file, the second is the number printed on the page - a scanned book's front matter makes them differ, and a student with the physical book can only use the second. Never invent the book page when the draft gives only one number.
 - Copy the page number verbatim from the research draft. If the draft gives no page number, cite the document name alone - never fall back to an internal chunk or excerpt index, and never invent a page the draft did not provide.
 - The "never mention internal steps" identity rule does NOT apply to source citations: document names and page labels are the student's own uploaded material and must always be shown.
 - If the summary says "[General knowledge]", keep that label so the student knows.
