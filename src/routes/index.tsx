@@ -94,7 +94,14 @@ function TryForFreeButton({
       setBusy(true);
       await startGuestSession();
       navigate({ to: "/app/chat" });
-    } catch {
+    } catch (err) {
+      // Say why before moving them. This used to swallow the error and drop the
+      // student on the signup page with no explanation, which reads as the
+      // button having misfired rather than as a deliberate hand-off.
+      // startGuestSession() already phrases the disabled-provider case for a
+      // student ("Guest mode isn't available right now..."), so it is safe to
+      // show verbatim.
+      toast.error(err instanceof Error ? err.message : "Could not start a guest session.");
       navigate({ to: "/auth", search: { mode: "signup" } });
     } finally {
       setBusy(false);
@@ -172,7 +179,23 @@ function AuthCard() {
         options: { redirectTo: `${window.location.origin}/auth` },
       });
       if (error) throw error;
-      return; // browser redirects to Google
+
+      // The success path used to just `return`, leaving googleBusy true on the
+      // assumption that the browser was already on its way to Google. When that
+      // navigation does not happen - a blocked redirect, an extension, a slow
+      // or dropped connection - the button stayed disabled behind a spinner
+      // with no error and no way back. The page looked frozen, and a reload was
+      // the only escape.
+      //
+      // Nothing here can observe "the navigation failed", so this asks the only
+      // question that can be answered: are we still on this page a few seconds
+      // later? If so the redirect did not happen, and the student gets their
+      // button back. If it did, this timer dies with the page.
+      window.setTimeout(() => {
+        setGoogleBusy(false);
+        toast.error("Google sign-in did not open. Check your connection and try again.");
+      }, 6000);
+      return;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Google sign-in failed");
       setGoogleBusy(false);
