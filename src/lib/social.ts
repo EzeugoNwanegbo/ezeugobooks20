@@ -254,6 +254,61 @@ export async function findStudentsByPrefix(prefix: string, limit = 5): Promise<F
   return (result.data as FoundStudent[] | null) ?? [];
 }
 
+/**
+ * A student as the ADMIN search sees them. Deliberately not FoundStudent: there
+ * is no friendship between an admin and the account they are looking up, so
+ * `relationship` would be a field that is always "none" - and `discoverable` is
+ * a field the admin genuinely wants, because it explains why this student had
+ * to message privately instead of being found by a classmate.
+ */
+export type AdminFoundStudent = {
+  user_id: string;
+  username: string | null;
+  display_name: string;
+  points: number;
+  discoverable: boolean;
+};
+
+/** Latched when the database has no admin_find_students(). */
+let adminSearchMissing = false;
+
+/**
+ * Find any student, for an admin. Matches part of a handle OR part of a display
+ * name, and - unlike findStudentsByPrefix - does NOT skip students who have
+ * turned discoverability off.
+ *
+ * WHY A SECOND SEARCH RATHER THAN A FLAG ON THE FIRST. find_students() is
+ * reachable by every authenticated account, and its narrowness is a privacy
+ * boundary argued out at length in
+ * supabase/migrations/20260815120000_friend_search_prefix.sql - three
+ * characters, handles only, opted-in only, ten results. Adding an "and also
+ * return the hidden ones" parameter to that function would put the widened
+ * behaviour one argument away from every caller. A separate function that
+ * RAISES for non-admins keeps the boundary where it can be read.
+ *
+ * Returns [] when the function is not there yet, so the caller falls back to
+ * the friend search rather than showing an error - see
+ * supabase/migrations/20260824140000_admin_find_students.sql.
+ *
+ * Never throws: this runs on every keystroke of a search box.
+ */
+export async function adminFindStudents(query: string, limit = 10): Promise<AdminFoundStudent[]> {
+  if (!SOCIAL_SCHEMA_APPLIED || adminSearchMissing) return [];
+  const value = query.trim();
+  // Mirrors the function's own minimum. Asking with one character spends a
+  // round trip to be told nothing.
+  if (value.length < 2) return [];
+
+  const result = await db.rpc("admin_find_students", { p_query: value, p_limit: limit });
+  if (result.error) {
+    if (isMissingFunction(result.error)) adminSearchMissing = true;
+    // A 42501 from a non-admin is not latched: it is a correct refusal of this
+    // caller, not evidence the function is absent.
+    return [];
+  }
+  return (result.data as AdminFoundStudent[] | null) ?? [];
+}
+
 // ── Friends ─────────────────────────────────────────────────────────────────
 
 export async function friendList(): Promise<Friend[]> {

@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { LoadingDots } from "@/components/loading-dots";
 import type { Database } from "@/integrations/supabase/types";
-import { findStudentsByPrefix, type FoundStudent } from "@/lib/social";
+import { adminFindStudents, findStudentsByPrefix, type AdminFoundStudent } from "@/lib/social";
 import {
   cookieDailyBaseFor,
   cookieGrantsFor,
@@ -49,9 +49,9 @@ export function AdminPage() {
   // undiscoverable. That is a real gap the plan does not address; there is no
   // admin-only search RPC in the reviewed SQL to reach for instead.
   const [cookieQuery, setCookieQuery] = useState("");
-  const [cookieResults, setCookieResults] = useState<FoundStudent[]>([]);
+  const [cookieResults, setCookieResults] = useState<AdminFoundStudent[]>([]);
   const [cookieSearching, setCookieSearching] = useState(false);
-  const [cookieStudent, setCookieStudent] = useState<FoundStudent | null>(null);
+  const [cookieStudent, setCookieStudent] = useState<AdminFoundStudent | null>(null);
   // null distinguishes "not loaded yet" from "loaded, and it is zero" -
   // cookieBase specifically also means "the schema is not there" when null
   // AFTER a load has completed, which gates the grant form off below.
@@ -210,23 +210,60 @@ export function AdminPage() {
     }
   };
 
+  /**
+   * Two lookups, tried in order, because they can reach different people.
+   *
+   * admin_find_students() is the right one: it matches part of a handle or part
+   * of a display name and, crucially, does NOT skip students who have turned
+   * discoverability off. Those are exactly the students who end up messaging on
+   * WhatsApp for more cookies rather than being found by a classmate, so a
+   * grant screen that cannot see them fails at the one job it has.
+   *
+   * findStudentsByPrefix() is the fallback for the window before
+   * supabase/migrations/20260824140000_admin_find_students.sql is applied. It
+   * finds fewer people - opted-in accounts only, handle prefixes only - but
+   * finding some is better than an error, and it is what this screen used
+   * before. Both return [] rather than throwing when their function is absent,
+   * so the fallback is a plain empty check with nothing to catch.
+   */
   const searchCookieStudents = async (value: string) => {
     setCookieQuery(value);
-    // Same three-character floor find_students() enforces server-side -
-    // mirrored here only so a shorter query does not cost a round trip.
-    if (value.trim().length < 3) {
+    // Mirrors admin_find_students()' own two-character minimum, only so a
+    // shorter query does not cost a round trip to be told nothing.
+    if (value.trim().length < 2) {
       setCookieResults([]);
       return;
     }
     setCookieSearching(true);
     try {
-      setCookieResults(await findStudentsByPrefix(value, 10));
+      const found = await adminFindStudents(value, 10);
+      if (found.length > 0) {
+        setCookieResults(found);
+        return;
+      }
+      // The friend search has a three-character floor of its own, so there is
+      // nothing to fall back TO below that.
+      if (value.trim().length < 3) {
+        setCookieResults([]);
+        return;
+      }
+      setCookieResults(
+        (await findStudentsByPrefix(value, 10)).map((student) => ({
+          user_id: student.user_id,
+          username: student.username,
+          display_name: student.display_name,
+          points: student.points,
+          // Anything this search can see is discoverable by definition - that
+          // is the filter it applies. Not a guess.
+          discoverable: true,
+        })),
+      );
     } finally {
       setCookieSearching(false);
     }
   };
 
-  const selectCookieStudent = async (student: FoundStudent) => {
+  const selectCookieStudent = async (student: AdminFoundStudent) => {
     setCookieStudent(student);
     setCookieResults([]);
     setCookieQuery("");
@@ -489,7 +526,18 @@ export function AdminPage() {
                   >
                     <span className="min-w-0 truncate">
                       <span className="font-medium text-foreground">{student.display_name}</span>{" "}
-                      <span className="text-muted-foreground">@{student.username}</span>
+                      <span className="text-muted-foreground">
+                        {student.username ? `@${student.username}` : "no handle"}
+                      </span>
+                      {/* Says why this student had to ask by message rather
+                          than being found by a classmate. Only ever shown for
+                          rows the admin lookup returned - the friend-search
+                          fallback cannot see a hidden account at all. */}
+                      {!student.discoverable && (
+                        <span className="ml-1.5 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          hidden
+                        </span>
+                      )}
                     </span>
                     <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                       {student.points.toLocaleString()} pts
@@ -507,7 +555,8 @@ export function AdminPage() {
                       {cookieStudent.display_name}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
-                      @{cookieStudent.username}
+                      {cookieStudent.username ? `@${cookieStudent.username}` : "no handle"}
+                      {!cookieStudent.discoverable && " · hidden from search"}
                     </p>
                   </div>
                   <button
