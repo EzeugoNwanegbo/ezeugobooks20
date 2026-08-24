@@ -86,6 +86,18 @@ export function costFor(action: CookieAction, count = 1): number {
 let schemaState: "unknown" | "ready" | "absent" = "unknown";
 /** The last balance a successful read produced, shared across every mounted useCookies(). */
 let cachedBalance: CookieBalance | null = null;
+/**
+ * When cachedBalance was last filled from the server.
+ *
+ * The meter now renders in three places at once - the sidebar, the mobile
+ * topbar and every PageHeader - and each is its own useCookies(). Without this,
+ * every page navigation would fire one cookie_balance() per mounted ring for a
+ * number that had not moved. A short window is enough: anything that actually
+ * CHANGES the balance already announces itself on COOKIES_CHANGED_EVENT and
+ * refetches, so this only ever suppresses a re-read of a value nothing touched.
+ */
+let lastFetchedAt = 0;
+const BALANCE_FRESH_MS = 30_000;
 
 // A function call, not a bare variable read: TypeScript's control-flow
 // analysis narrows a re-assignable `let` across an `await` using whatever it
@@ -158,7 +170,10 @@ async function fetchBalance(): Promise<CookieBalance | null> {
       ? (data[0] as Record<string, unknown>)
       : (data as Record<string, unknown>);
     const balance = toBalance(row);
-    if (balance) cachedBalance = balance;
+    if (balance) {
+      cachedBalance = balance;
+      lastFetchedAt = Date.now();
+    }
     return balance;
   } catch {
     return null;
@@ -174,6 +189,7 @@ async function fetchBalance(): Promise<CookieBalance | null> {
 // of problem - see "gd:gamification" in gamification.ts - rather than a new
 // state library for two events.
 const COOKIES_CHANGED_EVENT = "gd:cookies-changed";
+const COOKIE_DIALOG_EVENT = "gd:cookie-dialog";
 const COOKIES_OUT_EVENT = "gd:cookies-out";
 
 /**
@@ -265,6 +281,12 @@ export function useCookies(userId: string | null | undefined): CookiesState {
       setState({ status: "unavailable", balance: null });
       return;
     }
+    // A ring mounting next to rings that are already up - which is what every
+    // navigation now does - reads the shared cache instead of asking again.
+    if (cachedBalance && Date.now() - lastFetchedAt < BALANCE_FRESH_MS) {
+      setState({ status: "ready", balance: cachedBalance });
+      return;
+    }
     void refetch();
   }, [userId, refetch]);
 
@@ -293,6 +315,33 @@ export function onOutOfCookies(handler: (info: OutOfCookiesInfo) => void): () =>
   const listener = (event: Event) => handler((event as CustomEvent<OutOfCookiesInfo>).detail ?? {});
   window.addEventListener(COOKIES_OUT_EVENT, listener);
   return () => window.removeEventListener(COOKIES_OUT_EVENT, listener);
+}
+
+/**
+ * Ask the shell to open the cookie dialog.
+ *
+ * The dialog is mounted ONCE, in the app shell, because two of them stacked on
+ * one tap would be worse than none. But the rings that open it are now spread
+ * across the shell, the mobile topbar and PageHeader - which lives in
+ * components/ui and knows nothing about the shell - so the request travels the
+ * same CustomEvent bus the other two cookie signals already use rather than a
+ * context provider added for one boolean.
+ *
+ * Deliberately NOT reportOutOfCookies(): tapping a ring with 32 cookies left is
+ * not running out, and a function named for the empty case would be a lie at
+ * every other level. The shell fills in the numbers from the live balance when
+ * it opens, so this carries no payload.
+ */
+export function requestCookieDialog(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(COOKIE_DIALOG_EVENT));
+}
+
+export function onCookieDialogRequested(handler: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const listener = () => handler();
+  window.addEventListener(COOKIE_DIALOG_EVENT, listener);
+  return () => window.removeEventListener(COOKIE_DIALOG_EVENT, listener);
 }
 
 // ── Battle Royale: the one client-side charge ───────────────────────────────
@@ -371,7 +420,51 @@ function todayUtcKey(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** The base allowance before any grant - 50 today, but read live rather than hard-coded. Null if the schema is not there. */
+/**
+ * How one student's allowance is made up: days used, what that has earned,
+ * what has been granted on top, and what today has cost so far.
+ *
+ * WHY THIS EXISTS. The grant screen used to print "base 50", which was true for
+ * everybody. Since 20260824150000_cookie_ladder.sql the base is earned - 30,
+ * plus 5 for every three days used, to a ceiling of 60 - so two students can
+ * have different allowances with no grant between them and the screen has to be
+ * able to say why. One RPC, so a base and a spend can never be read a second
+ * apart and shown as if they belonged together.
+ *
+ * Returns null when the function is not there yet; the caller falls back to
+ * cookieDailyBaseFor() + cookieSpentTodayFor(), which is what it used before.
+ */
+export type CookieStatus = {
+  active_days: number;
+  earned_base: number;
+  granted_extra: number;
+  allowance: number;
+  spent_today: number;
+};
+
+export async function cookieStatusFor(userId: string): Promise<CookieStatus | null> {
+  try {
+    const { data, error } = await db.rpc("cookie_status_for", { p_user: userId });
+    // Never latches schemaState: a 42501 here means "you are not an admin",
+    // which says nothing about whether the cookie schema exists.
+    if (error) return null;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return null;
+    const r = row as Record<string, unknown>;
+    const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+    return {
+      active_days: num(r.active_days),
+      earned_base: num(r.earned_base),
+      granted_extra: num(r.granted_extra),
+      allowance: num(r.allowance),
+      spent_today: num(r.spent_today),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** The FLOOR of the earned ladder - 30 today, read live rather than hard-coded. Only a fallback for cookieStatusFor(). Null if the schema is not there. */
 export async function cookieDailyBaseFor(): Promise<number | null> {
   try {
     const { data, error } = await db.rpc("cookie_daily_base");

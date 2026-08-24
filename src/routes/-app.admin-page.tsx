@@ -11,6 +11,8 @@ import {
   cookieDailyBaseFor,
   cookieGrantsFor,
   cookieSpentTodayFor,
+  cookieStatusFor,
+  type CookieStatus,
   createCookieGrant,
   type CookieGrantRow,
 } from "@/lib/cookies";
@@ -58,6 +60,9 @@ export function AdminPage() {
   const [cookieBase, setCookieBase] = useState<number | null>(null);
   const [cookieGrants, setCookieGrants] = useState<CookieGrantRow[] | null>(null);
   const [cookieSpentToday, setCookieSpentToday] = useState<number | null>(null);
+  // The server's own breakdown, when cookie_status_for() exists. Null means
+  // the fallback below is what is on screen.
+  const [cookieStatus, setCookieStatus] = useState<CookieStatus | null>(null);
   const [cookieLoadedOnce, setCookieLoadedOnce] = useState(false);
   const [grantExtra, setGrantExtra] = useState("10");
   const [grantEndsOn, setGrantEndsOn] = useState("");
@@ -270,14 +275,32 @@ export function AdminPage() {
     setCookieBase(null);
     setCookieGrants(null);
     setCookieSpentToday(null);
+    setCookieStatus(null);
     setCookieLoadedOnce(false);
-    const [base, grants, spent] = await Promise.all([
-      cookieDailyBaseFor(),
+    // Grants are always read directly - the admin needs the full history, not
+    // just today's total, and cookie_status_for() returns only the total.
+    const [status, grants] = await Promise.all([
+      cookieStatusFor(student.user_id),
       cookieGrantsFor(student.user_id),
+    ]);
+    setCookieGrants(grants);
+    if (status) {
+      // The server did the arithmetic, including the earned ladder, in one
+      // read. Nothing here recomputes it.
+      setCookieStatus(status);
+      setCookieBase(status.earned_base);
+      setCookieSpentToday(status.spent_today);
+      setCookieLoadedOnce(true);
+      return;
+    }
+    // Fallback for the window before 20260824150000_cookie_ladder.sql is
+    // applied: the flat floor plus today's rows, which is what this screen
+    // showed before the ladder existed.
+    const [base, spent] = await Promise.all([
+      cookieDailyBaseFor(),
       cookieSpentTodayFor(student.user_id),
     ]);
     setCookieBase(base);
-    setCookieGrants(grants);
     setCookieSpentToday(spent);
     setCookieLoadedOnce(true);
   };
@@ -324,7 +347,10 @@ export function AdminPage() {
   const cookieActiveExtra = (cookieGrants ?? [])
     .filter((g) => g.starts_on <= todayKey && (!g.ends_on || g.ends_on >= todayKey))
     .reduce((sum, g) => sum + g.extra_per_day, 0);
-  const cookieAllowance = cookieBase != null ? cookieBase + cookieActiveExtra : null;
+  // cookie_status_for() already added the grants server-side, so trust it when
+  // it answered. Adding cookieActiveExtra on top of it would double-count.
+  const cookieAllowance =
+    cookieStatus?.allowance ?? (cookieBase != null ? cookieBase + cookieActiveExtra : null);
 
   // Gate: non-admins never see the queue (RLS also blocks the data server-side).
   if (profile && !isAdmin) {
@@ -588,6 +614,18 @@ export function AdminPage() {
                         <p className="font-semibold tabular-nums">{cookieSpentToday ?? "—"}</p>
                       </div>
                     </div>
+
+                    {/* Where the allowance came from. Two students can now
+                        differ with no grant between them, so the number on its
+                        own is not explicable. */}
+                    {cookieStatus && (
+                      <p className="mt-2 text-xs text-muted-foreground tabular-nums">
+                        {cookieStatus.earned_base} earned over {cookieStatus.active_days}{" "}
+                        {cookieStatus.active_days === 1 ? "day" : "days"} of use
+                        {cookieStatus.granted_extra > 0 &&
+                          ` · +${cookieStatus.granted_extra} granted`}
+                      </p>
+                    )}
 
                     {cookieGrants && cookieGrants.length > 0 && (
                       <div className="mt-3 space-y-1">

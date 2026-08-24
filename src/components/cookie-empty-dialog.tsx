@@ -65,6 +65,17 @@ export function CookieEmptyDialog({
               : "Need more? Message or call G&D."}
           </DialogDescription>
         </DialogHeader>
+        {/* The one line of explanation this dialog earns. Without it the number
+            above looks like a fixed ration, and a student who sees 30 has no way
+            to know it grows - which is the whole point of the ladder.
+            The numbers are a deliberate second copy of
+            supabase/migrations/20260824150000_cookie_ladder.sql, for the same
+            reason the Edge Functions repeat their own prices: this is a
+            sentence, not arithmetic, and nothing is computed from it. If the
+            migration changes, change this line with it. */}
+        <p className="-mt-1 text-xs text-muted-foreground">
+          Your daily cookies grow as you use G&amp;D: +5 every 3 days, up to 60.
+        </p>
         <div className="flex flex-col gap-2 sm:flex-row">
           <a
             href={ownerWhatsAppHref(handle)}

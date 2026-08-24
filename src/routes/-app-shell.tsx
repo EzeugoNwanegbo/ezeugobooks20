@@ -56,7 +56,7 @@ import { CookieEmptyDialog } from "@/components/cookie-empty-dialog";
 import { RankBadge, RankLadderBar } from "@/components/rank-badge";
 import { rankProgress, type AcademicRank } from "@/lib/ranks";
 import { allowanceFrom } from "@/lib/allowances";
-import { useCookies, onOutOfCookies } from "@/lib/cookies";
+import { useCookies, onCookieDialogRequested, onOutOfCookies } from "@/lib/cookies";
 import { takeRankCelebration } from "@/lib/progression-moments";
 import { useAuth } from "@/lib/auth-context";
 import { isGuestUser } from "@/lib/guest-session";
@@ -266,6 +266,21 @@ function AppLayout() {
       setCookieDialog({ remaining: info.remaining ?? null, allowance: info.allowance ?? null });
     });
   }, []);
+
+  // The same dialog, opened by a ring that is NOT in this component: PageHeader
+  // renders one at the top of every screen that has a header, and it has no way
+  // to reach openCookieDialog() below. It sends no numbers - they are read here
+  // from the live balance, so a header ring and the sidebar ring always open
+  // the dialog saying the same thing.
+  useEffect(() => {
+    return onCookieDialogRequested(() => {
+      setCookieDialog(
+        cookies.status === "ready"
+          ? { remaining: cookies.balance.remaining, allowance: cookies.balance.allowance }
+          : { remaining: null, allowance: null },
+      );
+    });
+  }, [cookies]);
 
   // The one conversation query in the app. It feeds the desktop sidebar's
   // grouped history and the mobile drawer's; the chat page no longer keeps a
@@ -1074,6 +1089,18 @@ function AppLayout() {
           G&D
         </Link>
         <div className="flex items-center gap-1.5">
+          {/* On a phone this is THE meter: it is pinned to the top of the
+              viewport, so it stays readable while the page scrolls, which the
+              one in PageHeader does not. That is also why PageHeader's is
+              desktop-only - two of them would sit inches apart here. */}
+          {cookies.status === "ready" && (
+            <CookieRing
+              remaining={cookies.balance.remaining}
+              allowance={cookies.balance.allowance}
+              onClick={openCookieDialog}
+              size={26}
+            />
+          )}
           <ThemeToggle />
           <button
             type="button"
