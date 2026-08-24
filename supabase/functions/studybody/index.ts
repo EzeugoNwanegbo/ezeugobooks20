@@ -1,3 +1,5 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -66,20 +68,46 @@ type DifficultyLevel = "easy" | "medium" | "hard";
 // constructions a real trap is built from, and bans the surface tells (length,
 // hedging, book phrasing, absolutes) that let a student pick the answer without
 // having read anything.
-const HARD_OPTION_RULES = `
-- There are three options and only three, so all three carry weight. ONE is defensible; the OTHER TWO must each be a trap a well-prepared student would seriously consider. A wasted option turns this into a coin flip.
+const TRAP_OPTION_RULES = `
+- There are FOUR options at this level and all four carry weight. ONE is defensible; the OTHER THREE must each be a trap a well-prepared student would seriously consider. A wasted option hands back a free elimination.
 - Build EVERY distractor from the excerpts, using one of these four moves: (a) a statement that is TRUE in the material but does not answer THIS question; (b) the right idea applied to the wrong condition, stage, case or population; (c) a near-miss that changes exactly one decisive detail - a number, a direction, an order, a qualifier; (d) the precise misconception the material exists to correct.
 - Never invent a nonsense, off-topic or absurd option. If a student can strike an option out without knowing the material, that option is broken - rewrite it.
 - Make the options SURFACE-IDENTICAL: same length (within a few words), same grammatical form, same level of detail, same technical vocabulary. The correct answer must NEVER be the longest, the most detailed, the most hedged, or the only one written in the book's exact phrasing.
 - No "all of the above", no "none of the above", and no absolutes ("always", "never", "only") that appear only in the wrong options.
 - Choosing between the best two options must turn on ONE specific fact from the excerpts - not on general reasoning, tone or plausibility.
-- Vary which option id is correct across the batch. Do not settle on A.
+- No wording match between the stem and the correct option. If a student can find the answer by spotting the option that reuses the stem's words, the question is broken - reword the option, not the stem.
+- The four options must not split 3-vs-1 in form or claim: no option standing apart in shape, length, subject or specificity, and no two options saying the same thing in different words. Noticing "the odd one out" must gain the student nothing.
+`;
 
+// The check HARD ends on, split out of the bullets above so MEDIUM can reuse the
+// trap rules without inheriting item 3 - which bans exactly the single-fact stem
+// MEDIUM is built on. HARD_OPTION_RULES below recomposes the two, so the text
+// HARD is sent is unchanged.
+const HARD_OPTION_SELF_CHECK = `
 SELF-CHECK BEFORE RETURNING - rewrite anything that fails:
 1. Could someone who never read the material eliminate any option from its wording alone? Then that option is too weak.
 2. Is any distractor obviously false or off-topic? Then it is wasted - replace it with a real trap.
 3. Does one sentence of one excerpt answer the stem outright? Then the question is too easy.
-4. The explanation must name the trap: in ONE or TWO sentences, why the correct option holds AND why the most tempting wrong one fails.
+4. Is the correct option findable by matching wording with the stem, or by elimination on form alone? Then rewrite the options.
+5. The explanation is ONE sentence. Name the deciding fact and the tempting wrong option it kills - nothing else. No restating the stem, no summarising the topic.
+`;
+
+const HARD_OPTION_RULES = `${TRAP_OPTION_RULES}${HARD_OPTION_SELF_CHECK}`;
+
+// MEDIUM gets the SAME four distractor constructions and the same ban on surface
+// tells - that is where a question's bite actually comes from - and a self-check
+// that inverts HARD's item 3. At this level one sentence of the material IS
+// allowed to hold the answer; what is not allowed is a scenario stem, so the
+// check hunts for that instead, and adds one asking whether the fact chosen is
+// precise enough to be worth asking at all.
+const MEDIUM_OPTION_RULES = `${TRAP_OPTION_RULES}
+SELF-CHECK BEFORE RETURNING - rewrite anything that fails:
+1. Could someone who never read the material eliminate any option from its wording alone? Then that option is too weak.
+2. Is any distractor obviously false or off-topic? Then it is wasted - replace it with a real trap.
+3. Does the stem describe a case, a person, a company or any invented situation? Then it is wrong for this level - ask for the fact directly instead.
+4. Could a student reach the answer from general knowledge, common sense, or the shape of the words? Then the fact is too soft - pick a sharper one.
+5. Is the correct option findable by matching wording with the stem, or by elimination on form alone? Then rewrite the options.
+6. The explanation is ONE sentence. Name the deciding fact and the tempting wrong option it kills - nothing else. No restating the stem, no summarising the topic.
 `;
 
 // The written-answer half. An essay has no distractors to confuse, so hard here
@@ -91,6 +119,17 @@ THE ANSWER (what a full-mark response must contain):
 - Demand reasoning, not a list: make them justify, compare, rank, explain a mechanism, or resolve an apparent contradiction in the material.
 - Where the material sets conditions or exceptions, the question should be built so that missing them costs marks.
 - The rubric must contain the specific points a marker looks for, including the subtle one most students will leave out.
+`;
+
+// MEDIUM's written-answer half. An essay has no distractors, so the level has to
+// come from the ANSWER being specific: named terms, real numbers, the right
+// order. A fluent paragraph that names nothing must not score.
+const MEDIUM_ESSAY_RULES = `
+THE ANSWER (what a full-mark response must contain):
+- Ask them to STATE and DISTINGUISH: define precisely, list in the correct order, classify, name the exceptions, or set out the steps of a mechanism.
+- The ideal answer names SEVERAL specific things from the excerpts - terms, numbers, stages, conditions. A vague but well-written paragraph must NOT earn full marks.
+- No scenarios: no case to work through, no invented situation, no imagined person. The question is about the material itself.
+- The rubric must list the specific facts a marker looks for, including the one most students leave out.
 `;
 
 // Absolute, student-chosen difficulty. "hard" must be genuinely punishing while
@@ -105,6 +144,19 @@ THE ANSWER (what a full-mark response must contain):
 // name the specific distractor constructions to use, ban the surface tells that
 // let a student pick the answer without reading the material, and end with a
 // self-check the model has to apply before returning.
+//
+// MEDIUM IS NOT "HARD, TURNED DOWN". The owner's rule: medium must be about
+// RECALLING FACTS, at hard's difficulty, without "the patient stuff" - the case
+// vignettes HARD opens with. Those are two independent dials, and only one of
+// them moves. What makes HARD hard is (b), the options; what makes it a vignette
+// is (a), the stem. So MEDIUM keeps (b) verbatim - the same four distractor
+// constructions, the same ban on surface tells - and inverts (a): ask for the
+// fact straight out, and never open with an invented person or situation. The
+// bite then has to come from WHICH fact is asked, which is why MEDIUM's stem
+// rules spend their length naming the confusable details (thresholds, order,
+// near-identical terms, the one qualifier that flips the meaning) rather than
+// asking for "understanding and application", which is what this used to say and
+// is exactly the vague instruction the paragraph above warns about.
 //
 // Takes the question type because most of that is about DISTRACTORS, and a batch
 // of essays has none - sending an essay batch a page of option-writing rules is
@@ -132,9 +184,16 @@ THE QUESTION (stem):
 ${type === "essay" ? HARD_ESSAY_RULES : HARD_OPTION_RULES}
 ABSOLUTE GROUNDING RULE: despite the difficulty, every question, the correct answer, every distractor, and the explanation must remain fully verifiable from the provided excerpts ONLY. Do NOT pull in any fact, term, or scenario that is not in the files. Hard means deeper use of the material, never outside material.`;
   }
-  return `DIFFICULTY: MEDIUM.
-- Test understanding and application, not just recall: require interpreting or applying a fact from the excerpts.
-- Two related ideas may be combined. Distractors should be plausible but resolvable from the material.`;
+  return `DIFFICULTY: MEDIUM - hard questions about FACTS. Pitched to punish like HARD does, but by demanding precise RECALL rather than reasoning through a story. Your target: a student who skimmed the material gets this WRONG; a student who actually learned it answers it without guessing.
+
+THE QUESTION (stem):
+- ASK FOR THE FACT, DIRECTLY. Name the thing and ask what is true of it: the value, the threshold, the order, the classification, the exception, the mechanism, the definition, or which of several it is.
+- NO SCENARIOS AT THIS LEVEL. Never open with a case, a patient, a client, a company, a dataset or any invented situation. No "A patient presents with...", no "A 42-year-old...", no "A firm wants to...". If the stem describes a person or a situation instead of asking about the material, it is WRONG here - rewrite it as a direct question.
+- The difficulty comes from WHICH fact you choose, never from dressing it up. Mine the details students actually confuse: near-identical terms, exact numbers, thresholds and limits, the order of steps, what belongs in which category, what the stated exception is, and the single qualifier that flips the meaning.
+- One sentence where one sentence will do. No padding, no narrative, and never define in the stem the term the answer turns on.
+- ONE fact may be enough to answer, but it must be a PRECISE fact. If a student could arrive at it from general knowledge, from common sense, or from the shape of the words, it is too easy - choose a sharper fact.
+${type === "essay" ? MEDIUM_ESSAY_RULES : MEDIUM_OPTION_RULES}
+ABSOLUTE GROUNDING RULE: every question, the correct answer, every distractor and the explanation must remain fully verifiable from the provided excerpts ONLY. Do NOT pull in any fact, term or example that is not in the files.`;
 }
 
 // Was 100,000 (~25k tokens). The "docCharBudget" comment on
@@ -151,6 +210,17 @@ ABSOLUTE GROUNDING RULE: despite the difficulty, every question, the correct ans
 // Coach's roadmap building and topic-scoped practice need the extra breadth -
 // while still being a real cut for "Go straight in" over a whole large file,
 // which never set docCharBudget and always hit the old ceiling.
+// The ceiling on one generated set. Mirrors MAX_GENERATED_QUESTIONS on the
+// practice screen (src/routes/-app.practice-page.tsx), which is where a student
+// picks the number - this is the copy that makes it true for a request that did
+// not come from those buttons.
+//
+// It is a real limit, not a formality: every batch runs against
+// DEEPSEEK_TIMEOUT_MS inside an Edge Function capped near 150s, so an
+// unbounded count does not produce more questions, it produces a set whose tail
+// times out.
+const MAX_GENERATED_QUESTIONS = 40;
+
 const MAX_DOC_CHARS_TOTAL = 60_000;
 const DEEPSEEK_TIMEOUT_MS = 90_000;
 // Only used to rescue a batch DeepSeek already failed (bad JSON, empty
@@ -739,7 +809,7 @@ ${type === "mcq" ? mcqShape(difficulty) : ESSAY_SHAPE}
 }
 ${
   type === "mcq"
-    ? `Exactly three options, one correct option id. "correct_answer" is that option's id - vary which one it is across the batch, do not always answer "A".`
+    ? `Exactly ${difficulty === "hard" ? "four" : "three"} options, one correct option id. "correct_answer" is that option's id. The options are RE-LETTERED after you return them, so never refer to an option by its letter in the prompt or the explanation - name it by what it says.`
     : "options must be []. correct_answer is the ideal written answer."
 }`;
 }
@@ -768,19 +838,29 @@ ${
 // does not touch what a student sees beyond shorter explanations, and it makes
 // every count faster rather than only rescuing the large ones.
 //
-// Still three options at every level - the shape is a function only because the
-// explanation differs at hard: same one-or-two-sentence budget, spent on naming
-// the trap (why the tempting wrong option fails) rather than only restating the
-// source. When both wrong options are meant to be believable, "why not that one"
-// is the part the student actually needs back.
+// FOUR options at hard, three below it. A third option set is one more trap to
+// write, so it is spent only where the student asked for a fight: it drops a
+// blind guess from 33% to 25% and, more to the point, removes the "two look
+// wrong, so it is the third" shortcut that makes a three-option hard question
+// answerable without the material. Everything downstream renders whatever
+// options it is handed, so nothing else changes.
+//
+// The explanation is ONE sentence at every level. It was one-or-two, and the
+// hard variant asks it to carry the trap as well, which came back as a
+// paragraph the student has to read after every single answer in Learning mode.
+// One sentence that names the deciding fact teaches more than five that restate
+// the stem, and it is output tokens saved on every question.
 function mcqShape(level: DifficultyLevel): string {
   const explanation = level === "hard"
-    ? "ONE or TWO sentences: why the correct option holds and why the most tempting wrong option fails, pointing at the source excerpt"
-    : "ONE or TWO sentences, pointing at the source excerpt";
+    ? "ONE short sentence: the deciding fact from the excerpt, and the tempting wrong option it rules out"
+    : "ONE short sentence, pointing at the source excerpt";
+  const options = level === "hard"
+    ? `[{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."},{"id":"D","text":"..."}]`
+    : `[{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."}]`;
   return `    {
       "prompt": "question text grounded in the excerpts",
-      "options": [{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."}],
-      "correct_answer": "A",
+      "options": ${options},
+      "correct_answer": "B",
       "explanation": "${explanation}",
       "source_refs": [{"file":"name", "page":"Page N, or omit if the excerpt has no page"}]
     }`;
@@ -796,6 +876,103 @@ const ESSAY_SHAPE = `    {
       "rubric": ["point 1", "point 2"],
       "source_refs": [{"file":"name", "page":"Page N, or omit if the excerpt has no page"}]
     }`;
+
+// ── WHERE THE CORRECT OPTION SITS ───────────────────────────────────────────
+//
+// Models have a hard position bias: asked for one correct option out of three,
+// they answer "A" far more often than a third of the time. The prompt used to
+// ask them to vary it, which is the kind of instruction a model agrees with and
+// then ignores - and a student who notices scores 60-70% without reading a
+// word, which makes every set feel easy no matter how good the questions are.
+//
+// So the position is DECIDED HERE rather than requested. Each MCQ has its
+// correct option's TEXT swapped into a slot drawn from a bag that refills once
+// empty: every run of N questions covers all N letters, and the order inside
+// each run is random - as balanced as a rotation, without being a pattern a
+// student can learn ("last one was A, so this is B").
+//
+// Only the texts move; the ids stay A, B, C(, D) in order. So a stored row is
+// still self-consistent and nothing downstream has to know this happened: the
+// screen renders options in the order given, and both grading paths (SQL
+// study_mcq_grade, and the client fallback) compare the submitted id against
+// correct_answer.
+type McqOption = { id: string; text: string };
+
+function isOptionList(value: unknown): value is McqOption[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 1 &&
+    value.every(
+      (option) =>
+        !!option &&
+        typeof option === "object" &&
+        typeof (option as McqOption).id === "string" &&
+        typeof (option as McqOption).text === "string",
+    )
+  );
+}
+
+function makeSlotBag(size: number): () => number {
+  let bag: number[] = [];
+  return () => {
+    if (bag.length === 0) {
+      bag = Array.from({ length: size }, (_, i) => i);
+      for (let i = bag.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [bag[i], bag[j]] = [bag[j], bag[i]];
+      }
+    }
+    return bag.pop() as number;
+  };
+}
+
+// The model is told the letters are not final and to name options by what they
+// say, but it will still sometimes write "option B" in an explanation - and a
+// letter left pointing at the wrong option after a swap is worse than no
+// explanation at all. Only letters that are unambiguously labels are rewritten
+// ("option B", "choice B", "answer B", "(B)"); a bare capital is left alone,
+// because in ordinary prose that is usually the word "A".
+function relabelExplanation(text: string, swap: Record<string, string>): string {
+  return text.replace(
+    /\b(options?|choices?|answers?)\s+\(?([A-Za-z])\)?(?![\w])|\(([A-Za-z])\)/g,
+    (whole: string, word: string | undefined, labelled: string | undefined, bracketed: string | undefined) => {
+      const next = swap[(labelled ?? bracketed ?? "").toUpperCase()];
+      if (!next) return whole;
+      return word ? `${word} ${next}` : `(${next})`;
+    },
+  );
+}
+
+function placeAnswerAt(question: Record<string, unknown>, slot: number): Record<string, unknown> {
+  const options = question.options;
+  if (!isOptionList(options)) return question;
+  const key =
+    typeof question.correct_answer === "string" ? question.correct_answer.trim().toUpperCase() : "";
+  const from = options.findIndex((option) => option.id.trim().toUpperCase() === key);
+  // The key names no option at all - a malformed question. Move nothing: a
+  // swap here would only turn one broken row into a differently broken one.
+  if (from < 0) return question;
+  const to = ((slot % options.length) + options.length) % options.length;
+  if (to === from) return question;
+
+  const moved = options.map((option, i) => ({
+    ...option,
+    text: i === from ? options[to].text : i === to ? options[from].text : option.text,
+  }));
+  const swap: Record<string, string> = {
+    [options[from].id.trim().toUpperCase()]: options[to].id.trim().toUpperCase(),
+    [options[to].id.trim().toUpperCase()]: options[from].id.trim().toUpperCase(),
+  };
+  return {
+    ...question,
+    options: moved,
+    correct_answer: options[to].id,
+    explanation:
+      typeof question.explanation === "string"
+        ? relabelExplanation(question.explanation, swap)
+        : question.explanation,
+  };
+}
 
 // Large sets (e.g. 50 MCQs) overflow a single DeepSeek response, so generate in
 // batches and accumulate, feeding already-asked prompts forward each round so we
@@ -837,6 +1014,10 @@ async function generateOneType(
         : "medium";
   const collected: Record<string, unknown>[] = [];
   const seen = new Set<string>();
+  // See placeAnswerAt: which letter is correct is assigned here, not left to
+  // the model's habit of answering "A". Sized to the option count mcqShape asks
+  // for at this level, so hard's fourth slot gets its share.
+  const nextSlot = type === "mcq" ? makeSlotBag(difficulty === "hard" ? 4 : 3) : null;
   const exclude = [...seedExclude];
 
   // Normalised so two questions differing only by whitespace, case or trailing
@@ -862,7 +1043,8 @@ async function generateOneType(
       // the model write them on every question was output tokens spent to be
       // told something we already knew. Stamping keeps every stored row's shape
       // exactly as it was, so nothing downstream notices the prompt got cheaper.
-      const withType = { ...question, type, difficulty };
+      const placed = nextSlot ? placeAnswerAt(question, nextSlot()) : question;
+      const withType = { ...placed, type, difficulty };
       collected.push(withType);
       if (typeof question.prompt === "string") exclude.push(question.prompt);
       added.push(withType);
@@ -979,8 +1161,14 @@ async function generateQuestions(
   const seedExclude = (body.excludePrompts || []).filter((p) => typeof p === "string" && p.trim());
 
   if (type === "mixed") {
-    const mcqTarget = Math.min(Math.max(body.mcqCount || 0, 0), 100);
-    const essayTarget = Math.min(Math.max(body.essayCount || 0, 0), 100);
+    // Capped on the TOTAL, not per type: two halves each clamped to the
+    // maximum would allow twice it. MCQ is clamped first and essay takes what
+    // is left, so a mixed set is never larger than a single-type one.
+    const mcqTarget = Math.min(Math.max(body.mcqCount || 0, 0), MAX_GENERATED_QUESTIONS);
+    const essayTarget = Math.min(
+      Math.max(body.essayCount || 0, 0),
+      MAX_GENERATED_QUESTIONS - mcqTarget,
+    );
     const overallTarget = mcqTarget + essayTarget;
     let made = 0;
     const relay = (added: Record<string, unknown>[]) => {
@@ -1004,7 +1192,7 @@ async function generateQuestions(
     return { questions: [...mcqs, ...essays] };
   }
 
-  const target = Math.min(Math.max(body.count || 5, 1), 100);
+  const target = Math.min(Math.max(body.count || 5, 1), MAX_GENERATED_QUESTIONS);
   const onlyType = type === "essay" ? "essay" : "mcq";
   let made = 0;
   const relay = (added: Record<string, unknown>[]) => {
@@ -1030,7 +1218,7 @@ async function generateFlashcards(
   openAiKey: string | undefined,
   onBatch?: (added: Record<string, unknown>[], made: number, target: number) => void,
 ) {
-  const target = Math.min(Math.max(body.count || 10, 1), 100);
+  const target = Math.min(Math.max(body.count || 10, 1), MAX_GENERATED_QUESTIONS);
   const batchSize = 30;
   const maxBatches = Math.ceil(target / batchSize) + 1;
   const collected: Record<string, unknown>[] = [];
@@ -1195,10 +1383,134 @@ Return JSON:
   return { grading, coaching };
 }
 
+// ── Cookies: the daily AI budget ────────────────────────────────────────────
+//
+// Prices here are a deliberate second copy of COOKIE_COSTS in
+// src/lib/cookies.ts, the one place they are meant to live - Edge Functions
+// deploy separately and cannot import that module (it is browser code: the
+// browser Supabase client, import.meta.env). If the two ever disagree, this
+// one is what is actually being billed, so fix src/lib/cookies.ts to match.
+//   generate_plan       5 flat
+//   generate_questions  ceil(count / 5), minimum 1 - a 40-question set is 8
+//   generate_flashcards ceil(count / 10), minimum 1
+//   review_answers      0 - marking never charges, the set already paid for
+//                          itself when it was generated
+//
+// FAILS OPEN, WITHOUT EXCEPTION - see the identical note in
+// supabase/functions/chat/index.ts, which this mirrors line for line. The
+// short version: supabase/migrations/20260824130000_cookies_daily_budget.sql
+// is applied by hand, separately from this function's own deploy, so a
+// missing function, a thrown error or an unresolvable caller (a guest on the
+// anon key has no `sub` to charge against) must all fall through to
+// `{ status: "skipped" }` - treated by every caller below exactly like
+// "charged for free". Only spend_cookies_for() answering ok:false may refuse.
+function decodeUserId(authHeader: string | null): string | null {
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  try {
+    const token = authHeader.slice("Bearer ".length);
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))) as {
+      sub?: unknown;
+    };
+    return typeof payload.sub === "string" && payload.sub ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+type CookieCharge =
+  | { status: "charged"; spendId: number | null }
+  | { status: "refused"; remaining: number; allowance: number }
+  | { status: "skipped" };
+
+async function chargeCookies(
+  authHeaderRaw: string | null,
+  action: string,
+  cost: number,
+): Promise<CookieCharge> {
+  if (cost <= 0) return { status: "skipped" };
+  const userId = decodeUserId(authHeaderRaw);
+  if (!userId) return { status: "skipped" };
+
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!SUPABASE_URL || !SERVICE_ROLE) return { status: "skipped" };
+
+  try {
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data, error } = await admin.rpc("spend_cookies_for", {
+      p_user: userId,
+      p_action: action,
+      p_cost: cost,
+    });
+    if (error) return { status: "skipped" }; // missing function, RPC error, etc. - fail open
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return { status: "skipped" };
+    if (row.ok === false) {
+      return { status: "refused", remaining: row.remaining ?? 0, allowance: row.allowance ?? 0 };
+    }
+    return { status: "charged", spendId: row.spend_id ?? null };
+  } catch {
+    return { status: "skipped" };
+  }
+}
+
+// Called AS the student (their own forwarded Authorization header, not the
+// service role's) because refund_cookie_spend() checks `user_id = auth.uid()`
+// internally rather than taking a user parameter - see the matching note in
+// chat/index.ts for why the two functions need different calling identities.
+async function refundCookies(authHeaderRaw: string, spendId: number | null): Promise<void> {
+  if (spendId == null) return;
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!SUPABASE_URL || !SERVICE_ROLE) return;
+  try {
+    const asStudent = createClient(SUPABASE_URL, SERVICE_ROLE, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: authHeaderRaw } },
+    });
+    await asStudent.rpc("refund_cookie_spend", { p_spend_id: spendId });
+  } catch {
+    // Best effort. A missed refund costs the student one cookie on a
+    // generation that already failed them once - unfortunate, never blocking.
+  }
+}
+
+const GENERATE_PLAN_COOKIE_COST = 5;
+function questionsCookieCost(count: number): number {
+  return Math.max(1, Math.ceil(count / 5));
+}
+function flashcardsCookieCost(count: number): number {
+  return Math.max(1, Math.ceil(count / 10));
+}
+
+// Mirrors the target/clamp arithmetic generateQuestions() computes for
+// itself, duplicated here so the charge (which must land before that
+// function is even called) reflects the same size question set it is about
+// to build rather than the raw, unclamped ask.
+function requestedQuestionCount(body: Body): number {
+  if (body.questionType === "mixed") {
+    const mcq = Math.min(Math.max(body.mcqCount || 0, 0), MAX_GENERATED_QUESTIONS);
+    const essay = Math.min(Math.max(body.essayCount || 0, 0), MAX_GENERATED_QUESTIONS - mcq);
+    return mcq + essay;
+  }
+  return Math.min(Math.max(body.count || 5, 1), MAX_GENERATED_QUESTIONS);
+}
+
+function requestedFlashcardCount(body: Body): number {
+  return Math.min(Math.max(body.count || 10, 1), MAX_GENERATED_QUESTIONS);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Declared outside the try so the catch block below can still see them -
+  // variables scoped inside `try { }` are not visible from its own `catch`.
+  const authHeaderRaw = req.headers.get("Authorization");
+  let cookieCharge: CookieCharge | null = null;
 
   try {
     const body = (await req.json()) as Body;
@@ -1221,6 +1533,17 @@ Deno.serve(async (req: Request) => {
           400,
         );
       }
+      cookieCharge = await chargeCookies(authHeaderRaw, "generate_plan", GENERATE_PLAN_COOKIE_COST);
+      if (cookieCharge.status === "refused") {
+        return jsonResponse(
+          {
+            error: "out_of_cookies",
+            remaining: cookieCharge.remaining,
+            allowance: cookieCharge.allowance,
+          },
+          402,
+        );
+      }
       return jsonResponse(await generatePlan(body, deepSeekKey));
     }
 
@@ -1234,12 +1557,43 @@ Deno.serve(async (req: Request) => {
           400,
         );
       }
+      cookieCharge = await chargeCookies(
+        authHeaderRaw,
+        "generate_questions",
+        questionsCookieCost(requestedQuestionCount(body)),
+      );
+      if (cookieCharge.status === "refused") {
+        return jsonResponse(
+          {
+            error: "out_of_cookies",
+            remaining: cookieCharge.remaining,
+            allowance: cookieCharge.allowance,
+          },
+          402,
+        );
+      }
       // Opt-in: every real caller in this codebase now sets `stream: true` (see
       // studybody-client.ts on both platforms), but a caller that omits it -
       // present or future - gets EXACTLY today's behaviour, unchanged.
       if (body.stream) {
+        const charged = cookieCharge;
         return generationStreamResponse(
-          (onBatch) => generateQuestions(body, deepSeekKey, openAiKey, onBatch),
+          async (onBatch) => {
+            try {
+              return await generateQuestions(body, deepSeekKey, openAiKey, onBatch);
+            } catch (err) {
+              // Charge first, refund on failure. Wrapped here rather than
+              // inside generationStreamResponse itself: the streaming
+              // Response has already been returned to the caller by the time
+              // this closure runs, so the outer catch-all below never sees
+              // this throw - this is the only place that both knows the
+              // charge happened AND sees the failure.
+              if (charged.status === "charged" && authHeaderRaw) {
+                await refundCookies(authHeaderRaw, charged.spendId);
+              }
+              throw err;
+            }
+          },
           (result) => ({ questions: result.questions }),
         );
       }
@@ -1256,9 +1610,34 @@ Deno.serve(async (req: Request) => {
           400,
         );
       }
+      cookieCharge = await chargeCookies(
+        authHeaderRaw,
+        "generate_flashcards",
+        flashcardsCookieCost(requestedFlashcardCount(body)),
+      );
+      if (cookieCharge.status === "refused") {
+        return jsonResponse(
+          {
+            error: "out_of_cookies",
+            remaining: cookieCharge.remaining,
+            allowance: cookieCharge.allowance,
+          },
+          402,
+        );
+      }
       if (body.stream) {
+        const charged = cookieCharge;
         return generationStreamResponse(
-          (onBatch) => generateFlashcards(body, deepSeekKey, openAiKey, onBatch),
+          async (onBatch) => {
+            try {
+              return await generateFlashcards(body, deepSeekKey, openAiKey, onBatch);
+            } catch (err) {
+              if (charged.status === "charged" && authHeaderRaw) {
+                await refundCookies(authHeaderRaw, charged.spendId);
+              }
+              throw err;
+            }
+          },
           (result) => ({ flashcards: result.flashcards }),
         );
       }
@@ -1272,6 +1651,15 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ error: "Unknown StudyBody action" }, 400);
   } catch (e) {
     console.error("studybody error:", e);
+    // Charge first, refund on failure - see the header note above
+    // chargeCookies(). Only reached by the non-streaming paths (generatePlan,
+    // and generateQuestions/generateFlashcards when body.stream is falsy):
+    // the streaming paths catch their own failure and refund inline above,
+    // because by the time one fails the streaming Response has already been
+    // returned and this catch can no longer run for it.
+    if (cookieCharge?.status === "charged" && authHeaderRaw) {
+      await refundCookies(authHeaderRaw, cookieCharge.spendId);
+    }
     return jsonResponse({ error: e instanceof Error ? e.message : "Unknown error" }, 500);
   }
 });

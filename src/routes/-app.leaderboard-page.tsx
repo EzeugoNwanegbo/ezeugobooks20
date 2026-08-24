@@ -21,7 +21,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
-import { RankBadge, RankProgressBar } from "@/components/rank-badge";
+import { RankBadge, RankLadderBar } from "@/components/rank-badge";
 import { rankFromPoints, rankProgress } from "@/lib/ranks";
 import {
   emptyGamificationStats,
@@ -34,16 +34,20 @@ import { socialEnabled } from "@/lib/social";
 import { fetchSchoolBoard, ownSchoolName, type SchoolBoard } from "@/lib/school";
 
 /**
- * The weekly board needs leaderboard_week() / leaderboard_week_rank() from
- * supabase/migrations/20260818120000_school_and_week_leaderboards.sql.
+ * The weekly board needs leaderboard_week() / leaderboard_week_rank(), created
+ * by supabase/migrations/20260818120000_school_and_week_leaderboards.sql and
+ * then REPLACED by 20260824120000_week_leaderboard_from_weekly_points.sql. Both
+ * are in supabase/APPLY-PENDING.sql and both are needed: the first version
+ * ranks from point_events, which receives only challenge wins, so applying it
+ * alone produces a tab that loads and lists nobody.
  *
  * Detected, not hand-flipped - the reason is written out at length over
  * `schoolRpcMissing` in src/lib/school.ts. Short version: migrations here are
  * applied by hand, and a constant meant the owner could run the SQL and watch
  * nothing change until a second code change also shipped. The fetch below
  * already treats any error as "unavailable" and falls back to the student's OWN
- * week from the local points history, so probing costs one request and can
- * never break the page.
+ * weekly total from local stats, so probing costs one request and can never
+ * break the page.
  *
  * Only a missing FUNCTION latches this. A network blip must not, or one bad
  * moment would hide the board until a reload.
@@ -84,28 +88,25 @@ type RpcRow = {
   rank: number;
 };
 
-/** Monday 00:00 local, matching date_trunc('week', …) on the server. */
-function startOfWeek(now = new Date()): number {
-  const day = new Date(now);
-  day.setHours(0, 0, 0, 0);
-  day.setDate(day.getDate() - ((day.getDay() + 6) % 7));
-  return day.getTime();
-}
-
 /**
- * Points this device recorded since Monday.
+ * Points this device has recorded since Monday.
  *
- * The fallback behind the This week tab while the weekly RPC is unapplied. The
- * local history is capped at 30 events, so a very heavy week can undercount -
- * it is a floor, not an audit, and it is replaced outright by the server total
- * as soon as the weekly RPC answers.
+ * The fallback behind the This week tab while the weekly RPC is unapplied, and
+ * the number the "you" strip shows until the server answers.
+ *
+ * This used to re-derive the total by scanning `stats.events` against a locally
+ * computed Monday. That list is capped at 30 entries, so a heavy week silently
+ * undercounted - and it was re-deriving a number the stats object already holds
+ * exactly. `weeklyPoints` is maintained by rollWeek() in src/lib/gamification.ts,
+ * which zeroes it whenever the stamped Monday is not this Monday, and which runs
+ * inside loadGamificationStats() itself - so by the time this is called the
+ * value has already been rolled over if it needed to be. It is the same number
+ * the server ranks on (user_profiles.weekly_points is written from it), which is
+ * the other reason to read it rather than a second estimate that can disagree
+ * with the board it sits above.
  */
 function localWeekPoints(stats: GamificationStats): number {
-  const since = startOfWeek();
-  return stats.events.reduce((sum, event) => {
-    const at = Date.parse(event.createdAt);
-    return Number.isFinite(at) && at >= since ? sum + event.points : sum;
-  }, 0);
+  return Math.max(0, Math.round(stats.weeklyPoints));
 }
 
 export function LeaderboardPage() {
@@ -320,7 +321,9 @@ export function LeaderboardPage() {
 
           {tab === "global" && (
             <>
-              <RankProgressBar percent={progress.percent} className="mt-4" />
+              {/* The whole ladder, not just this rank's own band - see
+                  RankLadderBar in rank-badge.tsx. */}
+              <RankLadderBar points={points} className="mt-4" />
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground tabular-nums">
                 <span>{progress.rank.name}</span>
                 <span>

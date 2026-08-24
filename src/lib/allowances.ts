@@ -2,10 +2,19 @@
 //
 // ── WHAT IS ENFORCED ────────────────────────────────────────────────────────
 // The daily upload allowance IS enforced (owner's call, made explicitly). Base
-// 3 a day, plus whatever the student's rank has added, counted in FILES — a
-// folder of ten PDFs spends ten, not one, because ten files is ten extractions
-// and ten sets of embeddings. It resets on the same UTC day boundary the rest
-// of the gamification ledger uses.
+// 3 a day, plus whatever the student's five-day activity and rank have added,
+// counted in FILES — a folder of ten PDFs spends ten, not one, because ten
+// files is ten extractions and ten sets of embeddings. It resets on the same
+// UTC day boundary the rest of the gamification ledger uses.
+//
+// ── TWO INDEPENDENT AXES, NOT ONE LADDER ────────────────────────────────────
+// The ceiling is 7/day, reached by 3 (base) + 2 (EARNED_DAY_UPLOAD_BONUS, once
+// ACTIVE_DAYS_FOR_BONUS days of activity have accrued — see activeDays in
+// gamification.ts) + 2 (RANKS[].uploadBonus at Academic Scout and above). The
+// two bonuses are independent: a five-day-old Recruit sits at 5, a same-day
+// Cadet who rushed 50 points sits at 4, and only a student who has BOTH stuck
+// around and studied enough reaches 7. This is deliberate — one axis rewards
+// showing up, the other rewards depth, and the owner wants both, not either.
 //
 // Two rules the copy has to keep:
 //   1. Never punitive. The allowance is something a student earns MORE of; the
@@ -27,11 +36,21 @@
 import { RANKS, rankIndexFromPoints } from "@/lib/ranks";
 
 /**
- * Uploads a day before any rank bonus. The ladder is 5 unranked → 10 at
- * Knowledge Cadet (50 points) → 15 at Academic Scout, and flat above that.
- * See the note on RANKS in src/lib/ranks.ts.
+ * Uploads a day before either bonus. See the header note above for the full
+ * ladder — this is the floor everyone starts on, including a guest.
  */
-export const BASE_DAILY_UPLOADS = 5;
+export const BASE_DAILY_UPLOADS = 3;
+
+/**
+ * The showing-up bonus: +2 a day once a student has been active on
+ * ACTIVE_DAYS_FOR_BONUS separate days — any five, not five in a row, per the
+ * owner's explicit call. "Active" means anything that calls
+ * recordGamificationEvent(), which is also what advances lastActiveDate, so
+ * activeDays (src/lib/gamification.ts) rolls over in exactly the same place.
+ * Missing a weekend costs nothing: the counter only ever goes up.
+ */
+export const EARNED_DAY_UPLOAD_BONUS = 2;
+export const ACTIVE_DAYS_FOR_BONUS = 5;
 
 /**
  * The master switch. While false, `uploadAllowance().blocked` is always false
@@ -73,9 +92,14 @@ function writeJson(key: string, value: unknown): void {
 
 export type UploadAllowance = {
   base: number;
+  /** EARNED_DAY_UPLOAD_BONUS if earnedBonusUnlocked, else 0 — its own field so
+   *  a caller can name where the number came from rather than just the total. */
+  earnedBonus: number;
+  /** Whether the five-active-days bonus has been reached. */
+  earnedBonusUnlocked: boolean;
   /** Extra uploads the student's rank has earned. */
   rankBonus: number;
-  /** base + rankBonus. */
+  /** base + earnedBonus + rankBonus. */
   total: number;
   usedToday: number;
   remaining: number;
@@ -91,22 +115,34 @@ export type UploadAllowance = {
   nextBonusPointsAway: number | null;
 };
 
-export function uploadAllowance(userId: string, points: number): UploadAllowance {
-  return allowanceFrom(points, uploadsUsedToday(userId));
+export function uploadAllowance(
+  userId: string,
+  points: number,
+  activeDays: number,
+): UploadAllowance {
+  return allowanceFrom(points, uploadsUsedToday(userId), activeDays);
 }
 
-/** The pure form, for callers that already hold today's count in state. */
-export function allowanceFrom(points: number, usedToday: number): UploadAllowance {
+/** The pure form, for callers that already hold today's count and active-day tally in state. */
+export function allowanceFrom(
+  points: number,
+  usedToday: number,
+  activeDays: number,
+): UploadAllowance {
   const safePoints = Number.isFinite(points) ? Math.max(0, points) : 0;
   const index = rankIndexFromPoints(points);
   const rank = RANKS[index];
-  const total = BASE_DAILY_UPLOADS + rank.uploadBonus;
+  const earnedBonusUnlocked = Number.isFinite(activeDays) && activeDays >= ACTIVE_DAYS_FOR_BONUS;
+  const earnedBonus = earnedBonusUnlocked ? EARNED_DAY_UPLOAD_BONUS : 0;
+  const total = BASE_DAILY_UPLOADS + earnedBonus + rank.uploadBonus;
   const remaining = Math.max(0, total - usedToday);
   // The next rank that actually moves the number — several early ranks share a
   // bonus, so "reach the next rank" would be a lie at Academic Recruit.
   const upgrade = RANKS.slice(index + 1).find((r) => r.uploadBonus > rank.uploadBonus) ?? null;
   return {
     base: BASE_DAILY_UPLOADS,
+    earnedBonus,
+    earnedBonusUnlocked,
     rankBonus: rank.uploadBonus,
     total,
     usedToday,
@@ -114,7 +150,7 @@ export function allowanceFrom(points: number, usedToday: number): UploadAllowanc
     blocked: ENFORCE_UPLOAD_LIMIT && remaining <= 0,
     rankName: rank.name,
     nextBonusRankName: upgrade?.name ?? null,
-    nextBonusTotal: upgrade ? BASE_DAILY_UPLOADS + upgrade.uploadBonus : null,
+    nextBonusTotal: upgrade ? BASE_DAILY_UPLOADS + earnedBonus + upgrade.uploadBonus : null,
     nextBonusPointsAway: upgrade ? Math.max(0, upgrade.threshold - safePoints) : null,
   };
 }
@@ -232,6 +268,9 @@ export function uploadAllowanceLabel(allowance: UploadAllowance): string {
     return parts.join(" · ");
   }
   const parts = [used];
+  // Two independent bonuses can both be live at once (a five-day-old Scout has
+  // both), so each names itself rather than folding into one opaque number.
+  if (allowance.earnedBonusUnlocked) parts.push(`+${allowance.earnedBonus} for 5 days active`);
   if (allowance.rankBonus > 0) parts.push(`rank bonus +${allowance.rankBonus}`);
   if (upgrade) parts.push(upgrade);
   else parts.push(`${allowance.total} available`);

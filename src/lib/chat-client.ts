@@ -1,5 +1,11 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Profile } from "@/lib/auth-context";
+import {
+  costFor,
+  reportCookieSpend,
+  reportCookiesSettled,
+  reportOutOfCookies,
+} from "@/lib/cookies";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -133,6 +139,13 @@ export async function streamChat({
       onCancel?.();
       return;
     }
+    // Optimistic: the actual charge happens server-side, inside the Edge
+    // Function, before it calls DeepSeek - by the time this request is even
+    // sent it is about to be charged (or refused). Moving the ring now rather
+    // than waiting the full round trip is the whole point of "optimistic" per
+    // src/lib/cookies.ts; reportCookiesSettled() below reconciles once the
+    // real number is known either way.
+    reportCookieSpend(costFor("chat"));
     resp = await fetch(CHAT_URL, {
       method: "POST",
       headers: {
@@ -152,6 +165,7 @@ export async function streamChat({
       }),
     });
   } catch (err) {
+    reportCookiesSettled();
     if (signal?.aborted) {
       onCancel?.();
       return;
@@ -177,9 +191,13 @@ export async function streamChat({
     try {
       const j = await resp.json();
       msg = j.error ?? msg;
+      if (resp.status === 402 && j.error === "out_of_cookies") {
+        reportOutOfCookies({ remaining: j.remaining, allowance: j.allowance });
+      }
     } catch {
       /* ignore */
     }
+    reportCookiesSettled();
     onError(msg);
     return;
   }
@@ -198,6 +216,11 @@ export async function streamChat({
       chunk = await readWithAbort(reader, signal);
     } catch (err) {
       await reader.cancel().catch(() => {});
+      // The charge already happened server-side before this response started
+      // streaming (a 200 got this far) - a client-side read failure after that
+      // is not something the server refunds, so this only reconciles the ring
+      // with what was actually spent rather than reporting a fresh spend.
+      reportCookiesSettled();
       if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) {
         onCancel?.();
         return;
@@ -278,11 +301,13 @@ export async function streamChat({
     onDelta(LENGTH_LIMIT_NOTE);
   } else if (!sawDoneMarker && !finishReason) {
     if (!receivedContent) {
+      reportCookiesSettled();
       onError("The AI stream ended before any response arrived. Please retry.");
       return;
     }
     onDelta(INCOMPLETE_STREAM_NOTE);
   }
 
+  reportCookiesSettled();
   await onDone();
 }

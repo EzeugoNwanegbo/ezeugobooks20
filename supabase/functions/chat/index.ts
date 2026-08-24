@@ -7,6 +7,8 @@
 // - OpenAI is also used for explicit web search because the app needs live
 //   source metadata for reference icons.
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -1535,10 +1537,119 @@ Create the final animation package now.`,
   return finalAnimation;
 }
 
+// ── Cookies: the daily AI budget ────────────────────────────────────────────
+//
+// A chat message costs 2 cookies - see COOKIE_COSTS.chat in src/lib/cookies.ts,
+// the one place this price is meant to live. This is a deliberate second copy
+// of that single number, not a fork of the pricing logic: Edge Functions
+// deploy separately from the frontend and cannot import src/lib/cookies.ts
+// (it is browser code - it imports the browser Supabase client and reads
+// import.meta.env). If the two numbers are ever found to disagree, this one is
+// the one actually being billed, so src/lib/cookies.ts is the one to fix.
+//
+// FAILS OPEN, WITHOUT EXCEPTION. supabase/migrations/20260824130000_cookies_
+// daily_budget.sql is applied BY HAND, separately from this function's own
+// deploy, so there will be a real window where this code runs against a
+// database that does not have spend_cookies_for() yet. The only outcome
+// allowed to refuse a student is that function answering ok:false in so many
+// words - see the migration's own header. Everything else (the function
+// missing, a thrown error, a caller with no resolvable user id - e.g. a guest
+// on the publishable/anon key, which carries no `sub` claim to charge against)
+// falls through to `{ status: "skipped" }`, which every caller below treats
+// exactly like "charged for free": the request proceeds.
+//
+// WHY A SERVICE-ROLE CLIENT FOR THE CHARGE BUT NOT THE REFUND. spend_cookies_
+// for() is deliberately REVOKED from `authenticated` in the migration - only
+// the service role may call it, naming the user explicitly as p_user, which is
+// what makes it trustworthy to charge someone OTHER than "whoever's JWT this
+// is". refund_cookie_spend() is the opposite shape: it takes no user
+// parameter and checks `user_id = auth.uid()` internally, which means it must
+// be called AS the student, not as the service role (a service-role JWT has
+// no `sub` claim, so auth.uid() would be NULL and the ownership check would
+// never match). So the refund client below is built with the service-role key
+// for gateway auth but the STUDENT'S OWN forwarded Authorization header for
+// the RLS-visible identity - a standard Supabase pattern for "call this one
+// RPC as the caller, using a privileged key to reach it."
+function decodeUserId(authHeader: string | null): string | null {
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  try {
+    const token = authHeader.slice("Bearer ".length);
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))) as {
+      sub?: unknown;
+    };
+    return typeof payload.sub === "string" && payload.sub ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+type CookieCharge =
+  | { status: "charged"; spendId: number | null }
+  | { status: "refused"; remaining: number; allowance: number }
+  | { status: "skipped" };
+
+async function chargeCookies(
+  authHeaderRaw: string | null,
+  action: string,
+  cost: number,
+): Promise<CookieCharge> {
+  if (cost <= 0) return { status: "skipped" };
+  const userId = decodeUserId(authHeaderRaw);
+  if (!userId) return { status: "skipped" };
+
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!SUPABASE_URL || !SERVICE_ROLE) return { status: "skipped" };
+
+  try {
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data, error } = await admin.rpc("spend_cookies_for", {
+      p_user: userId,
+      p_action: action,
+      p_cost: cost,
+    });
+    if (error) return { status: "skipped" }; // missing function, RPC error, etc. - fail open
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return { status: "skipped" };
+    if (row.ok === false) {
+      return { status: "refused", remaining: row.remaining ?? 0, allowance: row.allowance ?? 0 };
+    }
+    return { status: "charged", spendId: row.spend_id ?? null };
+  } catch {
+    return { status: "skipped" };
+  }
+}
+
+async function refundCookies(authHeaderRaw: string, spendId: number | null): Promise<void> {
+  if (spendId == null) return;
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!SUPABASE_URL || !SERVICE_ROLE) return;
+  try {
+    const asStudent = createClient(SUPABASE_URL, SERVICE_ROLE, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: authHeaderRaw } },
+    });
+    await asStudent.rpc("refund_cookie_spend", { p_spend_id: spendId });
+  } catch {
+    // Best effort. A missed refund costs the student one cookie on a
+    // generation that already failed them once - unfortunate, never blocking.
+  }
+}
+
+const CHAT_COOKIE_COST = 2;
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Declared outside the try so the catch block below can still see them -
+  // variables scoped inside `try { }` are not visible from its own `catch`.
+  const authHeaderRaw = req.headers.get("Authorization");
+  let cookieCharge: CookieCharge | null = null;
 
   try {
     const body = (await req.json()) as ChatBody;
@@ -1582,6 +1693,24 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Charge before any AI provider is called, and after the config checks
+    // above - a misconfigured server should not cost a student a cookie for a
+    // request that was never going anywhere. One charge per message,
+    // regardless of which route (small talk / web / library / direct) it
+    // ends up taking below.
+    cookieCharge = await chargeCookies(authHeaderRaw, "chat", CHAT_COOKIE_COST);
+    if (cookieCharge.status === "refused") {
+      return new Response(
+        JSON.stringify({
+          error: "out_of_cookies",
+          remaining: cookieCharge.remaining,
+          allowance: cookieCharge.allowance,
+        }),
+        { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     let curriculumGuidance = "";
     let webSources: WebSource[] = [];
 
@@ -1899,6 +2028,12 @@ ${curriculumGuidance}
     }
   } catch (e) {
     console.error("chat error:", e);
+    // Charge first, refund on failure - see the header note above
+    // chargeCookies(). Every branch that reaches this catch failed outright
+    // (threw all the way out), which is exactly the case a refund is for.
+    if (cookieCharge?.status === "charged" && authHeaderRaw) {
+      await refundCookies(authHeaderRaw, cookieCharge.spendId);
+    }
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },

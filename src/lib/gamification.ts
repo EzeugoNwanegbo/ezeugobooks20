@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { ACTIVE_DAYS_FOR_BONUS } from "@/lib/allowances";
 
 export type GamificationEvent =
   | "chat_entered"
@@ -47,6 +48,25 @@ export type GamificationStats = {
   longestStreak: number;
   lastActiveDate: string | null;
   lastChatRewardDate: string | null;
+  /**
+   * Lifetime count of DISTINCT calendar days this account has done anything
+   * that calls recordGamificationEvent(). Deliberately not "days in a row" —
+   * that is currentStreak, a different number that can fall back to zero.
+   * activeDays only ever goes up: it is what src/lib/allowances.ts reads to
+   * decide whether EARNED_DAY_UPLOAD_BONUS has unlocked, and the owner's rule
+   * for that bonus is explicitly "any five days, not five in a row," so it
+   * cannot be derived from the streak.
+   */
+  activeDays: number;
+  /**
+   * Whether the "you unlocked more uploads" moment has already fired for this
+   * account, ever. Set the instant activeDays crosses ACTIVE_DAYS_FOR_BONUS —
+   * see recordGamificationEvent() — never on a page load that merely finds
+   * activeDays already at or above it, so a reload cannot replay the moment
+   * and an existing student seeded straight to the threshold (see migrate())
+   * does not see a celebration for something they were never missing.
+   */
+  uploadBonusUnlockShown: boolean;
   correctQuestions: number;
   failedQuestions: number;
   roadmapsCompleted: number;
@@ -232,6 +252,8 @@ export function emptyGamificationStats(): GamificationStats {
     longestStreak: 0,
     lastActiveDate: null,
     lastChatRewardDate: null,
+    activeDays: 0,
+    uploadBonusUnlockShown: false,
     correctQuestions: 0,
     failedQuestions: 0,
     roadmapsCompleted: 0,
@@ -244,12 +266,29 @@ export function emptyGamificationStats(): GamificationStats {
 /**
  * Bring a blob saved by an older build up to the current shape.
  *
- * The only thing that needs real care is streakMilestonesAwarded. A student who
- * has been on a 40-day streak since before milestones existed must not be paid
- * 150 points of back-dated bonuses the first time they answer a question, so on
- * the first read (the key is absent, not merely empty) every milestone they have
- * already passed is marked as paid. Points, streak and history are carried over
- * untouched — a returning user loses nothing.
+ * Two things need real care, both for the same reason: a build with no memory
+ * of "before" must not read a returning student's history as a fresh start.
+ *
+ * streakMilestonesAwarded — a student who has been on a 40-day streak since
+ * before milestones existed must not be paid 150 points of back-dated bonuses
+ * the first time they answer a question, so on the first read (the key is
+ * absent, not merely empty) every milestone they have already passed is
+ * marked as paid.
+ *
+ * activeDays — the same hazard, aimed at the upload ladder instead of points.
+ * A blob with no activeDays predates this field entirely, which means EVERY
+ * existing student would otherwise start at 0 and have to re-earn five days
+ * they already spent studying here — punitive, and exactly the rule the header
+ * of allowances.ts forbids. So an account with any sign of history (points
+ * earned, or a lastActiveDate at all) is seeded straight to the unlock
+ * threshold, and uploadBonusUnlockShown is seeded true alongside it: that
+ * student already effectively "has" the bonus, and must not see the reveal
+ * moment fire on their next action for a threshold they did not just cross. A
+ * genuinely blank blob (no history at all) seeds to 0/false and experiences
+ * the real crossing, and its celebration, like anyone else.
+ *
+ * Points, streak and event history are all carried over untouched either way —
+ * a returning user loses nothing.
  */
 function migrate(raw: Partial<GamificationStats>): GamificationStats {
   const stats: GamificationStats = { ...emptyGamificationStats(), ...raw };
@@ -258,6 +297,12 @@ function migrate(raw: Partial<GamificationStats>): GamificationStats {
     stats.streakMilestonesAwarded = STREAK_MILESTONES.filter(
       (milestone) => stats.currentStreak >= milestone.days,
     ).map((milestone) => milestone.days);
+  }
+
+  if (typeof raw.activeDays !== "number") {
+    const hasHistory = stats.points > 0 || Boolean(stats.lastActiveDate);
+    stats.activeDays = hasHistory ? ACTIVE_DAYS_FOR_BONUS : 0;
+    stats.uploadBonusUnlockShown = hasHistory ? true : stats.uploadBonusUnlockShown;
   }
 
   const today = todayKey();
@@ -404,6 +449,26 @@ export function recordGamificationEvent(
     stats.currentStreak = 1;
   }
 
+  // activeDays rolls over in the SAME place lastActiveDate does, and for the
+  // same reason: this block already knows whether today is a day this account
+  // has not been seen on yet (lastActiveDate !== today, checked before it is
+  // overwritten below), independent of whether the streak continued, broke or
+  // just started. Unlike currentStreak, this only ever goes up.
+  const isNewActiveDay = stats.lastActiveDate !== today;
+  let justUnlockedUploadBonus = false;
+  if (isNewActiveDay) {
+    const before = stats.activeDays;
+    stats.activeDays += 1;
+    if (
+      before < ACTIVE_DAYS_FOR_BONUS &&
+      stats.activeDays >= ACTIVE_DAYS_FOR_BONUS &&
+      !stats.uploadBonusUnlockShown
+    ) {
+      stats.uploadBonusUnlockShown = true;
+      justUnlockedUploadBonus = true;
+    }
+  }
+
   stats.lastActiveDate = today;
   stats.longestStreak = Math.max(stats.longestStreak, stats.currentStreak);
   if (type === "chat_entered") stats.lastChatRewardDate = today;
@@ -431,6 +496,18 @@ export function recordGamificationEvent(
   stats.events = stats.events.slice(0, 30);
 
   saveGamificationStats(userId, stats);
+
+  // A dedicated signal rather than something the shell infers from the stats
+  // it just received. By the time a "gd:gamification" listener re-reads the
+  // account, uploadBonusUnlockShown already reads true - correctly, since it
+  // is now banked - so nothing left in the stats object can tell a listener
+  // "this is the instant it happened" versus "this happened yesterday, or was
+  // seeded true on migration." Firing this only from inside the branch above
+  // that actually flips the flag is the one place that distinction is known.
+  if (justUnlockedUploadBonus && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("gd:upload-bonus-unlocked"));
+  }
+
   return stats;
 }
 

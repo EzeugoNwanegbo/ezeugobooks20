@@ -33,6 +33,7 @@ import {
   difficultyFromScore,
   finalizeTopicMastery,
   loadStudyDocuments,
+  MAX_GENERATED_QUESTIONS,
   sourceText,
   STATUS_LABEL,
   type PlanRow,
@@ -299,15 +300,17 @@ function ChallengeResultCard({ summary }: { summary: ChallengeSummary }) {
 
 // Count presets per practice type, plus a Custom option for any amount.
 const COUNT_OPTIONS: Record<"mcq" | "essay" | "flashcard", number[]> = {
-  mcq: [10, 30, 50],
+  mcq: [10, 25, MAX_GENERATED_QUESTIONS],
   essay: [5, 10, 15],
-  flashcard: [10, 30, 60],
+  flashcard: [10, 25, MAX_GENERATED_QUESTIONS],
 };
 
+// Mixed presets are capped on their TOTAL, which is what the student waits for
+// and what the server counts - so the largest is 30 + 10, not 40 + 40.
 const MIXED_PRESETS = [
   { mcq: 10, essay: 3 },
+  { mcq: 20, essay: 6 },
   { mcq: 30, essay: 10 },
-  { mcq: 50, essay: 15 },
 ];
 
 const TYPE_LABEL: Record<StudyQuestionType, string> = {
@@ -319,7 +322,7 @@ const TYPE_LABEL: Record<StudyQuestionType, string> = {
 
 function clampCount(value: number): number {
   if (Number.isNaN(value)) return 1;
-  return Math.min(Math.max(Math.round(value), 1), 60);
+  return Math.min(Math.max(Math.round(value), 1), MAX_GENERATED_QUESTIONS);
 }
 
 async function awardRoadmapIfComplete(userId: string, planId: string) {
@@ -914,16 +917,20 @@ function ConfigView({ planId }: { planId: string }) {
                           <div className="mt-2 grid grid-cols-2 gap-2">
                             <label className="text-xs font-medium text-muted-foreground">
                               MCQ
+                              {/* Each half is capped by what the OTHER half
+                                  leaves, so the pair can never total more than
+                                  MAX_GENERATED_QUESTIONS. Capping them at 40
+                                  each would cap nothing - it would allow 80. */}
                               <input
                                 type="number"
                                 min={0}
-                                max={60}
+                                max={MAX_GENERATED_QUESTIONS - mixedEssay}
                                 value={mixedMcq}
                                 onChange={(event) =>
                                   setMixedMcq(
                                     Math.min(
                                       Math.max(Number.parseInt(event.target.value, 10) || 0, 0),
-                                      60,
+                                      MAX_GENERATED_QUESTIONS - mixedEssay,
                                     ),
                                   )
                                 }
@@ -935,13 +942,13 @@ function ConfigView({ planId }: { planId: string }) {
                               <input
                                 type="number"
                                 min={0}
-                                max={60}
+                                max={MAX_GENERATED_QUESTIONS - mixedMcq}
                                 value={mixedEssay}
                                 onChange={(event) =>
                                   setMixedEssay(
                                     Math.min(
                                       Math.max(Number.parseInt(event.target.value, 10) || 0, 0),
-                                      60,
+                                      MAX_GENERATED_QUESTIONS - mixedMcq,
                                     ),
                                   )
                                 }
@@ -988,12 +995,12 @@ function ConfigView({ planId }: { planId: string }) {
                           <input
                             type="number"
                             min={1}
-                            max={60}
+                            max={MAX_GENERATED_QUESTIONS}
                             value={count}
                             onChange={(event) =>
                               setCount(clampCount(Number.parseInt(event.target.value, 10)))
                             }
-                            placeholder="How many? (1-60)"
+                            placeholder={`How many? (1-${MAX_GENERATED_QUESTIONS})`}
                             className="mt-2 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
                           />
                         )}

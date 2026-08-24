@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { ArrowLeft, BookMarked, Check, Plus, Trash2, X } from "lucide-react";
+import { ArrowLeft, BookMarked, Check, Cookie, Plus, Search, Trash2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { LoadingDots } from "@/components/loading-dots";
 import type { Database } from "@/integrations/supabase/types";
+import { findStudentsByPrefix, type FoundStudent } from "@/lib/social";
+import {
+  cookieDailyBaseFor,
+  cookieGrantsFor,
+  cookieSpentTodayFor,
+  createCookieGrant,
+  type CookieGrantRow,
+} from "@/lib/cookies";
 
 type LibraryDoc = Database["public"]["Tables"]["library_documents"]["Row"];
 type MyDoc = {
@@ -31,6 +39,30 @@ export function AdminPage() {
   const [myDocs, setMyDocs] = useState<MyDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // ── Cookies: find a student, see what today has gone on, grant more ────────
+  //
+  // find_students() (src/lib/social.ts, PART 1 of supabase/APPLY-PENDING.sql)
+  // matches only opted-in-discoverable students, or the admin themselves - it
+  // was built for the friend-search typeahead, not admin lookup, and reusing
+  // it here means an admin cannot find a student who has kept their account
+  // undiscoverable. That is a real gap the plan does not address; there is no
+  // admin-only search RPC in the reviewed SQL to reach for instead.
+  const [cookieQuery, setCookieQuery] = useState("");
+  const [cookieResults, setCookieResults] = useState<FoundStudent[]>([]);
+  const [cookieSearching, setCookieSearching] = useState(false);
+  const [cookieStudent, setCookieStudent] = useState<FoundStudent | null>(null);
+  // null distinguishes "not loaded yet" from "loaded, and it is zero" -
+  // cookieBase specifically also means "the schema is not there" when null
+  // AFTER a load has completed, which gates the grant form off below.
+  const [cookieBase, setCookieBase] = useState<number | null>(null);
+  const [cookieGrants, setCookieGrants] = useState<CookieGrantRow[] | null>(null);
+  const [cookieSpentToday, setCookieSpentToday] = useState<number | null>(null);
+  const [cookieLoadedOnce, setCookieLoadedOnce] = useState(false);
+  const [grantExtra, setGrantExtra] = useState("10");
+  const [grantEndsOn, setGrantEndsOn] = useState("");
+  const [grantNote, setGrantNote] = useState("");
+  const [grantBusy, setGrantBusy] = useState(false);
 
   const isAdmin = profile?.is_admin === true;
 
@@ -177,6 +209,85 @@ export function AdminPage() {
       setBusyId(null);
     }
   };
+
+  const searchCookieStudents = async (value: string) => {
+    setCookieQuery(value);
+    // Same three-character floor find_students() enforces server-side -
+    // mirrored here only so a shorter query does not cost a round trip.
+    if (value.trim().length < 3) {
+      setCookieResults([]);
+      return;
+    }
+    setCookieSearching(true);
+    try {
+      setCookieResults(await findStudentsByPrefix(value, 10));
+    } finally {
+      setCookieSearching(false);
+    }
+  };
+
+  const selectCookieStudent = async (student: FoundStudent) => {
+    setCookieStudent(student);
+    setCookieResults([]);
+    setCookieQuery("");
+    setCookieBase(null);
+    setCookieGrants(null);
+    setCookieSpentToday(null);
+    setCookieLoadedOnce(false);
+    const [base, grants, spent] = await Promise.all([
+      cookieDailyBaseFor(),
+      cookieGrantsFor(student.user_id),
+      cookieSpentTodayFor(student.user_id),
+    ]);
+    setCookieBase(base);
+    setCookieGrants(grants);
+    setCookieSpentToday(spent);
+    setCookieLoadedOnce(true);
+  };
+
+  const submitCookieGrant = async () => {
+    if (!user || !cookieStudent || grantBusy) return;
+    const extra = Math.round(Number(grantExtra));
+    if (!Number.isFinite(extra) || extra <= 0) {
+      toast.error("Enter how many extra cookies a day.");
+      return;
+    }
+    setGrantBusy(true);
+    try {
+      const ok = await createCookieGrant({
+        userId: cookieStudent.user_id,
+        extraPerDay: extra,
+        endsOn: grantEndsOn || null,
+        note: grantNote,
+        grantedBy: user.id,
+      });
+      if (!ok) {
+        toast.error("Could not save the grant - cookies may not be set up in the database yet.");
+        return;
+      }
+      toast.success(`+${extra} cookies a day for ${cookieStudent.display_name}.`);
+      setGrantExtra("10");
+      setGrantEndsOn("");
+      setGrantNote("");
+      setCookieGrants(await cookieGrantsFor(cookieStudent.user_id));
+    } finally {
+      setGrantBusy(false);
+    }
+  };
+
+  // Today's allowance for the selected student = the flat base
+  // (cookie_daily_base(), read live rather than hard-coded) plus every ACTIVE
+  // grant's extra_per_day - "active" mirrors cookie_allowance()'s own SQL
+  // (starts_on <= today AND (ends_on IS NULL OR ends_on >= today)) so this
+  // number can never disagree with what the student's own ring shows.
+  // cookieBase stays null (rather than 0) until a load finishes AND finds no
+  // schema, which is what tells the form below to hide itself instead of
+  // offering a grant that would silently fail to save.
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const cookieActiveExtra = (cookieGrants ?? [])
+    .filter((g) => g.starts_on <= todayKey && (!g.ends_on || g.ends_on >= todayKey))
+    .reduce((sum, g) => sum + g.extra_per_day, 0);
+  const cookieAllowance = cookieBase != null ? cookieBase + cookieActiveExtra : null;
 
   // Gate: non-admins never see the queue (RLS also blocks the data server-side).
   if (profile && !isAdmin) {
@@ -332,6 +443,155 @@ export function AdminPage() {
                     </button>
                   </DocCard>
                 ))}
+              </div>
+            )}
+          </section>
+
+          {/* Cookies: without this the empty-state dialog's "call or WhatsApp
+              us for more" promises something the product cannot deliver - see
+              docs/cookies-and-milestones-plan.md. Detected, not assumed: the
+              schema this reads and writes is applied by hand, same as
+              everything else new here, so a student is shown "not set up yet"
+              rather than a form that would silently fail to save. */}
+          <section>
+            <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Cookie className="h-4 w-4 text-pop" />
+              Cookies
+            </h3>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Find a student by handle to see their daily allowance and grant more.
+            </p>
+
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={cookieQuery}
+                onChange={(e) => void searchCookieStudents(e.target.value)}
+                placeholder="Search by handle (3+ characters)"
+                className="w-full rounded-xl border border-border bg-background py-2 pl-9 pr-3 text-sm outline-none focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
+              />
+            </div>
+
+            {cookieSearching && (
+              <div className="mt-2 flex justify-center">
+                <LoadingDots />
+              </div>
+            )}
+
+            {cookieResults.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                {cookieResults.map((student) => (
+                  <button
+                    key={student.user_id}
+                    type="button"
+                    onClick={() => void selectCookieStudent(student)}
+                    className="flex w-full items-center justify-between gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-left text-sm hover:bg-surface-elevated"
+                  >
+                    <span className="min-w-0 truncate">
+                      <span className="font-medium text-foreground">{student.display_name}</span>{" "}
+                      <span className="text-muted-foreground">@{student.username}</span>
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                      {student.points.toLocaleString()} pts
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {cookieStudent && (
+              <div className="mt-3 rounded-2xl border border-border bg-surface p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-foreground">
+                      {cookieStudent.display_name}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      @{cookieStudent.username}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCookieStudent(null)}
+                    className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                {!cookieLoadedOnce ? (
+                  <div className="mt-3 flex justify-center">
+                    <LoadingDots />
+                  </div>
+                ) : cookieAllowance == null ? (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Cookies aren&apos;t set up in the database yet.
+                  </p>
+                ) : (
+                  <>
+                    <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Allowance today</p>
+                        <p className="font-semibold tabular-nums">{cookieAllowance}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Spent today</p>
+                        <p className="font-semibold tabular-nums">{cookieSpentToday ?? "—"}</p>
+                      </div>
+                    </div>
+
+                    {cookieGrants && cookieGrants.length > 0 && (
+                      <div className="mt-3 space-y-1">
+                        <p className="text-xs text-muted-foreground">Grants</p>
+                        {cookieGrants.map((grant) => (
+                          <p key={grant.id} className="text-xs text-muted-foreground">
+                            +{grant.extra_per_day}/day from {grant.starts_on}
+                            {grant.ends_on ? ` to ${grant.ends_on}` : ""}
+                            {grant.note ? ` — ${grant.note}` : ""}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="mt-4 grid gap-2 sm:grid-cols-[6rem_9rem_1fr_auto]">
+                      <input
+                        type="number"
+                        min={1}
+                        value={grantExtra}
+                        onChange={(e) => setGrantExtra(e.target.value)}
+                        placeholder="Extra/day"
+                        aria-label="Extra cookies per day"
+                        className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
+                      />
+                      <input
+                        type="date"
+                        value={grantEndsOn}
+                        onChange={(e) => setGrantEndsOn(e.target.value)}
+                        aria-label="Ends on (optional)"
+                        className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
+                      />
+                      <input
+                        value={grantNote}
+                        onChange={(e) => setGrantNote(e.target.value)}
+                        placeholder="Note (optional)"
+                        aria-label="Note"
+                        className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void submitCookieGrant()}
+                        disabled={grantBusy}
+                        className="btn-pop inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                      >
+                        {grantBusy ? <LoadingDots /> : <Plus className="h-3.5 w-3.5" />}
+                        Grant
+                      </button>
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-muted-foreground">
+                      No end date means the grant never expires.
+                    </p>
+                  </>
+                )}
               </div>
             )}
           </section>

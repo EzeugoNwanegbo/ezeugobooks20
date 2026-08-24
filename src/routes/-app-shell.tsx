@@ -50,8 +50,13 @@ import { FeatureTour } from "@/components/feature-tour";
 import { hasSeenTour } from "@/lib/feature-tour";
 import { primeSeenOnce } from "@/lib/seen-once";
 import { RankUpCelebration } from "@/components/rank-up-celebration";
-import { RankBadge, RankProgressBar } from "@/components/rank-badge";
+import { UploadBonusUnlockCelebration } from "@/components/upload-bonus-unlock-celebration";
+import { CookieRing } from "@/components/cookie-ring";
+import { CookieEmptyDialog } from "@/components/cookie-empty-dialog";
+import { RankBadge, RankLadderBar } from "@/components/rank-badge";
 import { rankProgress, type AcademicRank } from "@/lib/ranks";
+import { allowanceFrom } from "@/lib/allowances";
+import { useCookies, onOutOfCookies } from "@/lib/cookies";
 import { takeRankCelebration } from "@/lib/progression-moments";
 import { useAuth } from "@/lib/auth-context";
 import { isGuestUser } from "@/lib/guest-session";
@@ -131,6 +136,20 @@ function AppLayout() {
   // top of the app is gone - the streak now reads as an inline moment on the
   // chat page, which does not stand between a student and what they came for.
   const [rankUp, setRankUp] = useState<AcademicRank | null>(null);
+  // The other progression moment the shell owns: five active days unlocking
+  // EARNED_DAY_UPLOAD_BONUS. Holds the new daily total to show, or null for
+  // "nothing to celebrate right now". See the "gd:upload-bonus-unlocked"
+  // listener below for why this is not derived from `gamification` directly.
+  const [uploadBonusUnlockTotal, setUploadBonusUnlockTotal] = useState<number | null>(null);
+  // The empty-state dialog. Opened either by a 402 anywhere in the app
+  // (chat/studybody/last-minute, or a refused Battle Royale charge - all
+  // reach here through reportOutOfCookies()) or by tapping the ring itself at
+  // any level; null means closed. See cookie-empty-dialog.tsx for why the
+  // same dialog serves both.
+  const [cookieDialog, setCookieDialog] = useState<{
+    remaining: number | null;
+    allowance: number | null;
+  } | null>(null);
   // The tail of the sidebar nav - the things a student touches once a term -
   // stays folded away until asked for. See the nav block below.
   const [navMoreOpen, setNavMoreOpen] = useState(false);
@@ -215,6 +234,38 @@ function AppLayout() {
     const earned = takeRankCelebration(gamification.points);
     if (earned) setRankUp(earned);
   }, [user, gamification.points]);
+
+  // Five-active-days unlock. Unlike rank-up this is an EVENT listener rather
+  // than something re-derived from `gamification.activeDays` on every render:
+  // the "has this already been shown" flag lives inside GamificationStats
+  // itself (see uploadBonusUnlockShown in gamification.ts) and is already true
+  // by the time this component's own state has re-rendered with the crossing,
+  // so there is no "before vs after" left to compare against here - only
+  // recordGamificationEvent() knows the instant it happens, and it dispatches
+  // this event from exactly that instant. A fresh read (not the possibly-stale
+  // `gamification` closure) supplies the numbers the card shows.
+  useEffect(() => {
+    if (!user) return;
+    const onUnlock = () => {
+      const fresh = loadGamificationStats(user.id);
+      setUploadBonusUnlockTotal(allowanceFrom(fresh.points, 0, fresh.activeDays).total);
+    };
+    window.addEventListener("gd:upload-bonus-unlocked", onUnlock);
+    return () => window.removeEventListener("gd:upload-bonus-unlocked", onUnlock);
+  }, [user]);
+
+  // The cookie meter. "unavailable" (schema not applied yet, or no user) means
+  // the ring below simply does not render - see useCookies()'s own contract.
+  const cookies = useCookies(user?.id);
+
+  // Raised from anywhere in the app on a 402, via reportOutOfCookies() in
+  // src/lib/cookies.ts - chat/studybody/last-minute all call it, and so does
+  // battle-royale-client.ts on a refused client-side charge.
+  useEffect(() => {
+    return onOutOfCookies((info) => {
+      setCookieDialog({ remaining: info.remaining ?? null, allowance: info.allowance ?? null });
+    });
+  }, []);
 
   // The one conversation query in the app. It feeds the desktop sidebar's
   // grouped history and the mobile drawer's; the chat page no longer keeps a
@@ -354,6 +405,17 @@ function AppLayout() {
     setMobileMenuOpen(false);
     navigate({ to: "/app/chat", search: {} });
     window.setTimeout(() => window.dispatchEvent(new Event("gd:new-chat")), 0);
+  };
+
+  // Tapping the ring at ANY level opens the same dialog a 402 does - see the
+  // header note on CookieEmptyDialog for why its copy adapts instead of
+  // always claiming "you're out" when it might not be true yet.
+  const openCookieDialog = () => {
+    setCookieDialog(
+      cookies.status === "ready"
+        ? { remaining: cookies.balance.remaining, allowance: cookies.balance.allowance }
+        : { remaining: null, allowance: null },
+    );
   };
 
   // Ported wholesale from the chat page's old sidebar, behaviour unchanged:
@@ -850,6 +912,16 @@ function AppLayout() {
               <span title={`${rank.rank.name} · ${gamification.points.toLocaleString()} pts`}>
                 <RankBadge rank={rank.rank} size="sm" />
               </span>
+              {/* Absent (not just hidden) until useCookies() confirms the
+                  schema is there - "no meter is better than a wrong meter". */}
+              {cookies.status === "ready" && (
+                <CookieRing
+                  remaining={cookies.balance.remaining}
+                  allowance={cookies.balance.allowance}
+                  onClick={openCookieDialog}
+                  size={28}
+                />
+              )}
               <Link
                 to="/app/settings"
                 title="Settings"
@@ -885,6 +957,14 @@ function AppLayout() {
                     </span>
                   </div>
                 </div>
+                {cookies.status === "ready" && (
+                  <CookieRing
+                    remaining={cookies.balance.remaining}
+                    allowance={cookies.balance.allowance}
+                    onClick={openCookieDialog}
+                    size={30}
+                  />
+                )}
                 <Link
                   to="/app/settings"
                   title="Settings"
@@ -894,9 +974,10 @@ function AppLayout() {
                   <Settings className="h-4 w-4" />
                 </Link>
               </div>
-              {/* Progress to the next rank, then the raw numbers underneath -
-                  the bar answers "how close am I", the line answers "to what". */}
-              <RankProgressBar percent={rank.percent} className="mt-2" />
+              {/* The whole journey, not just this rank - see RankLadderBar in
+                  rank-badge.tsx. The bar answers "how close am I to the top",
+                  the line underneath answers "to what, right now". */}
+              <RankLadderBar points={gamification.points} className="mt-2" />
               <div className="mt-1 truncate text-[11px] text-muted-foreground tabular-nums">
                 {gamification.points.toLocaleString()} pts ·{" "}
                 {rank.next
@@ -1243,14 +1324,26 @@ function AppLayout() {
           >
             {/* The name had to share this row with the theme button, which
                 truncated it early on narrow phones. It gets the full width now,
-                and the theme control moves to its own row below. */}
-            <div className="mb-2 min-w-0 px-1">
-              <div className="truncate text-sm font-semibold leading-tight">
-                {profile.name || "Student"}
+                and the theme control moves to its own row below. The ring
+                joins it because the drawer IS the whole nav below md - the
+                shell header's copy of it (above) never renders here. */}
+            <div className="mb-2 flex min-w-0 items-center gap-2 px-1">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold leading-tight">
+                  {profile.name || "Student"}
+                </div>
+                <div className="truncate text-[11px] text-muted-foreground">
+                  {[profile.year, profile.university].filter(Boolean).join(" · ")}
+                </div>
               </div>
-              <div className="truncate text-[11px] text-muted-foreground">
-                {[profile.year, profile.university].filter(Boolean).join(" · ")}
-              </div>
+              {cookies.status === "ready" && (
+                <CookieRing
+                  remaining={cookies.balance.remaining}
+                  allowance={cookies.balance.allowance}
+                  onClick={openCookieDialog}
+                  size={32}
+                />
+              )}
             </div>
             <ThemePicker className="mb-3 px-1" />
             <div className="flex gap-1">
@@ -1335,14 +1428,29 @@ function AppLayout() {
         </DialogContent>
       </Dialog>
 
-      {/* The only card the shell still puts in front of the app. It is rare -
-          one per rank, ever - which is what earns it the interruption. */}
+      {/* The two cards the shell still puts in front of the app. Both are
+          rare - once per rank, and once ever - which is what earns them the
+          interruption. */}
       <RankUpCelebration
         rank={rankUp}
         points={gamification.points}
+        activeDays={gamification.activeDays}
         onDismiss={() => {
           setRankUp(null);
         }}
+      />
+      <UploadBonusUnlockCelebration
+        total={uploadBonusUnlockTotal}
+        onDismiss={() => setUploadBonusUnlockTotal(null)}
+      />
+      <CookieEmptyDialog
+        open={cookieDialog != null}
+        onOpenChange={(open) => {
+          if (!open) setCookieDialog(null);
+        }}
+        remaining={cookieDialog?.remaining ?? null}
+        allowance={cookieDialog?.allowance ?? null}
+        handle={profile.username || profile.name}
       />
       <FeatureTour
         open={tourOpen}

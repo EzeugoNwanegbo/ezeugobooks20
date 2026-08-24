@@ -18,6 +18,12 @@ import { stageLastMinuteForCoach } from "@/lib/last-minute-handoff";
 import { importChunk } from "@/lib/lazy-import";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/ui/page-header";
+import {
+  costFor,
+  reportCookieSpend,
+  reportCookiesSettled,
+  reportOutOfCookies,
+} from "@/lib/cookies";
 
 type Doc = {
   id: string;
@@ -254,11 +260,33 @@ export function LastMinutePage() {
     setGenerating(true);
     setProgressIndex(0);
     setNote("");
+    // Optimistic: the real charge happens server-side, inside the Edge
+    // Function, before it calls DeepSeek. See src/lib/cookies.ts's
+    // reportCookieSpend() header note - this moves the ring now rather than
+    // waiting the round trip, and the finally block below reconciles it.
+    reportCookieSpend(costFor("last_minute"));
     try {
       const { data, error } = await supabase.functions.invoke("last-minute", {
         body: { docIds: selected },
       });
-      if (error) throw error;
+      if (error) {
+        const context = (error as FunctionErrorWithContext).context;
+        if (context instanceof Response && context.status === 402) {
+          try {
+            const failed = (await context.clone().json()) as {
+              error?: string;
+              remaining?: number;
+              allowance?: number;
+            };
+            if (failed.error === "out_of_cookies") {
+              reportOutOfCookies({ remaining: failed.remaining, allowance: failed.allowance });
+            }
+          } catch {
+            /* ignore - the generic error message below still shows */
+          }
+        }
+        throw error;
+      }
       const body = data as { title?: string; note?: string; error?: string } | null;
       if (!body || body.error) throw new Error(body?.error ?? "Could not generate Master Note.");
       setTitle(body.title || "Last Minute Master Note");
@@ -269,6 +297,7 @@ export function LastMinutePage() {
     } catch (error) {
       toast.error(generationErrorMessage(await readableFunctionError(error)));
     } finally {
+      reportCookiesSettled();
       setGenerating(false);
     }
   };

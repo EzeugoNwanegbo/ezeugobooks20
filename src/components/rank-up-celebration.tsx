@@ -21,7 +21,7 @@ import { Sparkles } from "lucide-react";
 import { RankBadge, RankProgressBar } from "@/components/rank-badge";
 import { MomentOverlay, useMomentReveal } from "@/components/progression-moment";
 import { RANKS, rankProgress, uploadBonusGain, type AcademicRank } from "@/lib/ranks";
-import { BASE_DAILY_UPLOADS } from "@/lib/allowances";
+import { allowanceFrom } from "@/lib/allowances";
 
 /** Long enough to watch the bar land and read two short lines. */
 const AUTO_DISMISS_MS = 7000;
@@ -29,10 +29,15 @@ const AUTO_DISMISS_MS = 7000;
 export function RankUpCelebration({
   rank,
   points,
+  activeDays,
   onDismiss,
 }: {
   rank: AcademicRank | null;
   points: number;
+  /** Needed alongside `rank` because the daily-upload total this reports now
+   *  has two independent inputs (see allowances.ts) - the rank alone is not
+   *  enough to say what the new number is. */
+  activeDays: number;
   onDismiss: () => void;
 }) {
   // Hooks run unconditionally; MomentOverlay does its own early return.
@@ -86,7 +91,7 @@ export function RankUpCelebration({
                 number. Several ranks share a bonus, and "+10 uploads a day" on
                 a rank that changed nothing is a promise the Library breaks. */}
             {uploadBonusGain(rank) > 0
-              ? `${rank.threshold.toLocaleString()} points. Your daily uploads go up to ${BASE_DAILY_UPLOADS + rank.uploadBonus}.`
+              ? `${rank.threshold.toLocaleString()} points. Your daily uploads go up to ${allowanceFrom(points, 0, activeDays).total}.`
               : progress.next
                 ? `${rank.threshold.toLocaleString()} points. ${progress.pointsToNext.toLocaleString()} more to ${progress.next.name}.`
                 : `${rank.threshold.toLocaleString()} points. Top rank reached.`}

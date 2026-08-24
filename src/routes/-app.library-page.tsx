@@ -9,7 +9,7 @@ import {
   sanitizeExtractedText,
   type DocumentChunkInput,
 } from "@/lib/document-chunks";
-import { chunkSetContentHash, DEDUP_SCHEMA_APPLIED } from "@/lib/content-hash";
+import { chunkSetContentHash, primeDedupSchema } from "@/lib/content-hash";
 import { backfillMissingEmbeddings } from "@/lib/embeddings";
 import { markSeenOnce, useSeenOnce } from "@/lib/seen-once";
 import { getCached, setCached } from "@/lib/data-cache";
@@ -377,7 +377,7 @@ export function LibraryPage() {
     return () => window.removeEventListener("gd:gamification", refreshStats);
   }, [user]);
 
-  const allowance = allowanceFrom(gamification.points, uploadsToday);
+  const allowance = allowanceFrom(gamification.points, uploadsToday, gamification.activeDays);
 
   const applyLibraryData = (nextFolders: FolderRow[], nextDocs: DocRow[]) => {
     setFolders(nextFolders);
@@ -810,7 +810,7 @@ export function LibraryPage() {
       // Read the counter fresh rather than trusting `uploadsToday`: a tab left
       // open across the UTC rollover holds a stale count in state.
       const usedNow = uploadsUsedToday(user.id);
-      const current = allowanceFrom(gamification.points, usedNow);
+      const current = allowanceFrom(gamification.points, usedNow, gamification.activeDays);
       setUploadsToday(usedNow);
       const plan = planUploadBatch(current, files.length);
       if (plan.message) {
@@ -916,6 +916,11 @@ export function LibraryPage() {
       const readyNames: string[] = [];
       const brokenFiles: { fileName: string; reason: string }[] = [];
       let dedupedCount = 0;
+      // Asked once, here, and then used for the whole batch rather than
+      // re-probed per file: every gated decision below has to make the SAME
+      // assumption, and a probe that answered differently half way through a
+      // batch would stamp some rows with a fingerprint and not others.
+      const dedupReady = await primeDedupSchema();
       // Files this student could contribute to the pool. A file only qualifies
       // if it finished as 'ready' with every chunk committed AND it was not
       // already in the pool - a matched upload cost the pool nothing, so there
@@ -943,7 +948,7 @@ export function LibraryPage() {
         const tHash = performance.now();
         const contentHash = await chunkSetContentHash(item.chunks);
         let pooledId: string | null = null;
-        if (DEDUP_SCHEMA_APPLIED && contentHash) {
+        if (dedupReady && contentHash) {
           const { data: existingId, error: lookupErr } = await supabase.rpc(
             "find_pooled_document",
             { p_content_hash: contentHash },
@@ -987,7 +992,7 @@ export function LibraryPage() {
             // key is checked as a pair.
             // Gated: naming a column PostgREST cannot find rejects the entire
             // insert, so these are omitted until the dedup migration is applied.
-            ...(DEDUP_SCHEMA_APPLIED
+            ...(dedupReady
               ? { content_hash: pooledId ? contentHash : null, pooled_document_id: pooledId }
               : {}),
             // Written WITH the row, not after it, and never optimistically.
@@ -1099,7 +1104,7 @@ export function LibraryPage() {
             .update({
               extract_status: "ready",
               extract_error: null,
-              ...(DEDUP_SCHEMA_APPLIED ? { content_hash: contentHash } : {}),
+              ...(dedupReady ? { content_hash: contentHash } : {}),
             })
             .eq("id", doc.id);
           if (readyErr) {
@@ -1193,9 +1198,9 @@ export function LibraryPage() {
       //     action that always errors. Guests upload exactly as they do today;
       //   * anything that did not finish as 'ready';
       //   * anything already resolved to the pool - it cost the pool nothing.
-      // Gated on DEDUP_SCHEMA_APPLIED: with the flag off shareCandidates is
+      // Gated on the probe: with the dedup schema absent shareCandidates is
       // never consulted, so no dialog, no RPC and no new column is touched.
-      if (DEDUP_SCHEMA_APPLIED && !isGuestUser(user) && shareCandidates.length > 0) {
+      if (dedupReady && !isGuestUser(user) && shareCandidates.length > 0) {
         setChatAfterPrompt(wantsChat ? firstReadyDocId : null);
         sharePromptOpen.current = true;
         setSharePrompt(shareCandidates);

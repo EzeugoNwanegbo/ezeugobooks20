@@ -32,28 +32,35 @@ export type AcademicRank = {
  * weeks. Editing a `threshold` in place is safe — indices are unchanged, and a
  * student whom a lowered threshold promotes gets exactly one celebration.
  *
- * ── UPLOAD ALLOWANCE: 5 → 10 → 15 ───────────────────────────────────────────
- * `uploadBonus` is an addition to BASE_DAILY_UPLOADS (5), not a total. The
- * owner's three tiers are 5/day unranked, 10/day from the first upgrade, 15/day
- * later, so the bonuses are 0, +5, +10. Knowledge Cadet sits at 50 points —
- * about one good session — because the first upgrade is meant to land fast
- * enough to read as a reward. Every rank from Academic Scout up shares +10:
- * the ladder tops out at 15 uploads a day by design, and the ranks above Scout
- * are worth reaching for the title and the leaderboard rather than for more
- * uploads. Raising the ceiling later is a one-column edit here.
+ * ── UPLOAD ALLOWANCE: 3 → 5 → 6 → 7 ─────────────────────────────────────────
+ * `uploadBonus` here is an addition to BASE_DAILY_UPLOADS (3) PLUS whatever the
+ * earned-day bonus (src/lib/allowances.ts, EARNED_DAY_UPLOAD_BONUS) has added -
+ * it is not the whole story on its own, because this ladder now has two
+ * independent axes rather than one. The owner's four stages are 3/day on a new
+ * account, 5/day once five days of activity unlock EARNED_DAY_UPLOAD_BONUS
+ * (+2), 6/day at Knowledge Cadet (+1 more), 7/day at Academic Scout and above
+ * (+2 more, replacing cadet's +1 rather than stacking with it) - hence the
+ * ceiling is a hard 7, not the 5 → 10 → 15 this used to read. Knowledge Cadet
+ * sits at 50 points - about one good session - because the first rank-driven
+ * upgrade is meant to land fast enough to read as a reward. Every rank from
+ * Academic Scout up shares +2: the ladder tops out at 7 uploads a day by
+ * design, and the ranks above Scout are worth reaching for the title and the
+ * leaderboard rather than for more uploads. Raising the ceiling later is a
+ * one-column edit here (plus EARNED_DAY_UPLOAD_BONUS in allowances.ts for the
+ * other axis).
  */
 export const RANKS: AcademicRank[] = [
   { id: "recruit", name: "Academic Recruit", threshold: 0, tier: 0, uploadBonus: 0 },
-  { id: "cadet", name: "Knowledge Cadet", threshold: 50, tier: 0, uploadBonus: 5 },
-  { id: "scout", name: "Academic Scout", threshold: 250, tier: 1, uploadBonus: 10 },
-  { id: "corporal", name: "Scholar Corporal", threshold: 500, tier: 1, uploadBonus: 10 },
-  { id: "sergeant", name: "Knowledge Sergeant", threshold: 1000, tier: 1, uploadBonus: 10 },
-  { id: "lieutenant", name: "Academic Lieutenant", threshold: 2000, tier: 2, uploadBonus: 10 },
-  { id: "captain", name: "Scholar Captain", threshold: 3500, tier: 2, uploadBonus: 10 },
-  { id: "major", name: "Academic Major", threshold: 5000, tier: 2, uploadBonus: 10 },
-  { id: "colonel", name: "Knowledge Colonel", threshold: 7500, tier: 3, uploadBonus: 10 },
-  { id: "commander", name: "Academic Commander", threshold: 10000, tier: 3, uploadBonus: 10 },
-  { id: "general", name: "Academic General", threshold: 15000, tier: 3, uploadBonus: 10 },
+  { id: "cadet", name: "Knowledge Cadet", threshold: 50, tier: 0, uploadBonus: 1 },
+  { id: "scout", name: "Academic Scout", threshold: 250, tier: 1, uploadBonus: 2 },
+  { id: "corporal", name: "Scholar Corporal", threshold: 500, tier: 1, uploadBonus: 2 },
+  { id: "sergeant", name: "Knowledge Sergeant", threshold: 1000, tier: 1, uploadBonus: 2 },
+  { id: "lieutenant", name: "Academic Lieutenant", threshold: 2000, tier: 2, uploadBonus: 2 },
+  { id: "captain", name: "Scholar Captain", threshold: 3500, tier: 2, uploadBonus: 2 },
+  { id: "major", name: "Academic Major", threshold: 5000, tier: 2, uploadBonus: 2 },
+  { id: "colonel", name: "Knowledge Colonel", threshold: 7500, tier: 3, uploadBonus: 2 },
+  { id: "commander", name: "Academic Commander", threshold: 10000, tier: 3, uploadBonus: 2 },
+  { id: "general", name: "Academic General", threshold: 15000, tier: 3, uploadBonus: 2 },
 ];
 
 /** Index of the rank a point total sits in. Never returns -1: 0 points is a rank. */

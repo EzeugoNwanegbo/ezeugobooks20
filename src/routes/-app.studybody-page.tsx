@@ -19,6 +19,7 @@ import {
   loadPreferredStraightInType,
   loadStudyDocuments,
   loadStudyDocumentsSpanning,
+  MAX_GENERATED_QUESTIONS,
   STRAIGHT_IN_TYPES,
   type DocRow,
   type PlanRow,
@@ -35,7 +36,16 @@ const SCOPE_OPTIONS = ["whole", "topic"] as const;
 const ENTRY_OPTIONS = ["roadmap", "straight"] as const;
 type EntryMode = (typeof ENTRY_OPTIONS)[number];
 
-const STRAIGHT_IN_COUNTS = [10, 20, 30, 50];
+// The presets, plus a Custom box for anything in between or at the edges.
+// MAX_GENERATED_QUESTIONS is imported rather than repeated: the practice screen,
+// this screen and the Edge Function all have to agree on the ceiling, and three
+// copies of 40 is three chances to disagree.
+const STRAIGHT_IN_COUNTS = [10, 20, 30, MAX_GENERATED_QUESTIONS];
+
+function clampStraightCount(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(Math.max(Math.round(value), 1), MAX_GENERATED_QUESTIONS);
+}
 
 // The style of question, chosen on the same step as the count so going straight
 // in stays one decision point. "flashcard" is not here on purpose — see the note
@@ -154,6 +164,10 @@ export function StudyBodyPage() {
   const [schemaMissing, setSchemaMissing] = useState(false);
   const [entry, setEntry] = useState<EntryMode>("roadmap");
   const [straightCount, setStraightCount] = useState(20);
+  // Whether the count is being typed rather than picked. Presentational only -
+  // straightCount is the single source of truth either way, so the Start button
+  // and the timer read the same number whichever control set it.
+  const [straightCustom, setStraightCustom] = useState(false);
   // "mixed" is what this flow has always built, so it stays the fallback. It is
   // replaced below by the student's own last-used style when we know one.
   const [straightType, setStraightType] = useState<StraightInType>("mixed");
@@ -693,14 +707,21 @@ export function StudyBodyPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
+                  {/* Four presets on one row, and Custom on a line of its own
+                      underneath rather than as a fifth cell: at 360px a
+                      five-column row leaves about sixty pixels per button,
+                      which fits "40" and not "Custom". */}
                   <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
                     {STRAIGHT_IN_COUNTS.map((option) => (
                       <button
                         key={option}
                         type="button"
-                        onClick={() => setStraightCount(option)}
+                        onClick={() => {
+                          setStraightCustom(false);
+                          setStraightCount(option);
+                        }}
                         className={`rounded-xl border px-2 py-2 text-sm font-medium tabular-nums transition-colors ${
-                          straightCount === option
+                          !straightCustom && straightCount === option
                             ? "border-pop/50 bg-pop/10 text-pop"
                             : "border-border hover:border-pop/30 hover:bg-foreground/[0.02]"
                         }`}
@@ -709,6 +730,31 @@ export function StudyBodyPage() {
                       </button>
                     ))}
                   </div>
+
+                  {straightCustom ? (
+                    <input
+                      type="number"
+                      min={1}
+                      max={MAX_GENERATED_QUESTIONS}
+                      value={straightCount}
+                      autoFocus
+                      onChange={(event) =>
+                        setStraightCount(
+                          clampStraightCount(Number.parseInt(event.target.value, 10)),
+                        )
+                      }
+                      placeholder={`How many? (1-${MAX_GENERATED_QUESTIONS})`}
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop focus:ring-2 focus:ring-pop/20"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setStraightCustom(true)}
+                      className="text-xs font-medium text-pop"
+                    >
+                      Custom amount
+                    </button>
+                  )}
 
                   {/* Style and difficulty side by side: two short rows read as
                       one settings block rather than two more stacked sections. */}

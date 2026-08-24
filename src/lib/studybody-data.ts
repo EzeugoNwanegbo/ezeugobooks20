@@ -2,7 +2,7 @@
 // page (roadmap building + history) and the Practice page reuse these
 // Supabase helpers and row types, so the query logic lives in one place.
 import { supabase } from "@/integrations/supabase/client";
-import { DEDUP_SCHEMA_APPLIED } from "@/lib/content-hash";
+import { primeDedupSchema } from "@/lib/content-hash";
 import { embedQuery } from "@/lib/embeddings";
 import { generateStudyQuestions } from "@/lib/studybody-client";
 import type { Profile } from "@/lib/auth-context";
@@ -205,6 +205,21 @@ export async function finalizeTopicMastery(topicId: string, percentage: number):
 // It stores itself as an ordinary plan with exactly one topic, which is why it
 // needs no schema change and why the practice screen, the resume flow, the
 // mastery maths and the points all work on it unmodified.
+
+// The ceiling on a single generated set, everywhere.
+//
+// One number rather than a scatter of literals, because it has to hold in four
+// places at once - the presets below, the Custom box, the mixed split, and "Go
+// straight in" on the PQ screen - and a cap that holds in three of them is not a
+// cap. The server clamps to the same number (see generateQuestions and
+// generateFlashcards in supabase/functions/studybody/index.ts), so a crafted
+// request cannot ask for more either.
+//
+// WHY 40 AND NOT MORE. It is the owner's call, and the mechanics agree with it:
+// a set is generated in batches against a 90s per-call budget under a ~150s
+// Edge Function ceiling, so the bigger the ask the likelier the tail of it
+// arrives as a timeout rather than as questions. 40 is comfortably inside that.
+export const MAX_GENERATED_QUESTIONS = 40;
 
 /** The share of a straight-in set given to written answers, the rest MCQ. */
 const STRAIGHT_IN_ESSAY_SHARE = 0.2;
@@ -587,8 +602,15 @@ export async function loadStudyDocumentsSpanning(
   // Gated: the view is created by the dedup migration, which is applied by hand.
   // Until then there are no linked copies to resolve, so the raw table is exactly
   // equivalent - and querying a view that does not exist returns nothing at all.
+  //
+  // AWAITED, not read from the cache: this is the one place where guessing wrong
+  // is silent. If the schema is there and we read the raw table anyway, a pooled
+  // document contributes zero chunks and the student gets an empty roadmap with
+  // no error to explain it. The probe is one request per session and every later
+  // call resolves from cache.
+  const pooled = await primeDedupSchema();
   const { data, error } = await db
-    .from(DEDUP_SCHEMA_APPLIED ? "document_chunks_effective" : "document_chunks")
+    .from(pooled ? "document_chunks_effective" : "document_chunks")
     .select("document_id, chunk_index, page_start, page_end, content")
     .in("document_id", documentIds)
     .order("chunk_index", { ascending: true });

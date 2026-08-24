@@ -1,5 +1,11 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Profile } from "@/lib/auth-context";
+import {
+  costFor,
+  reportCookieSpend,
+  reportCookiesSettled,
+  reportOutOfCookies,
+} from "@/lib/cookies";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const STUDYBODY_URL = `${SUPABASE_URL}/functions/v1/studybody`;
@@ -12,6 +18,37 @@ const STUDYBODY_URL = `${SUPABASE_URL}/functions/v1/studybody`;
 // ceiling so the client's own abort - which DOES send a clean error - fires
 // before the platform kills the connection with none.
 const STUDYBODY_TIMEOUT_MS = 145_000;
+
+/**
+ * The optimistic-decrement half of the cookie contract - see the header note
+ * on reportCookieSpend() in src/lib/cookies.ts. This is NOT what gets billed;
+ * the server charges its own copy of this exact arithmetic (see
+ * questionsCookieCost/flashcardsCookieCost in supabase/functions/studybody/index.ts)
+ * before generating anything, and reportCookiesSettled() below reconciles the
+ * ring with that real number the moment the request finishes either way. So a
+ * mismatch here (a stale MAX_GENERATED_QUESTIONS clamp the server enforces
+ * that this does not know about, say) costs nothing but a one-frame flicker
+ * in the ring, never a wrong charge.
+ */
+function cookieCostForPayload(payload: Record<string, unknown>): number {
+  switch (payload.action) {
+    case "generate_plan":
+      return costFor("generate_plan");
+    case "generate_questions": {
+      const count =
+        payload.questionType === "mixed"
+          ? (Number(payload.mcqCount) || 0) + (Number(payload.essayCount) || 0)
+          : Number(payload.count) || 5;
+      return costFor("generate_questions", count);
+    }
+    case "generate_flashcards":
+      return costFor("generate_flashcards", Number(payload.count) || 10);
+    default:
+      // review_answers, or anything this client does not recognise - priced
+      // at 0 both here and on the server, so there is nothing to decrement.
+      return 0;
+  }
+}
 
 export type StudyQuestionType = "mcq" | "essay" | "mixed" | "flashcard";
 
@@ -74,6 +111,7 @@ async function callStudyBody<T>(payload: Record<string, unknown>): Promise<T> {
     const token = sess.session?.access_token;
     if (!token) throw new Error("Sign in again before using Practice Questions.");
 
+    reportCookieSpend(cookieCostForPayload(payload));
     const response = await fetch(STUDYBODY_URL, {
       method: "POST",
       headers: {
@@ -89,6 +127,9 @@ async function callStudyBody<T>(payload: Record<string, unknown>): Promise<T> {
       try {
         const json = await response.json();
         message = json.error ?? message;
+        if (response.status === 402 && json.error === "out_of_cookies") {
+          reportOutOfCookies({ remaining: json.remaining, allowance: json.allowance });
+        }
       } catch {
         /* ignore */
       }
@@ -97,6 +138,11 @@ async function callStudyBody<T>(payload: Record<string, unknown>): Promise<T> {
 
     return (await response.json()) as T;
   } finally {
+    // Unconditional: covers the success path and every throw above (including
+    // the timeout that aborts `controller` from outside this try). The real
+    // charge already happened server-side by the time any of those could
+    // fire, so this only ever reconciles, never spends twice.
+    reportCookiesSettled();
     window.clearTimeout(timeout);
   }
 }
@@ -135,6 +181,7 @@ async function streamStudyBody<T>(
     const token = sess.session?.access_token;
     if (!token) throw new Error("Sign in again before using Practice Questions.");
 
+    reportCookieSpend(cookieCostForPayload(payload));
     const response = await fetch(STUDYBODY_URL, {
       method: "POST",
       headers: {
@@ -150,6 +197,9 @@ async function streamStudyBody<T>(
       try {
         const j = await response.json();
         message = j.error ?? message;
+        if (response.status === 402 && j.error === "out_of_cookies") {
+          reportOutOfCookies({ remaining: j.remaining, allowance: j.allowance });
+        }
       } catch {
         /* ignore */
       }
@@ -195,6 +245,8 @@ async function streamStudyBody<T>(
     }
     return outcome.result;
   } finally {
+    // Unconditional, same reasoning as callStudyBody's own finally above.
+    reportCookiesSettled();
     window.clearTimeout(timeout);
   }
 }

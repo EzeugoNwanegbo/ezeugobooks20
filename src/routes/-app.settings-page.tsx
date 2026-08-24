@@ -79,7 +79,7 @@ export function SettingsPage() {
     return () => window.removeEventListener("gd:gamification", onChange);
   }, [user]);
 
-  const allowance = uploadAllowance(user?.id ?? "guest", stats.points);
+  const allowance = uploadAllowance(user?.id ?? "guest", stats.points, stats.activeDays);
 
   // The saved profile is the single baseline: the form hydrates from it, the
   // dirty check compares against it, and Discard snaps back to it.
@@ -316,11 +316,21 @@ export function SettingsPage() {
             <Stat icon={<Upload className="h-3.5 w-3.5" />} label="Daily uploads">
               {allowance.total}
               <span className="ml-2 text-xs text-muted-foreground">
-                {allowance.rankBonus > 0
-                  ? `${allowance.base} base + ${allowance.rankBonus} rank bonus`
-                  : allowance.nextBonusRankName
-                    ? `${allowance.base} base · ${allowance.nextBonusRankName} makes it ${allowance.nextBonusTotal}`
-                    : `${allowance.base} base`}
+                {/* Two independent bonuses can both be live (a five-day-old
+                    Scout has both), so each names itself rather than folding
+                    into one number nobody can trace back. */}
+                {[
+                  `${allowance.base} base`,
+                  allowance.earnedBonusUnlocked
+                    ? `${allowance.earnedBonus} for 5 days active`
+                    : null,
+                  allowance.rankBonus > 0 ? `${allowance.rankBonus} rank bonus` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" + ") +
+                  (allowance.nextBonusRankName
+                    ? ` · ${allowance.nextBonusRankName} makes it ${allowance.nextBonusTotal}`
+                    : "")}
               </span>
             </Stat>
           </div>

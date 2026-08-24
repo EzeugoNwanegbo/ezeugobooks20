@@ -25,6 +25,48 @@ import {
 } from "@/lib/studybody-data";
 import type { Profile } from "@/lib/auth-context";
 import { BATTLE_SCHEMA_APPLIED, createChallenge, normalizeHandle } from "@/lib/social";
+import {
+  costFor,
+  refundCookiesClientSide,
+  reportCookieSpend,
+  reportCookiesSettled,
+  reportOutOfCookies,
+  spendCookiesClientSide,
+} from "@/lib/cookies";
+
+// ── Cookies: charged HERE, once per match ───────────────────────────────────
+//
+// Every other priced action charges inside its own Edge Function - see the
+// plan's "Where the charge happens" section. Battle Royale is the deliberate
+// exception: the underlying work is one or more calls to studybody's
+// generate_questions (createStraightInSession → generateStudyQuestions), and
+// that function is already charged for ordinary Practice Questions use. If
+// THIS charge lived there too, a roadmap series would be billed once per
+// round instead of once per match - exactly what "charge once per match, not
+// per underlying generate_questions call" (the plan's own words) forbids. So
+// it happens here instead, client-side, using spend_cookies() - the
+// auth.uid()-pinned, browser-reachable doorway - rather than
+// spend_cookies_for(), which is service-role only and would fail outright
+// called from a browser.
+//
+// Charge first, refund on failure, same rule as every other action: a match
+// that fails to send even one round gets refunded (see the two call sites
+// below); a roadmap series that sends SOME rounds before failing does not,
+// because real AI work already reached the opponent for those rounds.
+async function chargeBattleCookie(): Promise<number | null> {
+  const cost = costFor("battle_royale");
+  reportCookieSpend(cost);
+  const charge = await spendCookiesClientSide("battle_royale", cost);
+  reportCookiesSettled();
+  if (charge.status === "refused") {
+    reportOutOfCookies();
+    throw new Error("You're out of cookies for today.");
+  }
+  // "skipped" (schema not applied yet, or a network error) fails OPEN, same
+  // as every other cookie caller - the match proceeds, uncharged, and there
+  // is no spend_id to refund later because nothing was actually recorded.
+  return charge.status === "spent" ? charge.spendId : null;
+}
 
 export type BattleScope = "whole" | "topic";
 
@@ -104,6 +146,17 @@ export type BattleStage = "retrieving" | "generating" | "saving" | "sending";
 // contest does not need the textbook in the prompt, and a smaller prompt is also
 // a faster one — generation time was the other complaint.
 const BATTLE_DOC_CHARS_TOTAL = 12_000;
+
+// A battle is the one place a student is playing against someone rather than
+// revising, so it is the one place an easy set is worthless: whoever is faster
+// wins on questions neither of them had to think about. HARD is the level that
+// makes the result mean something - four options instead of three, every
+// distractor built to be picked, and no question a single sentence of the
+// material answers (see difficultyInstruction in supabase/functions/studybody).
+//
+// One constant, used by BOTH the single battle and every roadmap round, so the
+// two cannot drift into being different games.
+const BATTLE_DIFFICULTY = "hard" as const;
 
 const STRAIGHT_STAGE_MAP: Record<StraightInStage, BattleStage> = {
   reading: "retrieving",
@@ -190,33 +243,46 @@ export async function createSingleBattle({
   const topicScoped = scope === "topic" && Boolean(focus);
   const title = buildBattleTitle(doc, scope, focus, timeLimitMinutes);
 
-  const { sessionId } = await createStraightInSession({
-    userId,
-    profile,
-    title,
-    documentIds: [doc.id],
-    docsMeta: [doc],
-    count,
-    questionType: "mcq",
-    difficulty: "medium",
-    docCharBudget: BATTLE_DOC_CHARS_TOTAL,
-    topicFocus: topicScoped ? focus : undefined,
-    onStage: (stage) => onProgress?.({ stage: STRAIGHT_STAGE_MAP[stage] }),
-    onGenerationProgress: ({ made, target }) => onProgress?.({ stage: "generating", made, target }),
-  });
+  // Charged before anything is built - see chargeBattleCookie()'s own header
+  // note above. Throws on an explicit refusal; every other outcome (missing
+  // schema, network error) fails open and this proceeds uncharged.
+  const spendId = await chargeBattleCookie();
 
-  onProgress?.({ stage: "sending" });
-  // The limit only becomes a real constraint once the migration is applied —
-  // before that there is no challenges.time_limit_minutes for it to live in.
-  // Until then it travels in the title only (see buildBattleTitle).
-  const challengeId = await createChallenge(
-    opponentUsername,
-    sessionId,
-    BATTLE_SCHEMA_APPLIED ? timeLimitMinutes : undefined,
-  );
+  try {
+    const { sessionId } = await createStraightInSession({
+      userId,
+      profile,
+      title,
+      documentIds: [doc.id],
+      docsMeta: [doc],
+      count,
+      questionType: "mcq",
+      difficulty: BATTLE_DIFFICULTY,
+      docCharBudget: BATTLE_DOC_CHARS_TOTAL,
+      topicFocus: topicScoped ? focus : undefined,
+      onStage: (stage) => onProgress?.({ stage: STRAIGHT_STAGE_MAP[stage] }),
+      onGenerationProgress: ({ made, target }) =>
+        onProgress?.({ stage: "generating", made, target }),
+    });
 
-  const { session, questions } = await fetchSessionAndQuestions(sessionId);
-  return { session, questions, challengeId, sessionId };
+    onProgress?.({ stage: "sending" });
+    // The limit only becomes a real constraint once the migration is applied —
+    // before that there is no challenges.time_limit_minutes for it to live in.
+    // Until then it travels in the title only (see buildBattleTitle).
+    const challengeId = await createChallenge(
+      opponentUsername,
+      sessionId,
+      BATTLE_SCHEMA_APPLIED ? timeLimitMinutes : undefined,
+    );
+
+    const { session, questions } = await fetchSessionAndQuestions(sessionId);
+    return { session, questions, challengeId, sessionId };
+  } catch (err) {
+    // Charge first, refund on failure: a match that never reached the
+    // opponent is not one the student should be billed for.
+    await refundCookiesClientSide(spendId);
+    throw err;
+  }
 }
 
 // ── Roadmap series ───────────────────────────────────────────────────────────
@@ -285,96 +351,120 @@ export async function createRoadmapBattleSeries({
     throw new Error("This roadmap has no topics yet.");
   }
 
-  // 1. The parent row only. challenge_series_create raises its own friendly
-  // message ("You already have a roadmap battle running with this friend.")
-  // when the one-active-series-per-friend limit is hit — let it propagate
-  // rather than swallowing it, so the host sees exactly why nothing sent.
-  const { data: seriesData, error: seriesErr } = await db.rpc("challenge_series_create", {
-    p_opponent_username: normalizeHandle(opponentUsername),
-    p_title: plan.title,
-    p_plan_id: plan.id,
-  });
-  if (seriesErr) throw new Error(seriesErr.message);
-  const seriesId = seriesData as string;
+  // Charged once for the WHOLE series, before the parent row even exists -
+  // see chargeBattleCookie()'s header note on why this is a client-side
+  // charge and why it is one charge regardless of how many rounds follow.
+  const spendId = await chargeBattleCookie();
 
-  const total = topics.length;
-  const rounds: RoadmapRoundResult[] = [];
-  let failedAt: RoadmapBattleResult["failedAt"] = null;
+  try {
+    // 1. The parent row only. challenge_series_create raises its own friendly
+    // message ("You already have a roadmap battle running with this friend.")
+    // when the one-active-series-per-friend limit is hit — let it propagate
+    // rather than swallowing it, so the host sees exactly why nothing sent.
+    const { data: seriesData, error: seriesErr } = await db.rpc("challenge_series_create", {
+      p_opponent_username: normalizeHandle(opponentUsername),
+      p_title: plan.title,
+      p_plan_id: plan.id,
+    });
+    if (seriesErr) throw new Error(seriesErr.message);
+    const seriesId = seriesData as string;
 
-  for (let i = 0; i < total; i += 1) {
-    const topic = topics[i];
-    const roundNumber = i + 1;
-    const title = `${plan.title} — ${topic.title}`;
+    const total = topics.length;
+    const rounds: RoadmapRoundResult[] = [];
+    let failedAt: RoadmapBattleResult["failedAt"] = null;
 
-    try {
-      const { sessionId } = await createStraightInSession({
-        userId,
-        profile,
-        title,
-        documentIds: docIds,
-        docsMeta,
-        count,
-        questionType: "mcq",
-        difficulty: "medium",
-        // A topic-pinpointed pull is already far smaller than a whole-file one,
-        // so this rarely binds — but a series is N generations back to back, and
-        // one round stalling on an oversized prompt strands the whole roadmap
-        // half-sent. The cap costs nothing when it is not needed.
-        docCharBudget: BATTLE_DOC_CHARS_TOTAL,
-        // Pinpoints retrieval to this topic's own chunks — the grounded pull,
-        // same as a single battle's "specific topic" scope — rather than
-        // sampling the whole roadmap's material for every round.
-        topicFocus: topic.title,
-        onStage: (stage) =>
-          onProgress?.({
-            stage: STRAIGHT_STAGE_MAP[stage],
-            round: { index: roundNumber, total },
-          }),
-        onGenerationProgress: ({ made, target }) =>
-          onProgress?.({ stage: "generating", round: { index: roundNumber, total }, made, target }),
-      });
+    for (let i = 0; i < total; i += 1) {
+      const topic = topics[i];
+      const roundNumber = i + 1;
+      const title = `${plan.title} — ${topic.title}`;
 
-      onProgress?.({ stage: "sending", round: { index: roundNumber, total } });
-      // Raw RPC, not lib/social.ts's createChallenge: that helper has no
-      // series_id/round_index parameters (adding them there would mean naming
-      // this migration's schema on the SAME call path a two-argument ordinary
-      // challenge_create uses). This call only ever runs once
-      // BATTLE_SCHEMA_APPLIED is true, guarded above, so the
-      // five-argument/series shape of challenge_create is guaranteed to exist.
-      const { data: challengeIdData, error: createErr } = await db.rpc("challenge_create", {
-        p_opponent_username: normalizeHandle(opponentUsername),
-        p_session_id: sessionId,
-        p_time_limit_minutes: Math.round(timeLimitMinutes),
-        p_series_id: seriesId,
-        p_round_index: roundNumber,
-      });
-      if (createErr) throw new Error(createErr.message);
+      try {
+        const { sessionId } = await createStraightInSession({
+          userId,
+          profile,
+          title,
+          documentIds: docIds,
+          docsMeta,
+          count,
+          questionType: "mcq",
+          difficulty: BATTLE_DIFFICULTY,
+          // A topic-pinpointed pull is already far smaller than a whole-file one,
+          // so this rarely binds — but a series is N generations back to back, and
+          // one round stalling on an oversized prompt strands the whole roadmap
+          // half-sent. The cap costs nothing when it is not needed.
+          docCharBudget: BATTLE_DOC_CHARS_TOTAL,
+          // Pinpoints retrieval to this topic's own chunks — the grounded pull,
+          // same as a single battle's "specific topic" scope — rather than
+          // sampling the whole roadmap's material for every round.
+          topicFocus: topic.title,
+          onStage: (stage) =>
+            onProgress?.({
+              stage: STRAIGHT_STAGE_MAP[stage],
+              round: { index: roundNumber, total },
+            }),
+          onGenerationProgress: ({ made, target }) =>
+            onProgress?.({
+              stage: "generating",
+              round: { index: roundNumber, total },
+              made,
+              target,
+            }),
+        });
 
-      const { session, questions } = await fetchSessionAndQuestions(sessionId);
-      rounds.push({
-        round: roundNumber,
-        topicTitle: topic.title,
-        sessionId,
-        session,
-        questions,
-        challengeId: challengeIdData as string,
-      });
-    } catch (err) {
-      // A partly built series is explicitly allowed — challenge_series_create's
-      // own comment in the migration says so. Stop here rather than trying
-      // every remaining topic: if this round failed there is a real reason (AI
-      // outage, network), and hammering the same failure N more times just
-      // burns AI spend on rounds that will not save either. What DID send
-      // stands, and challenge_series_resolve() settles exactly those rounds
-      // once they finish.
-      failedAt = {
-        round: roundNumber,
-        topicTitle: topic.title,
-        error: err instanceof Error ? err.message : "Could not build this round",
-      };
-      break;
+        onProgress?.({ stage: "sending", round: { index: roundNumber, total } });
+        // Raw RPC, not lib/social.ts's createChallenge: that helper has no
+        // series_id/round_index parameters (adding them there would mean naming
+        // this migration's schema on the SAME call path a two-argument ordinary
+        // challenge_create uses). This call only ever runs once
+        // BATTLE_SCHEMA_APPLIED is true, guarded above, so the
+        // five-argument/series shape of challenge_create is guaranteed to exist.
+        const { data: challengeIdData, error: createErr } = await db.rpc("challenge_create", {
+          p_opponent_username: normalizeHandle(opponentUsername),
+          p_session_id: sessionId,
+          p_time_limit_minutes: Math.round(timeLimitMinutes),
+          p_series_id: seriesId,
+          p_round_index: roundNumber,
+        });
+        if (createErr) throw new Error(createErr.message);
+
+        const { session, questions } = await fetchSessionAndQuestions(sessionId);
+        rounds.push({
+          round: roundNumber,
+          topicTitle: topic.title,
+          sessionId,
+          session,
+          questions,
+          challengeId: challengeIdData as string,
+        });
+      } catch (err) {
+        // A partly built series is explicitly allowed — challenge_series_create's
+        // own comment in the migration says so. Stop here rather than trying
+        // every remaining topic: if this round failed there is a real reason (AI
+        // outage, network), and hammering the same failure N more times just
+        // burns AI spend on rounds that will not save either. What DID send
+        // stands, and challenge_series_resolve() settles exactly those rounds
+        // once they finish.
+        failedAt = {
+          round: roundNumber,
+          topicTitle: topic.title,
+          error: err instanceof Error ? err.message : "Could not build this round",
+        };
+        break;
+      }
     }
-  }
 
-  return { seriesId, totalRounds: total, rounds, failedAt };
+    // Nothing reached the opponent at all - refund. A series that sent even
+    // one round keeps the charge; challenge_series_resolve() settles exactly
+    // the rounds that landed, and real AI work already went out for those.
+    if (rounds.length === 0) {
+      await refundCookiesClientSide(spendId);
+    }
+
+    return { seriesId, totalRounds: total, rounds, failedAt };
+  } catch (err) {
+    // Reached only when challenge_series_create() itself throws - the parent
+    // row never existed, so nothing could possibly have sent.
+    await refundCookiesClientSide(spendId);
+    throw err;
+  }
 }
