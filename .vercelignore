@@ -1,0 +1,26 @@
+# Keeps the heavy, web-irrelevant parts of the repo out of the build context.
+#
+# Every pattern here is ANCHORED with a leading slash. Without it these match a
+# directory of that name at ANY depth — an unanchored `supabase/` also excluded
+# `src/integrations/supabase/`, which broke the build with
+# "Could not load /src/integrations/supabase/client". Do not drop the slashes.
+#
+# Root-level `supabase/` (the Edge Functions, deployed separately via the
+# Supabase CLI) is deliberately NOT excluded: it is a few dozen small text
+# files, and the pattern needed to catch it is the one that caused that break.
+
+# Native shells — the Capacitor Android project and the separate Expo app
+/android/
+/gandd-mobile/
+
+# Old Hostinger deploy artifacts and raw media
+/gd1-deploy/
+/my-video/
+/*.zip
+
+# SSR entry points, unused by the static build (kept in the repo as the
+# Hostinger/Render rollback path)
+/server.mjs
+/vite.config.ts
+
+/docs/

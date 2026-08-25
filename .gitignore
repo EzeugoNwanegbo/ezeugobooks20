@@ -52,3 +52,9 @@ credentials.json
 
 # Bulk library ingest resume state (scripts/ingest-library.mjs)
 .library-ingest-state.json
+
+# Vercel CLI project link + the .env.local it writes (OIDC token). The .env
+# rules above already cover .env.local; `vercel link` also appends a broader
+# `.env*` here, which would override the `!.env.example` negation above — do
+# not re-add it.
+.vercel
