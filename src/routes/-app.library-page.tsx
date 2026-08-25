@@ -9,7 +9,12 @@ import {
   sanitizeExtractedText,
   type DocumentChunkInput,
 } from "@/lib/document-chunks";
-import { chunkSetContentHash, primeDedupSchema } from "@/lib/content-hash";
+import {
+  chunkSetContentHash,
+  isDedupColumnMissing,
+  markDedupSchemaAbsent,
+  primeDedupSchema,
+} from "@/lib/content-hash";
 import { backfillMissingEmbeddings } from "@/lib/embeddings";
 import { markSeenOnce, useSeenOnce } from "@/lib/seen-once";
 import { getCached, setCached } from "@/lib/data-cache";
@@ -958,60 +963,96 @@ export function LibraryPage() {
           mark(`dedup-lookup(${pooledId ? "hit" : "miss"})`, tHash);
         }
 
-        const { data: doc, error: dbErr } = await supabase
-          .from("documents")
-          .insert({
-            user_id: user.id,
-            file_name: item.fileName,
-            storage_path: item.storagePath,
-            file_type: item.fileType,
-            file_size: item.fileSize,
-            page_count: item.pageCount || null,
-            extracted_text: item.extracted,
-            folder_id: folderId,
-            suggested_subject: null,
-            // THE FINGERPRINT IS STAMPED WHEN IT BECOMES TRUE, NOT BEFORE.
-            //
-            // contentHash describes the chunk set we are ABOUT to write. Writing
-            // it here - as this page used to - means an upload interrupted half
-            // way (a failed batch, or a closed tab) leaves a row claiming the
-            // whole book while holding a fraction of it. A stale hash on a
-            // broken document is not merely untidy: it is what a later
-            // pool_share_document() would fingerprint, so a fraction of a book
-            // could be offered to the pool under the whole book's name. So a
-            // fresh copy is hashed only after its last chunk commits, in the
-            // same UPDATE that marks it ready - which costs no extra round trip.
-            //
-            // A LINK is the exception and must carry the hash immediately: the
-            // composite foreign key (pooled_document_id, content_hash) ->
-            // pool_documents (id, content_hash) refuses any link whose hash does
-            // not already equal the pool row's, and the CHECK constraint beside
-            // it refuses a link with no hash at all. It is also true from the
-            // moment the row exists, because the link owns no chunks to get
-            // wrong. Both columns must be written in the SAME statement - the
-            // key is checked as a pair.
-            // Gated: naming a column PostgREST cannot find rejects the entire
-            // insert, so these are omitted until the dedup migration is applied.
-            ...(dedupReady
-              ? { content_hash: pooledId ? contentHash : null, pooled_document_id: pooledId }
-              : {}),
-            // Written WITH the row, not after it, and never optimistically.
-            //
-            // A link needs no chunks of its own - it reads the pool's - so it is
-            // complete the moment the row exists, exactly as extract-pdf's dedup
-            // branch decides. Everything else is 'processing' until its last
-            // chunk is committed further down.
-            //
-            // This page used to leave the column NULL from beginning to end,
-            // which is why the seven damaged textbooks looked perfectly normal:
-            // every reader treats NULL-with-text as ready, so a document holding
-            // 100 chunks of a 2,785-page book was listed, searched, and returned
-            // nothing, with no hint that anything was wrong.
-            extract_status: pooledId ? "ready" : "processing",
-            extract_error: null,
-          })
-          .select("id")
-          .single();
+        const row = {
+          user_id: user.id,
+          file_name: item.fileName,
+          storage_path: item.storagePath,
+          file_type: item.fileType,
+          file_size: item.fileSize,
+          page_count: item.pageCount || null,
+          extracted_text: item.extracted,
+          folder_id: folderId,
+          suggested_subject: null,
+          // THE FINGERPRINT IS STAMPED WHEN IT BECOMES TRUE, NOT BEFORE.
+          //
+          // contentHash describes the chunk set we are ABOUT to write. Writing
+          // it here - as this page used to - means an upload interrupted half
+          // way (a failed batch, or a closed tab) leaves a row claiming the
+          // whole book while holding a fraction of it. A stale hash on a
+          // broken document is not merely untidy: it is what a later
+          // pool_share_document() would fingerprint, so a fraction of a book
+          // could be offered to the pool under the whole book's name. So a
+          // fresh copy is hashed only after its last chunk commits, in the
+          // same UPDATE that marks it ready - which costs no extra round trip.
+          //
+          // A LINK is the exception and must carry the hash immediately: the
+          // composite foreign key (pooled_document_id, content_hash) ->
+          // pool_documents (id, content_hash) refuses any link whose hash does
+          // not already equal the pool row's, and the CHECK constraint beside
+          // it refuses a link with no hash at all. It is also true from the
+          // moment the row exists, because the link owns no chunks to get
+          // wrong. Both columns must be written in the SAME statement - the
+          // key is checked as a pair.
+          // Gated: naming a column PostgREST cannot find rejects the entire
+          // insert, so these are omitted until the dedup migration is applied.
+          ...(dedupReady
+            ? { content_hash: pooledId ? contentHash : null, pooled_document_id: pooledId }
+            : {}),
+          // Written WITH the row, not after it, and never optimistically.
+          //
+          // A link needs no chunks of its own - it reads the pool's - so it is
+          // complete the moment the row exists, exactly as extract-pdf's dedup
+          // branch decides. Everything else is 'processing' until its last
+          // chunk is committed further down.
+          //
+          // This page used to leave the column NULL from beginning to end,
+          // which is why the seven damaged textbooks looked perfectly normal:
+          // every reader treats NULL-with-text as ready, so a document holding
+          // 100 chunks of a 2,785-page book was listed, searched, and returned
+          // nothing, with no hint that anything was wrong.
+          extract_status: pooledId ? "ready" : "processing",
+          extract_error: null,
+        };
+
+        let result = await supabase.from("documents").insert(row).select("id").single();
+
+        // LAST DEFENCE AGAINST A COLUMN THAT ISN'T THERE.
+        //
+        // The gate above is a probe, and a probe can only ever be a claim about
+        // the database made a moment earlier. If it is wrong in the unsafe
+        // direction the insert names a column PostgREST cannot find and the WHOLE
+        // row is rejected - the student loses the upload, which is the one
+        // outcome de-duplication must never cause. It has happened twice.
+        //
+        // So the write itself is the final witness. A missing-column error means
+        // the schema is not there whatever the probe believed: latch that for the
+        // rest of the session and save the document plainly, without the dedup
+        // columns. The student gets their book, storage pays the usual full copy,
+        // and every later file in the batch skips the doomed shape outright.
+        //
+        // The link is dropped with the columns, so the row must own its chunks
+        // again: pooledId is cleared and the status goes back to 'processing',
+        // which sends the loop below down the normal chunk-writing path.
+        if (result.error && isDedupColumnMissing(result.error)) {
+          console.warn("dedup columns rejected; saving without them", result.error);
+          markDedupSchemaAbsent();
+          const {
+            content_hash: _hash,
+            pooled_document_id: _pool,
+            ...plain
+          } = row as typeof row & {
+            content_hash?: string | null;
+            pooled_document_id?: string | null;
+          };
+          pooledId = null;
+          result = await supabase
+            .from("documents")
+            .insert({ ...plain, extract_status: "processing" })
+            .select("id")
+            .single();
+        }
+
+        const { data: doc, error: dbErr } = result;
         mark(`doc-insert(${item.chunks.length}ch)`, tDoc);
         if (dbErr) {
           console.error("save document", item.fileName, dbErr);

@@ -21,11 +21,26 @@
 // because a constant in a source file still said the schema was not there.
 // Reported as "there is no button to add my file to the general library".
 //
-// So the app ASKS instead. One cheap probe per session (see probe() below)
-// answers whether documents.content_hash exists; a missing column latches
-// `absent` and every caller behaves exactly as it did with the old flag off.
-// Applying the migration therefore lights the feature up on the next page load,
-// with no code change and no redeploy.
+// So the app ASKS instead. One cheap probe per session (see primeDedupSchema()
+// below) answers whether documents.pooled_document_id exists; a missing column
+// latches `absent` and every caller behaves exactly as it did with the old flag
+// off. Applying the migration therefore lights the feature up on the next page
+// load, with no code change and no redeploy.
+//
+// THE PROBE MUST NAME A COLUMN THIS MIGRATION ALONE CREATES, and it used to name
+// the one column that could tell it nothing. documents.content_hash belongs to
+// the SUPERSEDED design as well; this migration's own rollback notes keep it
+// deliberately ("the only artefact worth keeping whichever design wins"), and
+// production has carried it ever since that earlier design was applied. So the
+// probe passed against a database holding none of this migration, the upload
+// went on to name pooled_document_id, PostgREST rejected the WHOLE insert, and
+// every save failed with "Could not find the 'pooled_document_id' column of
+// 'documents' in the schema cache" - the exact hazard three paragraphs up,
+// reached through the detector meant to prevent it.
+//
+// pooled_document_id is created by this migration and by nothing before it, and
+// it is the column the gated insert actually names. A probe for it cannot pass
+// on a database where the insert would fail.
 //
 // TWO OTHER COPIES OF THE OLD FLAG still exist and are deliberately untouched:
 //   supabase/functions/extract-pdf/index.ts   (edge function, deployed by hand)
@@ -90,13 +105,22 @@ let inFlight: Promise<boolean> | null = null;
  * as "the migration is missing", or one bad moment would switch de-duplication
  * off for the rest of the session.
  */
-function isMissingColumn(error: { code?: string; message?: string } | null): boolean {
+export function isDedupColumnMissing(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
   if (error.code === "42703" || error.code === "PGRST204" || error.code === "PGRST200") return true;
   return (
-    /content_hash/.test(error.message ?? "") &&
+    /pooled_document_id|content_hash/.test(error.message ?? "") &&
     /does not exist|column|schema cache/i.test(error.message ?? "")
   );
+}
+
+/**
+ * Latch "absent" from outside the probe, for a caller that has just been told by
+ * a real write that the schema is not there. Nothing turns it back on for the
+ * rest of the session; the next page load probes again.
+ */
+export function markDedupSchemaAbsent(): void {
+  schemaState = "absent";
 }
 
 /**
@@ -111,19 +135,24 @@ export function dedupSchemaReady(): boolean {
 /**
  * Ask once, cache the answer for the session.
  *
- * The probe is a one-row select of documents.content_hash. It is cheap (RLS
- * already limits it to the caller's own rows, and LIMIT 1 caps it at one), it
- * needs no new function or grant, and it tests the exact thing every gated
- * caller depends on: whether PostgREST will accept that column name. An empty
- * result is a PASS - a student with no documents yet still proves the column
- * resolves.
+ * The probe is a one-row select of documents.pooled_document_id - the column the
+ * gated insert names, and one no earlier design ever created (see the header).
+ * It is cheap (RLS already limits it to the caller's own rows, and LIMIT 1 caps
+ * it at one), it needs no new function or grant, and it tests the exact thing
+ * every gated caller depends on: whether PostgREST will accept that column name.
+ * An empty result is a PASS - a student with no documents yet still proves the
+ * column resolves.
  *
- * It does not separately verify find_pooled_document(), pool_share_document()
- * or document_chunks_effective. They come from the same migration file as the
- * column, so a database with one and not the others is a half-applied migration
- * rather than a state to design for - and both RPC callers already fail soft
- * (a share error is shown in the dialog with a retry; a lookup error falls
- * through to storing a full copy).
+ * It does not separately verify find_pooled_document() or pool_share_document().
+ * They come from the same migration file as the column, so a database with one
+ * and not the others is a half-applied migration rather than a state to design
+ * for - and both RPC callers already fail soft (a share error is shown in the
+ * dialog with a retry; a lookup error falls through to storing a full copy).
+ *
+ * document_chunks_effective is deliberately NOT the thing asked about, even
+ * though the read path in studybody-data.ts switches on this answer. A view of
+ * that name also exists under the superseded design, resolving a different
+ * column, so its presence proves nothing - the same trap content_hash set.
  *
  * Never throws. Never rejects.
  */
@@ -133,9 +162,10 @@ export function primeDedupSchema(): Promise<boolean> {
 
   inFlight = (async () => {
     try {
-      const { error } = await supabase.from("documents").select("content_hash").limit(1);
+      const { error } = await supabase.from("documents").select("pooled_document_id").limit(1);
       if (error) {
-        if (isMissingColumn(error as { code?: string; message?: string })) schemaState = "absent";
+        if (isDedupColumnMissing(error as { code?: string; message?: string }))
+          schemaState = "absent";
         // Any other error leaves it "unknown" so the next caller retries.
         return false;
       }
