@@ -1262,10 +1262,25 @@ export function ChatPage() {
     const scroller = scrollerRef.current;
     if (!scroller) return;
 
+    // Content growing or shrinking under the scroller moves scrollTop on its own
+    // — a PDF preview mounting inside an answer, its pages painting in, an image
+    // loading. Those arrive here as ordinary scroll events with a big delta, and
+    // would slide the composer away as if the student had scrolled. Only a scroll
+    // that happens at a STABLE content height is a real one; anything else just
+    // resyncs the baseline and is ignored.
+    let lastScrollHeight = scroller.scrollHeight;
+
     const handleScroll = () => {
       if (isInputFocused) return;
       const currentScrollY = scroller.scrollTop;
       const diff = currentScrollY - lastScrollY.current;
+
+      const currentScrollHeight = scroller.scrollHeight;
+      if (currentScrollHeight !== lastScrollHeight) {
+        lastScrollHeight = currentScrollHeight;
+        lastScrollY.current = currentScrollY;
+        return;
+      }
 
       // scroll threshold
       if (Math.abs(diff) < 20) return;

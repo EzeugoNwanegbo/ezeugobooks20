@@ -112,6 +112,21 @@ function PdfPage({
   );
 }
 
+// A page's HEIGHT is derived from the container's width (see the aspect-ratio
+// holder in PdfPage), and the container is the thing that grows a scrollbar. So
+// width and the scrollbar feed each other: the page is sized from clientWidth ->
+// it is tall enough to need a vertical scrollbar -> the scrollbar takes ~15px of
+// clientWidth -> the page is re-sized narrower -> it is now short enough that the
+// scrollbar is not needed -> it disappears and hands the 15px back. That flips
+// forever, and reads on screen as the scrollbar strobing at the edge while the
+// whole answer jitters.
+//
+// `[scrollbar-gutter:stable]` on the scroll containers is the real fix - the
+// gutter is reserved whether or not a bar is drawn, so clientWidth stops moving.
+// This guard is the fallback for browsers without it (Safari below 18.2), and
+// costs nothing where the gutter is honoured because the loop never starts.
+const SCROLLBAR_SLACK = 24;
+
 /** Tracks an element's content width so pages render at their true CSS size. */
 function useMeasuredWidth<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -120,15 +135,35 @@ function useMeasuredWidth<T extends HTMLElement>() {
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
-    const measure = () => setWidth(node.clientWidth);
+    const measure = () =>
+      setWidth((current) => {
+        const next = node.clientWidth;
+        if (!current) return next;
+        // Shrinking is always honoured: the narrower reading is the one that is
+        // safe to draw at, since it already allows for a visible scrollbar.
+        if (next <= current) return next;
+        // Growing back by less than a scrollbar's worth is the loop trying to
+        // start. A genuine resize (window, sidebar, zoom) clears this easily.
+        return next - current < SCROLLBAR_SLACK ? current : next;
+      });
     measure();
     if (typeof ResizeObserver === "undefined") {
       window.addEventListener("resize", measure);
       return () => window.removeEventListener("resize", measure);
     }
-    const observer = new ResizeObserver(measure);
+    // Measuring inside the observer callback can re-trigger it in the same
+    // frame ("ResizeObserver loop completed with undelivered notifications");
+    // deferring a frame lets layout settle first.
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    });
     observer.observe(node);
-    return () => observer.disconnect();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, []);
 
   return [ref, width] as const;
@@ -232,7 +267,7 @@ export default function PdfPreview({
       {/* The preview window itself — a fixed slice of the screen, not the page. */}
       <div
         ref={frameRef}
-        className="mt-2 flex max-h-[52vh] min-h-[180px] items-start justify-center overflow-y-auto overscroll-contain rounded-lg bg-foreground/[0.06] p-3"
+        className="mt-2 flex max-h-[52vh] min-h-[180px] items-start justify-center overflow-y-auto overscroll-contain rounded-lg bg-foreground/[0.06] p-3 [scrollbar-gutter:stable]"
       >
         {pdf && pageWidth > 0 ? (
           <PdfPage pdf={pdf} pageNumber={page} width={pageWidth} eager />
@@ -337,7 +372,10 @@ export default function PdfPreview({
               </div>
             </div>
             {/* Continuous scroll — reading a document, not clicking through it. */}
-            <div ref={sheetRef} className="flex-1 overflow-y-auto overscroll-contain px-3 py-4">
+            <div
+              ref={sheetRef}
+              className="flex-1 overflow-y-auto overscroll-contain px-3 py-4 [scrollbar-gutter:stable]"
+            >
               <div className="flex flex-col items-center gap-4">
                 {sheetPageWidth > 0 &&
                   Array.from({ length: pageCount }, (_, index) => (
