@@ -18,9 +18,25 @@ const RADIUS = 15;
 const STROKE_WIDTH = 3.5;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
-/** Left at or below this, the ring switches to the amber already used for
- *  warnings in -app.practice-page.tsx - not a second warning colour, the same one. */
-const LOW_THRESHOLD = 10;
+/**
+ * When the ring turns amber - the same amber -app.practice-page.tsx already
+ * uses for warnings, not a second warning colour.
+ *
+ * A FRACTION, NOT A COUNT. This was a flat `remaining <= 10`, which was a
+ * sensible fifth of the day when the allowance was the 30-60 earned ladder.
+ * The allowance is now 15 (supabase/migrations/20260829120000_cookie_budget_15.sql),
+ * and a fixed 10 against 15 means the meter is amber from the fifth message of
+ * the morning until midnight - two thirds of every day spent looking like an
+ * emergency, which is how a warning colour stops meaning anything. A fifth of
+ * whatever the allowance happens to be says the same thing at 15, at 60, and at
+ * 200 after a grant, and never needs editing again when the number moves.
+ *
+ * The floor of 2 is for very small allowances, where a fifth would round to
+ * zero or one and the warning would arrive at the same moment as the refusal.
+ */
+function isLow(remaining: number, allowance: number): boolean {
+  return remaining <= Math.max(2, Math.ceil(allowance * 0.2));
+}
 
 export function CookieRing({
   remaining,
@@ -44,7 +60,7 @@ export function CookieRing({
   // Rotated -90deg (below) so the arc starts at 12 o'clock and empties
   // clockwise, the direction a countdown reads.
   const dashoffset = CIRCUMFERENCE * (1 - fraction);
-  const low = remaining <= LOW_THRESHOLD;
+  const low = isLow(safeRemaining, safeAllowance);
 
   return (
     <button

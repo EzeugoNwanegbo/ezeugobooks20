@@ -65,17 +65,22 @@ export function CookieEmptyDialog({
               : "Need more? Message or call G&D."}
           </DialogDescription>
         </DialogHeader>
-        {/* The one line of explanation this dialog earns. Without it the number
-            above looks like a fixed ration, and a student who sees 30 has no way
-            to know it grows - which is the whole point of the ladder.
-            The numbers are a deliberate second copy of
-            supabase/migrations/20260824150000_cookie_ladder.sql, for the same
-            reason the Edge Functions repeat their own prices: this is a
-            sentence, not arithmetic, and nothing is computed from it. If the
-            migration changes, change this line with it. */}
-        <p className="-mt-1 text-xs text-muted-foreground">
-          Your daily cookies grow as you use G&amp;D: +5 every 3 days, up to 60.
-        </p>
+        {/* THE LADDER SENTENCE IS GONE, ON PURPOSE. This used to read "Your
+            daily cookies grow as you use G&D: +5 every 3 days, up to 60",
+            copied by hand out of
+            supabase/migrations/20260824150000_cookie_ladder.sql with a note
+            saying to change it whenever that migration changed. That migration
+            HAS changed: 20260829120000_cookie_budget_15.sql flattens the ladder
+            to a flat 15 a day for every account, on every day, by setting the
+            step to 0 and bringing the ceiling down to meet the base. The
+            sentence became untrue the moment that lands, and a dialog whose job
+            is to state a fact cannot carry a promise the database has stopped
+            keeping.
+            Nothing replaces it, and nothing should: with a flat allowance the
+            number in the title above IS the whole story, and "no explaining
+            text, just clean" (the clarity overhaul's rule) leaves it there. The
+            only way past the number is the two buttons below, which is exactly
+            what they now say without a paragraph in front of them. */}
         <div className="flex flex-col gap-2 sm:flex-row">
           <a
             href={ownerWhatsAppHref(handle)}

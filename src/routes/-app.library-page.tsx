@@ -238,6 +238,28 @@ function markLibraryIntroSeen(ownerId: string): void {
   }
 }
 
+/**
+ * Give the browser one real chance to paint before blocking the main thread.
+ *
+ * Setting a progress label and then immediately running seconds of synchronous
+ * work is pointless on its own: React batches the state update into the same
+ * task as the work, so the new label is only committed once the thing it was
+ * describing has already finished. The student sees the OLD label for the whole
+ * wait and the new one for a single frame afterwards - which is how a bar ends
+ * up reading "100%" while the app is busy.
+ *
+ * requestAnimationFrame gets us to just before a paint; the nested setTimeout
+ * yields the task so the paint actually commits. Both are needed - rAF alone
+ * still runs the callback inside the same frame's work.
+ */
+function paintPendingUi(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      setTimeout(resolve, 0);
+    });
+  });
+}
+
 export function LibraryPage() {
   // No `profile` here on purpose: this page used to read profile.discipline to
   // decide which shared-library books a student was allowed to see. That
@@ -657,6 +679,13 @@ export function LibraryPage() {
       // watch the stage stream so the progress bar says so instead of silently
       // "reading" the same pages again.
       let ocrPass = false;
+      // Throttles the bar to ~10 updates a second. The callback below fires
+      // once per page - 1,600 times for a textbook - and every call re-renders
+      // a page that draws every document card, so reporting the progress cost
+      // more than some of the work being reported. Same shape of problem as the
+      // chat streaming judder fixed in cc81122. The final page is always
+      // allowed through, so the bar still finishes where it should.
+      let lastBarAt = 0;
       try {
         const r = await extractPdfText(
           file,
@@ -665,13 +694,17 @@ export function LibraryPage() {
             if (stage.startsWith("pdf:ocr")) ocrPass = true;
             setStage(stage);
           },
-          (page, total) =>
+          (page, total) => {
+            const now = performance.now();
+            if (page < total && now - lastBarAt < 100) return;
+            lastBarAt = now;
             setUploadBar({
               percent: Math.round((page / total) * 100),
               label: ocrPass
                 ? `OCR-ing scanned page ${page} of ${total}`
                 : `Reading page ${page} of ${total}`,
-            }),
+            });
+          },
         );
         extracted = r.text;
         pageCount = r.pageCount;
@@ -755,6 +788,15 @@ export function LibraryPage() {
       return null;
     }
 
+    // NAME THIS PHASE. It has no page meter, but on a textbook it is a
+    // character-at-a-time walk of the whole book - seconds, not milliseconds -
+    // and it runs after the last page is read. The bar used to be dropped here,
+    // leaving an indeterminate pulse; because that pulse animates on the
+    // compositor it kept moving smoothly while JS was completely blocked, which
+    // reads as "alive and progressing" at the exact moment nothing is. A named
+    // phase is honest; a moving bar that means nothing is not.
+    setUploadBar({ percent: null, label: "Tidying up the text" });
+    await paintPendingUi();
     extracted = sanitizeExtractedText(extracted);
 
     // Office files with no text runs are almost always image-only decks/scans;
@@ -766,7 +808,14 @@ export function LibraryPage() {
     }
 
     setStage("chunking");
-    const chunks = chunkDocumentText(extracted);
+    setUploadBar({ percent: null, label: "Preparing sections for search" });
+    await paintPendingUi();
+    // `true`: `extracted` went through sanitizeExtractedText() above, and that
+    // pass is a character-at-a-time walk of the whole book - ~7.5 s on a
+    // 1,500-page textbook. chunkDocumentText() and documentPreview() below each
+    // used to repeat it, so a textbook upload paid for the same work three
+    // times over. See the note on the parameter in src/lib/document-chunks.ts.
+    const chunks = chunkDocumentText(extracted, true);
 
     // Text-only mode: we don't upload the original file to storage (saves
     // bandwidth and bypasses the 50 MB Supabase storage default limit for
@@ -777,7 +826,7 @@ export function LibraryPage() {
     return {
       fileName: file.name,
       storagePath: path,
-      extracted: documentPreview(extracted),
+      extracted: documentPreview(extracted, true),
       chunks,
       pageCount: pageCount || 0,
       fileType,

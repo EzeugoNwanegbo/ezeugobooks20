@@ -135,7 +135,7 @@ Content...
 
 // ── Cookies: the daily AI budget ────────────────────────────────────────────
 //
-// 5 flat - a deliberate second copy of COOKIE_COSTS.last_minute in
+// 2 flat - a deliberate second copy of COOKIE_COSTS.last_minute in
 // src/lib/cookies.ts, the one place this price is meant to live. Edge
 // Functions deploy separately and cannot import that module (it is browser
 // code), so if the two numbers are ever found to disagree, this one is what
@@ -148,7 +148,7 @@ Content...
 // thrown error, or any outcome that is not spend_cookies_for() explicitly
 // answering ok:false must fall through to "proceed, uncharged" - see the
 // migration's own header for why refusing here would be worse than free AI.
-const LAST_MINUTE_COOKIE_COST = 5;
+const LAST_MINUTE_COOKIE_COST = 2;
 
 type CookieCharge =
   | { status: "charged"; spendId: number | null }

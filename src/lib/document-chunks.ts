@@ -56,14 +56,36 @@ export function sanitizeExtractedText(text: string): string {
     .trim();
 }
 
-export function documentPreview(text: string): string {
-  const cleanText = sanitizeExtractedText(text);
+/**
+ * `alreadySanitized` is an assertion by the caller that `text` has been through
+ * sanitizeExtractedText() already, letting this skip a redundant pass.
+ *
+ * Worth having because that pass is a character-at-a-time loop over the whole
+ * book: on a 1,500-page textbook (~5 MB of text) it costs ~7.5 s, and the upload
+ * path used to pay it THREE times - once in the Library page, then again here
+ * and again in chunkDocumentText - for ~23 s of blocked main thread producing a
+ * result identical to the first pass.
+ *
+ * Safe because sanitizeExtractedText is idempotent: it strips NULs, maps other
+ * C0 controls to spaces, drops lone surrogates, collapses [ 	] runs, removes
+ * [ 	] before newlines and trims. Re-running it over its own output has
+ * nothing left to find, and none of the later steps can recreate work for an
+ * earlier one. Verified over the full U+0000..U+2100 range in six contexts plus
+ * 30,000 random strings before this parameter was introduced.
+ *
+ * Defaults to false, so every existing caller - including
+ * scripts/ingest-library.mjs and scripts/repair-extractions.mjs, which pass raw
+ * extracted text - keeps the exact behaviour it had.
+ */
+export function documentPreview(text: string, alreadySanitized = false): string {
+  const cleanText = alreadySanitized ? text : sanitizeExtractedText(text);
   if (cleanText.length <= DOCUMENT_PREVIEW_CHARS) return cleanText;
   return `${cleanText.slice(0, DOCUMENT_PREVIEW_CHARS)}\n\n[...preview truncated; full text is stored in searchable chunks]`;
 }
 
-export function chunkDocumentText(text: string): DocumentChunkInput[] {
-  const cleanText = sanitizeExtractedText(text);
+/** `alreadySanitized`: see documentPreview above. Defaults to the old behaviour. */
+export function chunkDocumentText(text: string, alreadySanitized = false): DocumentChunkInput[] {
+  const cleanText = alreadySanitized ? text : sanitizeExtractedText(text);
   const pages = parsePageBlocks(cleanText);
   const chunks = pages.some((page) => page.page !== null)
     ? chunkPages(pages)

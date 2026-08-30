@@ -34,25 +34,40 @@ import {
   spendCookiesClientSide,
 } from "@/lib/cookies";
 
-// ── Cookies: charged HERE, once per match ───────────────────────────────────
+// ── Cookies: no longer charged here ──────────────────────────────────────────────────────
 //
-// Every other priced action charges inside its own Edge Function - see the
-// plan's "Where the charge happens" section. Battle Royale is the deliberate
-// exception: the underlying work is one or more calls to studybody's
-// generate_questions (createStraightInSession → generateStudyQuestions), and
-// that function is already charged for ordinary Practice Questions use. If
-// THIS charge lived there too, a roadmap series would be billed once per
-// round instead of once per match - exactly what "charge once per match, not
-// per underlying generate_questions call" (the plan's own words) forbids. So
-// it happens here instead, client-side, using spend_cookies() - the
-// auth.uid()-pinned, browser-reachable doorway - rather than
-// spend_cookies_for(), which is service-role only and would fail outright
-// called from a browser.
+// THIS USED TO BE THE ONE CLIENT-SIDE CHARGE, and the reasoning written here
+// for it was wrong in one specific way that cost students four times the
+// advertised price. It read: charging inside studybody would bill a roadmap
+// series once per round instead of once per match, so charge a flat 2 here
+// instead. The "instead" never happened. A battle is built by
+// createStraightInSession() (src/lib/studybody-data.ts) calling
+// generateStudyQuestions(), which is the ordinary Practice Questions path, and
+// the studybody Edge Function charges "generate_questions" on it
+// unconditionally - it has no way to know a question set is a battle round,
+// and deliberately cannot be told (a browser-asserted "do not bill me" flag
+// would let anyone generate free forever). So every match paid twice: a flat 2
+// here plus ceil(n/10) per round there.
 //
-// Charge first, refund on failure, same rule as every other action: a match
-// that fails to send even one round gets refunded (see the two call sites
-// below); a roadmap series that sends SOME rounds before failing does not,
-// because real AI work already reached the opponent for those rounds.
+// The server-side half is the half that cannot be forged, so it is the half
+// that stands. COOKIE_COSTS.battle_royale is now 0 - see the long note at that
+// entry in src/lib/cookies.ts, which carries the whole decision and the one
+// number to change to put a flat match fee back.
+//
+// EVERYTHING BELOW IS LEFT WIRED UP, and that is not laziness. At a cost of 0
+// spendCookiesClientSide() returns "skipped" without touching the database and
+// this function returns null, so the refunds further down are no-ops; put a
+// non-zero number back in the price list and the flat-fee behaviour, its
+// refusal dialog and its refund-on-failure all return exactly as they were,
+// with no code to re-derive. The reportCookiesSettled() call is worth keeping
+// either way: a battle is about to spend real cookies through studybody, and
+// reading the balance once before it starts means the ring is showing today's
+// truth rather than a number up to thirty seconds old when it does.
+//
+// Charge first, refund on failure remains the rule for whatever IS charged -
+// it just happens inside studybody now, which refunds its own generate_questions
+// spend when a round fails to build (see the streaming branch of
+// supabase/functions/studybody/index.ts).
 async function chargeBattleCookie(): Promise<number | null> {
   const cost = costFor("battle_royale");
   reportCookieSpend(cost);
@@ -243,9 +258,12 @@ export async function createSingleBattle({
   const topicScoped = scope === "topic" && Boolean(focus);
   const title = buildBattleTitle(doc, scope, focus, timeLimitMinutes);
 
-  // Charged before anything is built - see chargeBattleCookie()'s own header
-  // note above. Throws on an explicit refusal; every other outcome (missing
-  // schema, network error) fails open and this proceeds uncharged.
+  // A no-op at today's price of 0 - the rounds below are billed inside
+  // studybody instead. Left here, and left first, so that restoring a flat
+  // match fee is one number in the price list rather than a re-derivation:
+  // see chargeBattleCookie()'s own header note above.
+  // At a non-zero price it throws on an explicit refusal; every other outcome
+  // (missing schema, network error) fails open and this proceeds uncharged.
   const spendId = await chargeBattleCookie();
 
   try {
@@ -351,9 +369,10 @@ export async function createRoadmapBattleSeries({
     throw new Error("This roadmap has no topics yet.");
   }
 
-  // Charged once for the WHOLE series, before the parent row even exists -
-  // see chargeBattleCookie()'s header note on why this is a client-side
-  // charge and why it is one charge regardless of how many rounds follow.
+  // A no-op at today's price of 0, exactly as in createBattleFromDocument
+  // above - each round below pays for itself through studybody. See
+  // chargeBattleCookie()'s header note for what this becomes if a flat
+  // per-series fee is ever put back.
   const spendId = await chargeBattleCookie();
 
   try {

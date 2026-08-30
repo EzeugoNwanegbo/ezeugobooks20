@@ -1390,9 +1390,9 @@ Return JSON:
 // deploy separately and cannot import that module (it is browser code: the
 // browser Supabase client, import.meta.env). If the two ever disagree, this
 // one is what is actually being billed, so fix src/lib/cookies.ts to match.
-//   generate_plan       5 flat
-//   generate_questions  ceil(count / 5), minimum 1 - a 40-question set is 8
-//   generate_flashcards ceil(count / 10), minimum 1
+//   generate_plan       2 flat
+//   generate_questions  ceil(count / 10), minimum 1 - a 40-question set is 4
+//   generate_flashcards ceil(count / 20), minimum 1 - a 20-card set is 1
 //   review_answers      0 - marking never charges, the set already paid for
 //                          itself when it was generated
 //
@@ -1477,12 +1477,12 @@ async function refundCookies(authHeaderRaw: string, spendId: number | null): Pro
   }
 }
 
-const GENERATE_PLAN_COOKIE_COST = 5;
+const GENERATE_PLAN_COOKIE_COST = 2;
 function questionsCookieCost(count: number): number {
-  return Math.max(1, Math.ceil(count / 5));
+  return Math.max(1, Math.ceil(count / 10));
 }
 function flashcardsCookieCost(count: number): number {
-  return Math.max(1, Math.ceil(count / 10));
+  return Math.max(1, Math.ceil(count / 20));
 }
 
 // Mirrors the target/clamp arithmetic generateQuestions() computes for

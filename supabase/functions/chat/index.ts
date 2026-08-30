@@ -65,6 +65,93 @@ interface ChatBody {
   documentMode?: DocumentMode;
   forceWebSearch?: boolean;
   interlink?: boolean;
+  // OPT-IN, DEFAULTS OFF. When true, the document route answers in ONE streamed
+  // call instead of the blocking research draft + styling rewrite. See the
+  // `hasDocs` branch in the handler for why this is a request flag and not a
+  // deploy-time switch: this one function serves the website AND the native
+  // mobile app (gandd-mobile/lib/chat-client.ts), there is no staging
+  // deployment, and the owner wants a side-by-side against the real production
+  // function before students meet it. Absent or false must behave exactly as
+  // the two-hop pipeline always has.
+  singleHop?: boolean;
+}
+
+// ── Progress frames: the wait, narrated ─────────────────────────────────────
+//
+// These types are a deliberate MIRROR of the wire format defined and documented
+// in src/components/answer-timeline.tsx - that file owns the schema, the
+// reducer, and the ordering contract. Edge Functions deploy separately from the
+// frontend and cannot import browser code, which is the same reason
+// CHAT_COOKIE_COST is duplicated further down. If the two ever disagree, the
+// component is the source of truth.
+//
+// Frames ride the existing SSE stream under a top-level key, exactly like
+// `medai_sources`, because both clients test top-level keys BEFORE reading
+// `choices[0].delta.content`. An old client therefore discards a progress frame
+// silently: it is not an array under `medai_sources`, and it carries no delta,
+// so it falls through both branches without touching the answer text.
+//
+// The ordering contract this file must keep (from the component's own docs):
+//   - a step's `step` frame goes out BEFORE any `step_detail` for it,
+//   - steps are closed EXPLICITLY (a new active step does not finish the last),
+//   - the ids "reading", "sources", "web", "writing" are reused so a late first
+//     frame merges into the client's scripted fallback rows,
+//   - every frame is flushed on its own - batched with the first token they are
+//     worth nothing,
+//   - the label is ours to author, count included. The client never composes it.
+type AnswerTimelineIcon =
+  | "reading"
+  | "file"
+  | "retrieval"
+  | "search"
+  | "web"
+  | "writing"
+  | "thinking";
+
+type AnswerStepStatus = "pending" | "active" | "done" | "empty" | "failed";
+
+type AnswerProgressEvent =
+  | {
+      type: "step";
+      id: string;
+      label?: string;
+      icon?: AnswerTimelineIcon;
+      status?: AnswerStepStatus;
+      note?: string;
+      error?: string;
+      detailLabel?: string;
+      detailIcon?: AnswerTimelineIcon;
+    }
+  | {
+      type: "step_detail";
+      stepId: string;
+      text: string;
+      label?: string;
+      icon?: AnswerTimelineIcon;
+    };
+
+function progressSse(...events: AnswerProgressEvent[]): string {
+  return events.map((event) => `data: ${JSON.stringify({ medai_progress: event })}\n\n`).join("");
+}
+
+/**
+ * An error the student is allowed to read.
+ *
+ * Thrown from inside a stream that has ALREADY committed its 200 headers, where
+ * returning a JSON error response is no longer possible. The shell below turns
+ * it into a `medai_error` frame; provider strings and status codes stay in the
+ * logs, as everywhere else in this file.
+ */
+class StudentFacingError extends Error {
+  /** Upstream HTTP status, when there was one. Kept for the logs: a stream that
+   *  has already sent 200 cannot report it as a status any more, so this is
+   *  where it survives. */
+  readonly status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.status = status;
+  }
 }
 
 // OpenAI answer models. GPT-5 replaced the 4o line: `gpt-4o-mini-search-preview`
@@ -563,7 +650,8 @@ YOUR TASK:
 }
 
 /**
- * Detailed+ writes its own notes.
+ * Detailed+ writes its own notes - and, behind the single-hop flag, so does
+ * every other mode on the document route.
  *
  * Every other mode runs research -> styling, because the styling pass adds the
  * warmth and shaping that a research draft has none of. Detailed+ does not want
@@ -576,6 +664,17 @@ YOUR TASK:
  * everything the styling prompt used to own: the identity rule, the citation
  * requirement, and the output bans. Those are not optional - this text goes
  * straight to the student.
+ *
+ * SECOND CALLER, SAME REASONING. `body.singleHop` now points the document route
+ * through here for Simplified, Detailed and Storytelling too, for the latency
+ * reason rather than the structural one (the hop it removes is 8-25 seconds of
+ * blank screen). That caller appends SINGLE_HOP_CONTRACT, because those modes
+ * bring two things Detailed+ never had: a hard length limit, and therefore a
+ * length limit that could argue with the mandatory Source line. The only thing
+ * that changes in HERE is the closing voice line - Detailed+ still gets its
+ * "notes stay structural", which would be wrong advice for a three-paragraph
+ * Simplified answer. Every other byte of this prompt is shared, and Detailed+'s
+ * output must stay identical to what is in production.
  */
 function buildDeepSeekNotesSystemPrompt(
   p: Profile,
@@ -601,6 +700,13 @@ GROUNDING (mandatory):
 GROUNDING:
 - No uploaded document is in scope, so answer from general knowledge and do not fabricate a "Source:" line.`;
 
+  // Byte-identical to what production sends for Detailed+; the alternative is
+  // for the modes that answer in three paragraphs rather than in sections.
+  const voiceLine =
+    mode === "Detailed+"
+      ? `Write as if you are talking directly to ${p.name || "the student"} - warm and clear, but the notes themselves stay structural. No filler, no "in conclusion" waffle.`
+      : `Write as if you are talking directly to ${p.name || "the student"} - warm, clear and encouraging, in the shape the STYLE INSTRUCTIONS above ask for. No filler, no "in conclusion" waffle.`;
+
   return `You are G&D, a precision study app for medical and law students. You are writing the student's final answer yourself - nothing runs after you.
 
 IDENTITY (strict): You are G&D, and only G&D. Never mention, name, or hint at any underlying model, provider, or internal step - including "DeepSeek", "GPT", "OpenAI", "the draft", or "as an AI language model". If the student asks what you are or what powers you, say you are G&D.
@@ -616,8 +722,41 @@ OUTPUT RULES:
 - Never output asterisk characters. Do not use asterisks for emphasis, bullets, multiplication, footnotes, or decoration. Use plain labels, hyphen bullets, and the x symbol for multiplication.
 - When the concept is naturally visual - a process, cycle, hierarchy, timeline, or comparison - include ONE small diagram as a fenced \`\`\`mermaid code block (prefer "flowchart LR", "flowchart TD", "mindmap", or "sequenceDiagram"; short plain labels; no style directives). Do not force a diagram when the topic is not visual.
 - Mermaid label syntax is strict: any node label containing punctuation (parentheses, brackets, colons, slashes, commas) must be wrapped in double quotes, e.g. A["Stage 2 (deep sleep)"]. Unquoted punctuation is a syntax error and the diagram will not render.
-- Write as if you are talking directly to ${p.name || "the student"} - warm and clear, but the notes themselves stay structural. No filler, no "in conclusion" waffle.`;
+- ${voiceLine}`;
 }
+
+/**
+ * The two things the retired styling hop used to own, handed over explicitly.
+ *
+ * Appended ONLY on the opt-in single-hop document route (`body.singleHop`).
+ * Detailed+ has always answered in one hop and does not get this block, so its
+ * prompt stays byte-identical to what is in production.
+ *
+ * 1. LENGTH. Every mode's length rule already travels inside
+ *    modeInstruction() - "HARD LIMIT: 3 short paragraphs maximum" for
+ *    Simplified, "3-5 short paragraphs" for Storytelling - so it is present in
+ *    both pipelines. What is NOT present any more is the pressure that actually
+ *    made it stick: a second model whose entire job was to condense somebody
+ *    else's draft, plus a final user turn telling it not to exceed the limit.
+ *    A retrieval engine instructed to read every excerpt from start to finish
+ *    is being pulled the other way, and left alone it will hand a Simplified
+ *    student six paragraphs of thorough. The wording below is deliberate about
+ *    which instruction wins.
+ * 2. CITATION versus length. buildGPTRewriterSystemPrompt's citation rule opens
+ *    "(mandatory, overrides every mode length/format limit)" and spells out
+ *    that the Source line "never counts against the paragraph limit". The
+ *    finalAnswer branch of buildDeepSeekSystemPrompt (items 4 and 4b) carries
+ *    the same citation FORMAT - first line, verbatim page, both numbers when
+ *    the label has two, never a chunk index - but it has never had to state
+ *    that exemption, because the only mode that used it (Detailed+) has no
+ *    length limit to conflict with. Simplified does. Without this line the
+ *    three-paragraph cap and the mandatory Source line are two rules in direct
+ *    competition, and the model is free to resolve it by dropping the citation
+ *    - which is the single worst thing this route could do.
+ */
+const SINGLE_HOP_CONTRACT = `SINGLE PASS - READ THIS LAST:
+- Nothing runs after you. There is no later step to shorten, restructure, or re-voice this, so the STYLE INSTRUCTIONS above describe the FINISHED answer, not raw material for one. Their length and structure limits are hard limits: searching thoroughly is your job, writing at length is not. If a limit says three paragraphs, three paragraphs is the whole answer.
+- The "Source:" line is the one exception, and it overrides every length limit above. It is required whenever the excerpts carry a document name, it goes on the very first line, and it never counts toward a paragraph, bullet, or word count. Never drop it to save space, never bury it in prose, and never summarise it away.`;
 
 /**
  * The small-talk voice. No research draft, no citations, no mode styling.
@@ -1181,32 +1320,21 @@ function sourceMetadataSse(sources: WebSource[]): string {
   return sources.length > 0 ? `data: ${JSON.stringify({ medai_sources: sources })}\n\n` : "";
 }
 
-function textToSse(text: string, sources: WebSource[] = []): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const chunks = text.match(/.{1,24}(?:\s+|$)/gs) ?? [text];
-  let index = 0;
-
-  return new ReadableStream({
-    async pull(controller) {
-      if (index < chunks.length) {
-        const content = chunks[index++];
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`),
-        );
-        await new Promise((resolve) => setTimeout(resolve, 12));
-        return;
-      }
-
-      if (sources.length > 0) {
-        controller.enqueue(encoder.encode(sourceMetadataSse(sources)));
-      }
-      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-      controller.close();
-    },
-  });
-}
-
-async function enqueueTextAsSse(
+// A finished answer, cut into delta frames so it arrives in the same shape a
+// streamed one does.
+//
+// THERE IS NO SLEEP HERE ANY MORE, AND ONE MUST NOT BE ADDED BACK. This helper
+// (and textToSse, the ReadableStream twin that used to sit above it and is now
+// gone with the last caller that needed it) used to `await setTimeout(12ms)`
+// between every 24-character chunk to fake a typing effect. That is
+// 12ms x (length / 24): about 1.8 SECONDS of pure invented delay on a
+// web-search answer, up to ten on a Visuals one, added AFTER the model had
+// finished and AFTER the student had already waited for it. It bought nothing
+// visually either - the chat page runs its own reveal loop (`startReveal`,
+// also 12ms) over whatever has arrived, so the typing feel is the client's and
+// always was. The server's job is to hand the text over as fast as the socket
+// will take it.
+function enqueueTextAsSse(
   controller: ReadableStreamDefaultController<Uint8Array>,
   encoder: TextEncoder,
   text: string,
@@ -1217,7 +1345,6 @@ async function enqueueTextAsSse(
     controller.enqueue(
       encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`),
     );
-    await new Promise((resolve) => setTimeout(resolve, 12));
   }
 }
 
@@ -1292,10 +1419,10 @@ function visualStreamResponse(
         try {
           const result = await run();
           sources = result.sources;
-          await enqueueTextAsSse(controller, encoder, result.text);
+          enqueueTextAsSse(controller, encoder, result.text);
         } catch (err) {
           console.error("visuals pipeline failed:", err);
-          await enqueueTextAsSse(controller, encoder, fallbackVisualAnimationText());
+          enqueueTextAsSse(controller, encoder, fallbackVisualAnimationText());
         } finally {
           if (heartbeat !== undefined) clearInterval(heartbeat);
           if (sources.length > 0) {
@@ -1372,7 +1499,314 @@ function streamWithSources(
   });
 }
 
+/**
+ * Puts already-built SSE text (progress frames) in front of a provider stream.
+ *
+ * For every route whose upstream is ALREADY a live stream, this is all the
+ * narration needs: the provider's response headers land long before its first
+ * token - the gap is the model's prefill, which is most of the wait - so frames
+ * queued here are flushed into that gap rather than batched with the answer.
+ *
+ * It is deliberately the dumb option. It cannot narrate work that happens
+ * BEFORE the upstream exists (a blocking research draft, a web search); that
+ * needs progressStreamResponse below, which commits the 200 first and therefore
+ * gives up the ability to answer with a JSON error. Nothing here gives that up,
+ * so every route that can use this one does.
+ */
+function streamWithPrefix(
+  upstream: ReadableStream<Uint8Array> | null,
+  prefix: string,
+): ReadableStream<Uint8Array> | null {
+  if (!upstream || !prefix) return upstream;
+
+  const reader = upstream.getReader();
+  const encoder = new TextEncoder();
+  let sentPrefix = false;
+
+  return new ReadableStream({
+    async pull(controller) {
+      if (!sentPrefix) {
+        sentPrefix = true;
+        // Enqueue and RETURN, so the frames go out on their own rather than
+        // waiting on the first upstream read.
+        controller.enqueue(encoder.encode(prefix));
+        return;
+      }
+
+      const { done, value } = await reader.read();
+      if (done) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(value);
+    },
+    cancel() {
+      return reader.cancel();
+    },
+  });
+}
+
+// Enough sub-rows to show the student it really is their material, few enough
+// that the rail stays glanceable. The parent row carries the true count, so the
+// cap hides nothing.
+const MAX_PROGRESS_DETAILS = 8;
+
+/**
+ * The "reading" step, told from the documents the request actually carried.
+ *
+ * Retrieval itself happens in the client (it owns the embeddings query), so by
+ * the time a request lands here the reading is a known quantity - which is
+ * exactly why these frames can be honest about it: real file names, and a real
+ * count of the labelled passages inside the excerpts.
+ *
+ * "passages", not "chunks": a chunk is an artefact of how we split a file and
+ * means nothing to a student, the same reason docsFromChunkRows() in
+ * src/routes/-app.chat-page.tsx refuses to print "Chunk 7" next to a citation.
+ *
+ * EMPTY IS NOT DONE. Files whose excerpts are all blank are a live problem in
+ * this app (uploads that extracted to ~0 chunks), and reporting that as "done"
+ * would tell a student we read material we never had. The component has a
+ * status for exactly this.
+ */
+function readingProgressFrames(docs: DocumentCtx[]): AnswerProgressEvent[] {
+  const label = docs.length > 1 ? `Reading ${docs.length} of your files` : "Reading your material";
+  const frames: AnswerProgressEvent[] = [
+    {
+      type: "step",
+      id: "reading",
+      label,
+      icon: "reading",
+      status: "active",
+      detailLabel: "Read",
+      detailIcon: "file",
+    },
+  ];
+
+  for (const doc of docs.slice(0, MAX_PROGRESS_DETAILS)) {
+    frames.push({ type: "step_detail", stepId: "reading", text: doc.file_name });
+  }
+
+  // Every excerpt passage the client labelled, in either of the two formats it
+  // produces: "[Page 47 | Book page 23]" from chunk rows, "[Relevant excerpt 2
+  // from ...]" from the whole-text fallback.
+  let passages = 0;
+  let chars = 0;
+  for (const doc of docs) {
+    const excerpt = doc.excerpt ?? "";
+    chars += excerpt.trim().length;
+    passages += excerpt.match(/\[(?:Page\b|Relevant excerpt\b)/g)?.length ?? 0;
+  }
+
+  frames.push({
+    type: "step",
+    id: "reading",
+    status: chars > 0 ? "done" : "empty",
+    note:
+      chars === 0
+        ? "no readable text in these files"
+        : passages > 0
+          ? `${passages} passage${passages === 1 ? "" : "s"}`
+          : undefined,
+  });
+
+  return frames;
+}
+
+/**
+ * How the two-hop research draft went, read off the draft itself.
+ *
+ * Both signals here are the draft's own words, not a guess about them. The
+ * "could not find an exact hit in your files" phrasing is dictated verbatim by
+ * buildDeepSeekSystemPrompt's step 6, so matching it is reading the engine's
+ * own verdict - and that verdict is `empty`, never `done`: a search that found
+ * nothing is the one outcome this timeline must not dress up as a success.
+ */
+function researchDraftFrame(draft: string): AnswerProgressEvent {
+  if (/could not find an exact hit/i.test(draft)) {
+    return {
+      type: "step",
+      id: "sources",
+      status: "empty",
+      note: "nothing matched in your files",
+    };
+  }
+
+  const pages = new Set((draft.match(/\bPage\s+\d+/gi) ?? []).map((page) => page.toLowerCase()));
+  return {
+    type: "step",
+    id: "sources",
+    status: "done",
+    note: pages.size > 0 ? `${pages.size} page${pages.size === 1 ? "" : "s"} cited` : undefined,
+  };
+}
+
+const WRITING_FRAME: AnswerProgressEvent = {
+  type: "step",
+  id: "writing",
+  label: "Writing your answer",
+  icon: "writing",
+  status: "active",
+};
+
+/**
+ * A response that starts NOW and narrates the slow work behind it.
+ *
+ * The two-hop document route and the web-search route both spend 8-25 seconds
+ * inside a blocking provider call before they have anything to return, and the
+ * student's screen shows nothing at all for it. The only way to say what is
+ * happening during that window is to commit the 200 first and write into the
+ * open stream as the work lands.
+ *
+ * WHAT THAT COSTS, AND HOW IT IS PAID BACK. Once the headers are out we can no
+ * longer answer with a JSON error, which is how this function has always
+ * reported a provider failure (`{ error }` + a 4xx/5xx, turned into a toast by
+ * both clients). So a failure after that point is emitted as a `medai_error`
+ * frame and the stream is closed WITHOUT a [DONE] marker:
+ *   - a client that knows the frame (src/lib/chat-client.ts) reports the exact
+ *     message through onError, which is what the toast did before;
+ *   - a client that does not (the shipped mobile app) sees a stream that ended
+ *     with no content and no [DONE], which both clients already treat as
+ *     "ended before any answer arrived - please retry".
+ * Neither one saves a bogus answer, and `onFailure` below runs the same cookie
+ * refund the outer catch would have run. What is genuinely lost is the HTTP
+ * status code and the provider's own words, which only ever reached the logs
+ * in any useful form.
+ */
+function progressStreamResponse({
+  headers,
+  prelude,
+  failureMessage,
+  onFailure,
+  run,
+}: {
+  headers: Record<string, string>;
+  /** Frames flushed before any work starts - t=0 narration. */
+  prelude: AnswerProgressEvent[];
+  /** Student-facing copy for a failure with no more specific message. */
+  failureMessage: string;
+  /** Runs when the work threw, before the error frame goes out (cookie refund). */
+  onFailure?: () => Promise<void>;
+  run: (emit: (...events: AnswerProgressEvent[]) => void) => Promise<{
+    /** An upstream provider stream to pipe through, already SSE-shaped. */
+    stream?: ReadableStream<Uint8Array> | null;
+    /** ...or a finished answer to frame up ourselves. */
+    text?: string;
+    sources?: WebSource[];
+  }>;
+}): Response {
+  const encoder = new TextEncoder();
+  let upstreamReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      // The step the failure branch should blame. Tracked rather than assumed,
+      // so "the research draft timed out" fails the research row and not the
+      // writing row that never started.
+      let lastActive: string | null = null;
+
+      const push = (text: string) => {
+        try {
+          controller.enqueue(encoder.encode(text));
+        } catch {
+          // The student navigated away mid-answer. Narration is never worth an
+          // exception on a stream nobody is reading.
+        }
+      };
+      const close = () => {
+        try {
+          controller.close();
+        } catch {
+          /* already closed or cancelled */
+        }
+      };
+
+      const emit = (...events: AnswerProgressEvent[]) => {
+        if (events.length === 0) return;
+        for (const event of events) {
+          if (event.type !== "step") continue;
+          // `status` omitted means "active" in the client's reducer.
+          const status = event.status ?? "active";
+          if (status === "active") lastActive = event.id;
+          else if (lastActive === event.id) lastActive = null;
+        }
+        push(progressSse(...events));
+      };
+
+      emit(...prelude);
+
+      (async () => {
+        try {
+          const result = await run(emit);
+          const sources = result.sources ?? [];
+
+          if (result.stream) {
+            // streamWithSources injects the source frame ahead of the
+            // provider's own [DONE], exactly as it does on the direct routes.
+            const merged = streamWithSources(result.stream, sources) ?? result.stream;
+            const reader = merged.getReader();
+            upstreamReader = reader;
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              controller.enqueue(value);
+            }
+            close();
+            return;
+          }
+
+          enqueueTextAsSse(controller, encoder, result.text ?? "");
+          if (sources.length > 0) push(sourceMetadataSse(sources));
+          push("data: [DONE]\n\n");
+          close();
+        } catch (err) {
+          console.error("progress stream failed:", err);
+          if (onFailure) await onFailure().catch(() => {});
+          const message = err instanceof StudentFacingError ? err.message : failureMessage;
+          emit({
+            type: "step",
+            id: lastActive ?? "writing",
+            // Only names the row when we are creating it; an existing row keeps
+            // the label it was given.
+            label: lastActive ? undefined : "Writing your answer",
+            status: "failed",
+            error: message,
+          });
+          // No [DONE]: see the header note. Its absence is what an older client
+          // reads as "the stream ended before any answer arrived", which is
+          // exactly what happened.
+          push(`data: ${JSON.stringify({ medai_error: message })}\n\n`);
+          close();
+        }
+      })();
+    },
+    cancel() {
+      return upstreamReader?.cancel();
+    },
+  });
+
+  return new Response(stream, {
+    headers: { ...corsHeaders, "Content-Type": "text/event-stream", ...headers },
+  });
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
+
+/**
+ * What the student is told when the styling hop refuses.
+ *
+ * Extracted so the two callers cannot drift: openAIRewriteResponse still
+ * answers with these words AND the upstream status code, while the narrated
+ * two-hop route can only send the words - by the time it knows, it has already
+ * committed a 200 (see progressStreamResponse). The strings themselves are
+ * unchanged; one of them tells the owner which Supabase secret to fix.
+ */
+function gptRewriteErrorMessage(status: number): string {
+  return status === 429
+    ? "OpenAI final explanation is rate limited. Please wait a few seconds and try again."
+    : status === 401
+      ? "OpenAI API key rejected. Please check your Supabase Edge Function secrets."
+      : "OpenAI final explanation failed";
+}
 
 async function openAIRewriteResponse({
   apiKey,
@@ -1382,6 +1816,7 @@ async function openAIRewriteResponse({
   model,
   source,
   sources,
+  progress = [],
 }: {
   apiKey: string;
   systemPrompt: string;
@@ -1392,32 +1827,36 @@ async function openAIRewriteResponse({
   model: string;
   source: string;
   sources: WebSource[];
+  // Timeline frames flushed ahead of the answer. Free here: the JSON-error
+  // branch below still runs first, so this adds narration without giving up
+  // the error status the way progressStreamResponse has to.
+  progress?: AnswerProgressEvent[];
 }): Promise<Response> {
   const gptResp = await callGPTStream(apiKey, answerModel(mode), systemPrompt, messages);
 
   if (!gptResp.ok) {
     const text = await gptResp.text();
     console.error("OpenAI rewrite error:", gptResp.status, text);
-    const msg =
-      gptResp.status === 429
-        ? "OpenAI final explanation is rate limited. Please wait a few seconds and try again."
-        : gptResp.status === 401
-          ? "OpenAI API key rejected. Please check your Supabase Edge Function secrets."
-          : "OpenAI final explanation failed";
+    // Unchanged: this caller has not sent a byte yet, so it still answers with
+    // the real upstream status the clients turn into a toast.
+    const msg = gptRewriteErrorMessage(gptResp.status);
     return new Response(JSON.stringify({ error: msg }), {
       status: gptResp.status,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
-  return new Response(streamWithSources(gptResp.body, sources), {
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "text/event-stream",
-      "X-Medai-Model": model,
-      "X-Medai-Source": source,
+  return new Response(
+    streamWithPrefix(streamWithSources(gptResp.body, sources), progressSse(...progress)),
+    {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "text/event-stream",
+        "X-Medai-Model": model,
+        "X-Medai-Source": source,
+      },
     },
-  });
+  );
 }
 
 /** Detailed+ notes streamed straight from the research engine, no styling pass. */
@@ -1429,6 +1868,7 @@ async function deepSeekNotesResponse({
   source,
   sources,
   timeoutMs,
+  progress = [],
 }: {
   apiKey: string;
   systemPrompt: string;
@@ -1437,6 +1877,8 @@ async function deepSeekNotesResponse({
   source: string;
   sources: WebSource[];
   timeoutMs: number;
+  /** Timeline frames flushed ahead of the answer - see openAIRewriteResponse. */
+  progress?: AnswerProgressEvent[];
 }): Promise<Response> {
   const resp = await callDeepSeekStream(apiKey, systemPrompt, messages, timeoutMs);
 
@@ -1456,14 +1898,17 @@ async function deepSeekNotesResponse({
     });
   }
 
-  return new Response(streamWithSources(resp.body, sources), {
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "text/event-stream",
-      "X-Medai-Model": model,
-      "X-Medai-Source": source,
+  return new Response(
+    streamWithPrefix(streamWithSources(resp.body, sources), progressSse(...progress)),
+    {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "text/event-stream",
+        "X-Medai-Model": model,
+        "X-Medai-Source": source,
+      },
     },
-  });
+  );
 }
 
 async function createVisualAnimationText({
@@ -1539,7 +1984,7 @@ Create the final animation package now.`,
 
 // ── Cookies: the daily AI budget ────────────────────────────────────────────
 //
-// A chat message costs 2 cookies - see COOKIE_COSTS.chat in src/lib/cookies.ts,
+// A chat message costs 1 cookie - see COOKIE_COSTS.chat in src/lib/cookies.ts,
 // the one place this price is meant to live. This is a deliberate second copy
 // of that single number, not a fork of the pricing logic: Edge Functions
 // deploy separately from the frontend and cannot import src/lib/cookies.ts
@@ -1639,7 +2084,7 @@ async function refundCookies(authHeaderRaw: string, spendId: number | null): Pro
   }
 }
 
-const CHAT_COOKIE_COST = 2;
+const CHAT_COOKIE_COST = 1;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -1713,6 +2158,13 @@ Deno.serve(async (req: Request) => {
 
     let curriculumGuidance = "";
     let webSources: WebSource[] = [];
+    // Timeline rows for work that finished BEFORE the answer stream opened.
+    // They go out with the stream's first flush rather than live, which is the
+    // honest thing available here: this hop runs before any route has committed
+    // to a response, and wrapping the whole handler in a stream to narrate a
+    // step that only fires on bare-topic questions would trade the JSON error
+    // path away on every route to buy narration on one.
+    const preludeFrames: AnswerProgressEvent[] = [];
 
     if (useWebCurriculum) {
       try {
@@ -1723,10 +2175,37 @@ Deno.serve(async (req: Request) => {
         );
         curriculumGuidance = webResult.text;
         webSources = webResult.sources;
+        preludeFrames.push({
+          type: "step",
+          id: "web",
+          label: "Checked course outlines online",
+          icon: "web",
+          // No sources back means the search genuinely found nothing to stand
+          // on, even though it returned prose. That is `empty`, not `done`.
+          status: webSources.length > 0 ? "done" : "empty",
+          note: webSources.length > 0 ? `${webSources.length} sources` : "nothing usable found",
+        });
+        for (const webSource of webSources.slice(0, MAX_PROGRESS_DETAILS)) {
+          preludeFrames.push({
+            type: "step_detail",
+            stepId: "web",
+            text: webSource.title,
+            label: "Read",
+            icon: "web",
+          });
+        }
       } catch (err) {
         console.error("OpenAI web curriculum search failed:", err);
         curriculumGuidance =
           "Web course outline search was requested but unavailable. Use broad course-level priorities, organise the answer by likely learning outcomes, and tell the student this fallback is not their official school syllabus.";
+        preludeFrames.push({
+          type: "step",
+          id: "web",
+          label: "Checked course outlines online",
+          icon: "web",
+          status: "failed",
+          error: "Course outline search was unavailable, so this answer is not syllabus-specific",
+        });
       }
     }
 
@@ -1860,40 +2339,76 @@ Prepare the factual research brief for an educational animation. Include the pro
     }
 
     if (useWebSearch) {
-      try {
-        const webResult = await callOpenAIWebAnswerSync(
-          OPENAI_API_KEY,
-          body.profile,
-          body.mode,
-          body.messages,
-        );
-        return new Response(textToSse(webResult.text, webResult.sources), {
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "text/event-stream",
-            "X-Medai-Model": "gpt-web-search",
-            "X-Medai-Source": "general",
-          },
-        });
-      } catch (err) {
-        console.error("OpenAI web answer failed:", err);
-        return new Response(
-          textToSse(
-            "Web search took too long to finish. Try again in a moment, or turn Web off and I can answer from general knowledge.",
-          ),
+      // The search itself is the wait - one blocking Responses call that can run
+      // most of a minute - and it used to be spent behind a completely silent
+      // socket. The shell opens the stream first so the student can at least see
+      // that a search is running and, as they land, which pages it found.
+      //
+      // The failure path is UNCHANGED and stays inside run(): a web answer that
+      // times out has always come back as a friendly 200, never an error, so
+      // there is nothing here for the shell's error branch to do. The one thing
+      // that could not survive the move is the "web-search-timeout" value in the
+      // X-Medai-Model header (headers are committed before the outcome is
+      // known); the failed `web` row now carries that signal instead, and the
+      // console.error below is untouched.
+      return progressStreamResponse({
+        headers: { "X-Medai-Model": "gpt-web-search", "X-Medai-Source": "general" },
+        prelude: [
           {
-            headers: {
-              ...corsHeaders,
-              "Content-Type": "text/event-stream",
-              "X-Medai-Model": "web-search-timeout",
-              "X-Medai-Source": "general",
-            },
+            type: "step",
+            id: "web",
+            label: "Searching the web",
+            icon: "web",
+            status: "active",
+            detailLabel: "Found",
+            detailIcon: "web",
           },
-        );
-      }
+        ],
+        failureMessage:
+          "Web search took too long to finish. Try again in a moment, or turn Web off and I can answer from general knowledge.",
+        run: async (emit) => {
+          try {
+            const webResult = await callOpenAIWebAnswerSync(
+              OPENAI_API_KEY,
+              body.profile,
+              body.mode,
+              body.messages,
+            );
+            for (const webSource of webResult.sources.slice(0, MAX_PROGRESS_DETAILS)) {
+              emit({ type: "step_detail", stepId: "web", text: webSource.title });
+            }
+            // No citable sources back is a real outcome of a search, not a
+            // success - the answer that follows is general knowledge.
+            emit({
+              type: "step",
+              id: "web",
+              status: webResult.sources.length > 0 ? "done" : "empty",
+              note:
+                webResult.sources.length > 0
+                  ? `${webResult.sources.length} sources`
+                  : "no usable sources",
+            });
+            return { text: webResult.text, sources: webResult.sources };
+          } catch (err) {
+            console.error("OpenAI web answer failed:", err);
+            emit({
+              type: "step",
+              id: "web",
+              status: "failed",
+              error: "Web search did not finish in time",
+            });
+            return {
+              text: "Web search took too long to finish. Try again in a moment, or turn Web off and I can answer from general knowledge.",
+            };
+          }
+        },
+      });
     }
 
     if (hasDocs) {
+      // Same value the branch used to read as `body.documents!`; `hasDocs` is
+      // only true when the array is non-empty.
+      const docs = body.documents ?? [];
       const deepSeekMessages = [
         ...priorMessages,
         {
@@ -1907,43 +2422,150 @@ Answer the student's question by finding the exact relevant evidence in the uplo
         },
       ];
 
+      // The rows that describe work already done by the time this request
+      // arrived: any web-curriculum hop, then the student's own files.
+      const docProgress = [...preludeFrames, ...readingProgressFrames(docs)];
+
       // Detailed+ writes its own notes: same research engine, but it streams the
       // finished answer instead of a draft for a second model to restyle.
       if (body.mode === "Detailed+") {
         return deepSeekNotesResponse({
           apiKey: DEEPSEEK_API_KEY!,
-          systemPrompt: `${buildDeepSeekSystemPrompt(body.profile, body.documents!, interlink, useWebCurriculum, { finalAnswer: true })}
+          systemPrompt: `${buildDeepSeekSystemPrompt(body.profile, docs, interlink, useWebCurriculum, { finalAnswer: true })}
 
-${buildDeepSeekNotesSystemPrompt(body.profile, body.mode, interlink, useWebCurriculum, body.documents!)}`,
+${buildDeepSeekNotesSystemPrompt(body.profile, body.mode, interlink, useWebCurriculum, docs)}`,
           messages: deepSeekMessages,
           model: "deepseek-notes-library",
           source,
           sources: webSources,
           timeoutMs: DEEPSEEK_DOCUMENT_TIMEOUT_MS,
+          progress: [...docProgress, WRITING_FRAME],
         });
       }
 
-      const deepSeekText = await callDeepSeekSync(
-        DEEPSEEK_API_KEY!,
-        buildDeepSeekSystemPrompt(body.profile, body.documents!, interlink, useWebCurriculum),
-        deepSeekMessages,
-        DEEPSEEK_DOCUMENT_TIMEOUT_MS,
-      );
+      // ── The document route in ONE hop, opt-in ────────────────────────────
+      //
+      // OFF UNLESS THE REQUEST ASKS FOR IT. Everything below this block is the
+      // pipeline exactly as it shipped, and `body.singleHop` absent must leave
+      // it that way byte for byte - this function answers the website and the
+      // native mobile app from one deployment, with no staging copy to try a
+      // rewrite on, so the flag IS the staging environment. Flip it per request
+      // (see `singleHop` in src/lib/chat-client.ts) and run the same question
+      // both ways against the live function.
+      //
+      // What it changes: the blocking, non-streamed research draft is gone. The
+      // two-hop path below asks DeepSeek for a full 8192-token draft with
+      // `stream: false`, waits out the whole thing, and only then starts GPT -
+      // 8 to 25 seconds before the first character, on the route that fires for
+      // every student who has ever uploaded a file. Here the same engine, given
+      // the same retrieval instructions, writes the finished answer itself and
+      // streams it. This is not new architecture: it is exactly what Detailed+
+      // does directly above, in production, today.
+      //
+      // The two things the retired GPT hop used to own are handed over
+      // explicitly rather than assumed - see SINGLE_HOP_CONTRACT for the length
+      // discipline and the citation-versus-length rule.
+      if (body.singleHop === true) {
+        return deepSeekNotesResponse({
+          apiKey: DEEPSEEK_API_KEY!,
+          systemPrompt: `${buildDeepSeekSystemPrompt(body.profile, docs, interlink, useWebCurriculum, { finalAnswer: true })}
 
-      return openAIRewriteResponse({
-        apiKey: OPENAI_API_KEY,
-        systemPrompt: buildGPTRewriterSystemPrompt(
-          body.profile,
-          body.mode,
-          interlink,
-          useWebCurriculum,
-          true,
-        ),
-        messages: [
-          ...priorMessages,
+${buildDeepSeekNotesSystemPrompt(body.profile, body.mode, interlink, useWebCurriculum, docs)}
+
+${SINGLE_HOP_CONTRACT}`,
+          messages: [
+            ...priorMessages,
+            {
+              role: "user" as const,
+              // The tail is the rewriter's own closing instruction, kept
+              // verbatim where it still applies. It is not decoration: mode
+              // length limits lived in the GPT turn, and a retrieval engine
+              // told to "search thoroughly" will happily write four times the
+              // brief unless the final turn says otherwise.
+              content: `${deepSeekMessages[deepSeekMessages.length - 1].content}
+
+Now produce the final answer STRICTLY following the ${body.mode} mode rules in your system prompt. Do not exceed the length and structure limits for that mode. The required "Source:" line is exempt from those limits and must still be there.`,
+            },
+          ],
+          model: useWebCurriculum
+            ? "deepseek-single-hop-library-web-curriculum"
+            : "deepseek-single-hop-library",
+          source,
+          sources: webSources,
+          timeoutMs: DEEPSEEK_DOCUMENT_TIMEOUT_MS,
+          progress: [...docProgress, WRITING_FRAME],
+        });
+      }
+
+      // ── The shipped two-hop path, now narrated ───────────────────────────
+      //
+      // Unchanged in what it asks the models for: the same research draft, the
+      // same rewriter prompt, the same messages, the same header labels. What
+      // changed is WHEN the response starts. It used to begin after the draft
+      // came back, so the draft - the longest single wait in the app - was
+      // invisible, and "the chat is frozen" was a fair description of a screen
+      // showing nothing for 25 seconds. Opening the stream first buys the
+      // student a live account of it.
+      //
+      // The cost of opening early is the JSON error response; progressStream
+      // Response's header explains the trade and how a failure now reaches the
+      // student. `onFailure` keeps the one thing that must not be lost with it:
+      // the refund the outer catch used to run. That catch no longer sees these
+      // failures, so there is no double refund.
+      return progressStreamResponse({
+        headers: {
+          "X-Medai-Model": useWebCurriculum
+            ? "deepseek-to-openai-library-web-curriculum"
+            : "deepseek-to-openai-library",
+          "X-Medai-Source": source,
+        },
+        prelude: [
+          ...docProgress,
           {
-            role: "user" as const,
-            content: `Student question: ${lastUserMessage.content}
+            type: "step",
+            id: "sources",
+            label: "Pulling the strongest sources",
+            icon: "retrieval",
+            status: "active",
+          },
+        ],
+        failureMessage: "G&D could not finish this answer. Please try again.",
+        onFailure: async () => {
+          const charge = cookieCharge;
+          if (charge?.status === "charged" && authHeaderRaw) {
+            await refundCookies(authHeaderRaw, charge.spendId);
+          }
+        },
+        run: async (emit) => {
+          const deepSeekText = await callDeepSeekSync(
+            DEEPSEEK_API_KEY!,
+            buildDeepSeekSystemPrompt(body.profile, docs, interlink, useWebCurriculum),
+            deepSeekMessages,
+            DEEPSEEK_DOCUMENT_TIMEOUT_MS,
+          );
+
+          emit(researchDraftFrame(deepSeekText));
+          emit(WRITING_FRAME);
+
+          // openAIRewriteResponse's body, inlined because the response has
+          // already been committed as a 200 - there is no JSON error branch
+          // left to reuse. The prompts, the tier, and the failure copy are the
+          // same; keep them in step with that function.
+          const gptResp = await callGPTStream(
+            OPENAI_API_KEY,
+            answerModel(body.mode),
+            buildGPTRewriterSystemPrompt(
+              body.profile,
+              body.mode,
+              interlink,
+              useWebCurriculum,
+              true,
+            ),
+            [
+              ...priorMessages,
+              {
+                role: "user" as const,
+                content: `Student question: ${lastUserMessage.content}
 
 Research draft (document retrieval):
 """
@@ -1951,14 +2573,18 @@ ${deepSeekText}
 """
 
 ${curriculumGuidance ? `Web curriculum guidance:\n${curriculumGuidance}\n\n` : ""}Now produce the final answer STRICTLY following the ${body.mode} mode rules in your system prompt. Do not exceed the length and structure limits for that mode. Do not add facts outside the research draft. Never mention the research draft, DeepSeek, GPT, OpenAI, or any internal step in your answer.`,
-          },
-        ],
-        mode: body.mode,
-        model: useWebCurriculum
-          ? "deepseek-to-openai-library-web-curriculum"
-          : "deepseek-to-openai-library",
-        source,
-        sources: webSources,
+              },
+            ],
+          );
+
+          if (!gptResp.ok) {
+            const text = await gptResp.text();
+            console.error("OpenAI rewrite error:", gptResp.status, text);
+            throw new StudentFacingError(gptRewriteErrorMessage(gptResp.status), gptResp.status);
+          }
+
+          return { stream: gptResp.body, sources: webSources };
+        },
       });
     } else {
       // Plain chat: DeepSeek prepares the factual draft, OpenAI applies the selected mode.
@@ -1995,6 +2621,7 @@ Prepare the factual draft for a final teaching answer.`,
           source,
           sources: webSources,
           timeoutMs: DEEPSEEK_CHAT_TIMEOUT_MS,
+          progress: [...preludeFrames, WRITING_FRAME],
         });
       }
 
@@ -2024,6 +2651,12 @@ ${curriculumGuidance}
         model: useWebCurriculum ? "openai-direct-web-curriculum" : "openai-direct",
         source,
         sources: webSources,
+        // One row, because there is honestly only one piece of work here: this
+        // route has no retrieval and no research hop, and inventing a "thinking"
+        // step to pad the rail would be the client's scripted guess wearing the
+        // server's authority. Any web-curriculum row earned its place - that
+        // hop really did run, and it is most of the wait when it does.
+        progress: [...preludeFrames, WRITING_FRAME],
       });
     }
   } catch (e) {

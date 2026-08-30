@@ -15,9 +15,19 @@
 // `schemaState = "absent"` for the rest of the session, and every exported
 // reader below degrades to "there is no meter" rather than a wrong one.
 //
+// ONLY TWO CALLS ARE ALLOWED TO LATCH IT: cookie_balance(), which IS the
+// meter's read, and spend_cookies(), the client-side charge. The latch is
+// process-wide and sticky, so one of the admin-screen readers at the bottom of
+// this file latching it would take the meter away from a normal student for the
+// rest of their session over a question the meter does not depend on - an
+// admin-only RPC they are not entitled to call, or a grant table they cannot
+// see. Those readers therefore return null on any error and latch nothing;
+// each one says so at its own definition.
+//
 // ── FAILS OPEN. THIS FILE NEVER BLOCKS ANYTHING ─────────────────────────────
 // Every function here is a READ (the balance, for the ring) or a CLIENT-SIDE
-// CHARGE (Battle Royale only - see spendCookiesClientSide). The functions that
+// CHARGE (spendCookiesClientSide, whose only caller - Battle Royale - is
+// priced at 0 today, so in practice this file is all reads). The functions that
 // can actually refuse a student - chat, studybody, last-minute - charge
 // SERVER-SIDE, inside their own Edge Functions, with their own copy of this
 // exact fail-open contract written out in full (see the header comment above
@@ -40,11 +50,13 @@ import { supabase } from "@/integrations/supabase/client";
 
 // ── The price list ───────────────────────────────────────────────────────────
 //
-// Chat at 2 is the number the daily budget of 50 is built around: 20 chat
-// messages is 40 cookies, leaving 10 for a full question set (8, at 40
-// questions) or two Last Minutes. See docs/cookies-and-milestones-plan.md for
-// the owner's reasoning; the numbers themselves are not up for renegotiation
-// here.
+// Chat at 1 is the number the daily budget of 15 is built around: 15 chat
+// messages, or a full 40-question set (4) and eleven messages, or two Last
+// Minutes (2 each) and eleven. Every price here was halved-or-better when the
+// allowance came down from the 30-60 earned ladder to a flat 15 - see
+// supabase/migrations/20260829120000_cookie_budget_15.sql, which carries the
+// whole decision, and docs/cookies-and-milestones-plan.md for the reasoning
+// behind the shape. The numbers themselves are not up for renegotiation here.
 export type CookieAction =
   | "chat"
   | "generate_questions"
@@ -55,17 +67,46 @@ export type CookieAction =
   | "review_answers";
 
 export const COOKIE_COSTS: Record<CookieAction, number | ((count: number) => number)> = {
-  chat: 2,
-  // ceil(count / 5), minimum 1 - a 40-question set is 8.
-  generate_questions: (count) => Math.max(1, Math.ceil((count || 0) / 5)),
-  // ceil(count / 10), minimum 1.
-  generate_flashcards: (count) => Math.max(1, Math.ceil((count || 0) / 10)),
-  generate_plan: 5,
-  last_minute: 5,
-  // Charged ONCE per match by src/lib/battle-royale-client.ts, not once per
-  // underlying generate_questions call a roadmap series makes internally -
-  // see that file's own comment at the charge site.
-  battle_royale: 3,
+  chat: 1,
+  // ceil(count / 10), minimum 1 - a 40-question set is 4.
+  generate_questions: (count) => Math.max(1, Math.ceil((count || 0) / 10)),
+  // ceil(count / 20), minimum 1 - a 20-card set is 1.
+  generate_flashcards: (count) => Math.max(1, Math.ceil((count || 0) / 20)),
+  generate_plan: 2,
+  last_minute: 2,
+  // ZERO, AND NOT BECAUSE A BATTLE IS FREE. Read this before changing it back.
+  //
+  // This entry used to be 2, charged client-side by src/lib/battle-royale-client.ts
+  // "once per match", on the stated belief that the rounds underneath it were
+  // not billed anywhere else. That belief was wrong. A battle is built by
+  // createStraightInSession() (src/lib/studybody-data.ts), which calls
+  // generateStudyQuestions() -> the studybody Edge Function -> its own
+  // chargeCookies(..., "generate_questions", ...). That charge is server-side
+  // and unconditional: it does not know, and cannot be told, that this
+  // particular question set is a battle round. So every match was being billed
+  // TWICE - a flat 2 here plus ceil(n/10) per round there. A six-round roadmap
+  // series cost 8 of a 15-cookie day instead of the 2 it was priced at.
+  //
+  // WHY THE SERVER-SIDE HALF IS THE ONE THAT SURVIVED. The obvious fix is the
+  // other one: keep the flat 2 and have battle-royale-client tell studybody
+  // "don't charge, this is a battle". That is a flag the browser asserts, and
+  // this whole subsystem exists because browser-asserted numbers are worthless -
+  // see the "COOKIES DEFEND A BILL" section at the head of
+  // supabase/migrations/20260824130000_cookies_daily_budget.sql. Anyone who
+  // opened dev tools could send that flag on an ordinary Practice Questions
+  // request and generate for free forever. A double charge is a bug; a
+  // client-settable "bill me nothing" is a hole, and holes are worse.
+  //
+  // So a battle now costs exactly what the AI work under it costs: ceil(n/10)
+  // per round, charged by studybody where it cannot be forged. A single
+  // ten-question match is 1; a six-round roadmap series is 6.
+  //
+  // TO GO BACK TO A FLAT FEE PER MATCH, this number is the only thing to
+  // change - chargeBattleCookie() in battle-royale-client.ts is still wired up
+  // and simply no-ops at 0 - but a flat fee is only honest once a battle is
+  // built by an Edge Function that can charge for the whole match itself,
+  // rather than by the browser calling studybody N times.
+  battle_royale: 0,
   // Marking already-generated answers. The set already paid for itself when
   // it was generated; charging again here would be paying twice for one AI
   // action split across two requests.
@@ -87,6 +128,20 @@ let schemaState: "unknown" | "ready" | "absent" = "unknown";
 /** The last balance a successful read produced, shared across every mounted useCookies(). */
 let cachedBalance: CookieBalance | null = null;
 /**
+ * Whose balance cachedBalance is.
+ *
+ * cookie_balance() reads auth.uid(), so the number it returns belongs to one
+ * account and nobody else - but the cache holding it is a module global that
+ * outlives any particular session. Sign out and sign back in as somebody else
+ * in the same tab (which is exactly what happens on a shared laptop, and what
+ * the owner does every time they check a student's account) and every ring
+ * would paint the PREVIOUS student's remaining count, from cache, for up to
+ * BALANCE_FRESH_MS - a wrong meter, which is the one thing this file is not
+ * allowed to produce. Stamping the cache with its owner makes that
+ * impossible: a different id simply misses the cache and reads fresh.
+ */
+let cachedBalanceUserId: string | null = null;
+/**
  * When cachedBalance was last filled from the server.
  *
  * The meter now renders in three places at once - the sidebar, the mobile
@@ -95,9 +150,23 @@ let cachedBalance: CookieBalance | null = null;
  * number that had not moved. A short window is enough: anything that actually
  * CHANGES the balance already announces itself on COOKIES_CHANGED_EVENT and
  * refetches, so this only ever suppresses a re-read of a value nothing touched.
+ *
+ * It never suppresses a settle: reportCookiesSettled() goes through refetch(),
+ * which calls fetchBalance() directly rather than consulting this window. The
+ * freshness check lives in the MOUNT effect only, which is the only place that
+ * can ask for a number nothing has touched.
  */
 let lastFetchedAt = 0;
 const BALANCE_FRESH_MS = 30_000;
+
+/** True when the shared cache holds a number that belongs to this user and is still inside the freshness window. */
+function cacheIsUsableFor(userId: string): boolean {
+  return (
+    cachedBalance != null &&
+    cachedBalanceUserId === userId &&
+    Date.now() - lastFetchedAt < BALANCE_FRESH_MS
+  );
+}
 
 // A function call, not a bare variable read: TypeScript's control-flow
 // analysis narrows a re-assignable `let` across an `await` using whatever it
@@ -158,7 +227,35 @@ function toBalance(row: Record<string, unknown> | undefined | null): CookieBalan
   return { allowance, spent, remaining };
 }
 
-async function fetchBalance(): Promise<CookieBalance | null> {
+/**
+ * The read that is currently in flight, if any, so that N mounted rings asking
+ * at the same instant make ONE request between them.
+ *
+ * There are three rings on screen at once on a desktop page (sidebar, mobile
+ * topbar, PageHeader) and they all listen to the same events, so every settle
+ * and every tab-focus used to fan out into three identical cookie_balance()
+ * calls in the same tick - the freshness window cannot catch those, because
+ * none of them has returned yet when the next one starts. Sharing the promise
+ * is the whole fix; there is no cache-invalidation question here because the
+ * shared promise is discarded the moment it resolves.
+ */
+let inFlight: { userId: string; promise: Promise<CookieBalance | null> } | null = null;
+
+function fetchBalance(userId: string): Promise<CookieBalance | null> {
+  // Shared only with a caller asking about the SAME account. cookie_balance()
+  // answers for whoever the session says you are, so handing an in-flight read
+  // started under the previous account to a ring that has just mounted under
+  // the new one would reintroduce exactly the wrong-student number that
+  // cachedBalanceUserId exists to prevent.
+  if (inFlight && inFlight.userId === userId) return inFlight.promise;
+  const promise = readBalance(userId).finally(() => {
+    if (inFlight?.promise === promise) inFlight = null;
+  });
+  inFlight = { userId, promise };
+  return promise;
+}
+
+async function readBalance(userId: string): Promise<CookieBalance | null> {
   try {
     const { data, error } = await db.rpc("cookie_balance");
     if (error) {
@@ -172,6 +269,7 @@ async function fetchBalance(): Promise<CookieBalance | null> {
     const balance = toBalance(row);
     if (balance) {
       cachedBalance = balance;
+      cachedBalanceUserId = userId;
       lastFetchedAt = Date.now();
     }
     return balance;
@@ -254,26 +352,36 @@ export type CookiesState =
 export function useCookies(userId: string | null | undefined): CookiesState {
   const [state, setState] = useState<CookiesState>(() => {
     if (schemaState === "absent") return { status: "unavailable", balance: null };
-    if (cachedBalance) return { status: "ready", balance: cachedBalance };
+    if (cachedBalance && userId && cachedBalanceUserId === userId)
+      return { status: "ready", balance: cachedBalance };
     return { status: "loading", balance: null };
   });
 
-  const refetch = useCallback(async () => {
-    if (!userId || userId === "guest") return;
+  /**
+   * Returns whether the question is now SETTLED - a real number arrived, or the
+   * schema latched absent. False means "still nothing, and it might be worth
+   * asking again", which is the only thing the mount retry below acts on.
+   */
+  const refetch = useCallback(async (): Promise<boolean> => {
+    if (!userId || userId === "guest") return true;
     if (schemaState === "absent") {
       setState({ status: "unavailable", balance: null });
-      return;
+      return true;
     }
-    const balance = await fetchBalance();
+    const balance = await fetchBalance(userId);
     // currentSchemaState(), not `schemaState` directly - see its own comment.
     if (currentSchemaState() === "absent") {
       setState({ status: "unavailable", balance: null });
-      return;
+      return true;
     }
     // A transient error (network blip, timeout) leaves the previous reading on
     // screen rather than blanking it - the same "never a wrong flash for a bad
     // moment" posture the schema latch itself uses.
-    if (balance) setState({ status: "ready", balance });
+    if (balance) {
+      setState({ status: "ready", balance });
+      return true;
+    }
+    return false;
   }, [userId]);
 
   useEffect(() => {
@@ -283,27 +391,82 @@ export function useCookies(userId: string | null | undefined): CookiesState {
     }
     // A ring mounting next to rings that are already up - which is what every
     // navigation now does - reads the shared cache instead of asking again.
-    if (cachedBalance && Date.now() - lastFetchedAt < BALANCE_FRESH_MS) {
+    // Keyed by user: see cachedBalanceUserId.
+    if (cacheIsUsableFor(userId) && cachedBalance) {
       setState({ status: "ready", balance: cachedBalance });
       return;
     }
-    void refetch();
+
+    // ── WHY THE FIRST READ RETRIES, AND NOTHING ELSE DOES ──────────────────
+    //
+    // "loading" renders nothing, exactly like "unavailable" - every ring is
+    // behind `status === "ready"`. The difference is that "unavailable" is a
+    // decision and "loading" is an absence, and before this retry the absence
+    // was PERMANENT: refetch() only setState()s when the read succeeds, so one
+    // failed cookie_balance() on mount - an expired token being refreshed, a
+    // cold network, a five-second blip on a phone coming out of a tunnel -
+    // left the hook in "loading" for the rest of the session. No ring, on any
+    // page, until something else in the app happened to fire
+    // COOKIES_CHANGED_EVENT. "The meter doesn't work" looks exactly like that.
+    //
+    // So the mount read - and ONLY the mount read - is retried a couple of
+    // times with a widening gap. This is a READ. It cannot refuse anybody, it
+    // cannot charge anybody, and if every attempt fails the outcome is the
+    // same absence as before, so the fail-open contract at the head of this
+    // file is untouched. `cancelled` stops the chain if the component unmounts
+    // or the user changes mid-flight, so a signed-out tab is not still asking.
+    let cancelled = false;
+    const attempt = async (remaining: number, delayMs: number) => {
+      if (cancelled) return;
+      const settled = await refetch();
+      if (cancelled || settled || remaining <= 0) return;
+      window.setTimeout(() => void attempt(remaining - 1, delayMs * 3), delayMs);
+    };
+    void attempt(2, 1_200);
+    return () => {
+      cancelled = true;
+    };
   }, [userId, refetch]);
 
   useEffect(() => {
     if (!userId || userId === "guest") return;
     const onChanged = (event: Event) => {
       const detail = (event as CustomEvent<{ decrement?: number } | undefined>).detail;
-      if (detail?.decrement) {
-        // cachedBalance was already updated synchronously by reportCookieSpend
-        // before this event fired; mirror it into this instance's own state.
-        if (cachedBalance) setState({ status: "ready", balance: cachedBalance });
+      // cachedBalance was already updated synchronously by reportCookieSpend
+      // before this event fired; mirror it into this instance's own state.
+      // With no cached balance there is nothing to decrement FROM, so fall
+      // through to a real read rather than returning empty-handed - otherwise
+      // an action fired before the first balance landed would leave a ring
+      // that never appears at all.
+      if (detail?.decrement && cachedBalance && cachedBalanceUserId === userId) {
+        setState({ status: "ready", balance: cachedBalance });
         return;
       }
       void refetch();
     };
     window.addEventListener(COOKIES_CHANGED_EVENT, onChanged);
     return () => window.removeEventListener(COOKIES_CHANGED_EVENT, onChanged);
+  }, [userId, refetch]);
+
+  // A tab left open across 00:00 UTC shows yesterday's number until something
+  // spends. Re-reading when the tab comes back to the foreground - and only
+  // when the cached number is already stale - costs one RPC on a real return
+  // to the app and nothing at all on an alt-tab, and it is the same shape of
+  // "the day may have rolled over while you were away" check the rest of the
+  // app makes on focus. Still only a read; still cannot refuse anybody.
+  useEffect(() => {
+    if (!userId || userId === "guest") return;
+    const onFocus = () => {
+      if (document.visibilityState === "hidden") return;
+      if (cacheIsUsableFor(userId)) return;
+      void refetch();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
   }, [userId, refetch]);
 
   return state;
@@ -376,8 +539,12 @@ export async function spendCookiesClientSide(
     const row = Array.isArray(data)
       ? (data[0] as Record<string, unknown>)
       : (data as Record<string, unknown>);
-    const balance = toBalance(row);
-    if (balance) cachedBalance = balance;
+    // Deliberately does NOT write cachedBalance. spend_cookies() is pinned to
+    // auth.uid() so the number it returns is certainly the caller's, but this
+    // function is not told WHOSE it is, and the shared cache is keyed by user
+    // (see cachedBalanceUserId) precisely so a number can never be shown under
+    // the wrong account. Every caller follows this with reportCookiesSettled(),
+    // which re-reads through fetchBalance() and stamps the owner properly.
     if (row?.ok === false) return { status: "refused" };
     const spendId = typeof row?.spend_id === "number" ? (row.spend_id as number) : null;
     return { status: "spent", spendId };
@@ -464,15 +631,24 @@ export async function cookieStatusFor(userId: string): Promise<CookieStatus | nu
   }
 }
 
-/** The FLOOR of the earned ladder - 30 today, read live rather than hard-coded. Only a fallback for cookieStatusFor(). Null if the schema is not there. */
+/**
+ * The FLOOR of the earned ladder - read live rather than hard-coded. Only a
+ * fallback for cookieStatusFor(). Null if the schema is not there.
+ *
+ * Never latches schemaState, in EITHER direction - same rule as
+ * cookieStatusFor() above, and for a reason worth stating once for all four of
+ * the admin readers below it: schemaState is process-wide and STICKY, and
+ * latching it "absent" takes the meter away from this browser for the rest of
+ * the session. Only the meter's own read (cookie_balance) and the client-side
+ * charge (spend_cookies) are entitled to make that call, because only they are
+ * asking the question the meter actually depends on. An admin screen failing to
+ * read a grant table says nothing whatsoever about whether the student sitting
+ * in this tab has a balance.
+ */
 export async function cookieDailyBaseFor(): Promise<number | null> {
   try {
     const { data, error } = await db.rpc("cookie_daily_base");
-    if (error) {
-      if (isMissingFunction(error)) schemaState = "absent";
-      return null;
-    }
-    schemaState = "ready";
+    if (error) return null;
     const value = Number(data);
     return Number.isFinite(value) ? value : null;
   } catch {
@@ -488,10 +664,9 @@ export async function cookieGrantsFor(userId: string): Promise<CookieGrantRow[] 
       .select("id, extra_per_day, starts_on, ends_on, note")
       .eq("user_id", userId)
       .order("starts_on", { ascending: false });
-    if (error) {
-      if (isMissingFunction(error)) schemaState = "absent";
-      return null;
-    }
+    // A table read, and an admin-only one. It never latches schemaState - see
+    // the note on cookieDailyBaseFor().
+    if (error) return null;
     return (data as CookieGrantRow[] | null) ?? [];
   } catch {
     return null;
@@ -506,10 +681,8 @@ export async function cookieSpentTodayFor(userId: string): Promise<number | null
       .select("cost")
       .eq("user_id", userId)
       .eq("spent_on", todayUtcKey());
-    if (error) {
-      if (isMissingFunction(error)) schemaState = "absent";
-      return null;
-    }
+    // Never latches schemaState - see the note on cookieDailyBaseFor().
+    if (error) return null;
     const rows = (data as { cost: number }[] | null) ?? [];
     return Math.max(
       0,
@@ -536,10 +709,8 @@ export async function createCookieGrant(input: {
       note: input.note || null,
       granted_by: input.grantedBy,
     });
-    if (error) {
-      if (isMissingFunction(error)) schemaState = "absent";
-      return false;
-    }
+    // Never latches schemaState - see the note on cookieDailyBaseFor().
+    if (error) return false;
     return true;
   } catch {
     return false;

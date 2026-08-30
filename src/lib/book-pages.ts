@@ -171,15 +171,44 @@ export function annotateBookPages(text: string): string {
   const offset = detectBookPageOffset(pages);
   if (offset === null || offset === 0) return text;
 
-  // Right to left, so each replacement cannot disturb the indexes of the ones
-  // not yet made.
-  let out = text;
-  for (let i = matches.length - 1; i >= 0; i -= 1) {
-    const match = matches[i];
+  // ONE PASS, LEFT TO RIGHT, JOINED ONCE.
+  //
+  // This used to walk the matches right to left, rebuilding the WHOLE string on
+  // every marker (`out.slice(0, at) + replacement + out.slice(...)`). That is
+  // correct but quadratic: each of a textbook's 1,600 markers copied all ~5 MB
+  // of text, so annotating Gray's Anatomy cost ~33 seconds of blocked main
+  // thread - and it ran after the last page was read, so the upload bar sat at
+  // "100%" throughout, looking frozen.
+  //
+  // Collecting the pieces and joining once is the same output for O(n) work.
+  // Right-to-left was only ever needed because each write disturbed the indexes
+  // of the writes still to come; a cursor never looks back, so the direction
+  // flips for free.
+  //
+  // WHY THE SPANS CANNOT OVERLAP, which is what makes the two orders equivalent.
+  // Each rewrite replaces `[at, at + "[Page ${sheet}]".length)`. The regex match
+  // that produced `at` is `[Page` + \s+ + digits + `]` + \s*, so it is at least
+  // 7 + digits.length characters, while the span replaced is exactly
+  // 7 + String(Number(digits)).length - and Number() only ever drops leading
+  // zeros, never adds digits. So the replaced span is always within this match,
+  // and regex matches never overlap. The cursor is therefore monotonic.
+  //
+  // Deliberately preserved, NOT fixed: the span replaced is `[Page N]` built
+  // from the PARSED number, so a source marker written `[Page  7]` (two spaces)
+  // or `[Page 007]` is only partly overwritten, leaving a residue character.
+  // Both extraction paths emit exactly one space and no leading zeros
+  // (src/lib/pdf.ts, and the OCR pool beside it), so this cannot arise in
+  // practice - but changing it here would alter stored text for anything that
+  // ever did, and this rewrite is meant to be byte-identical, not better.
+  const parts: string[] = [];
+  let cursor = 0;
+  for (const match of matches) {
     const at = match.index ?? 0;
     const sheet = Number(match[1]);
-    const replacement = pageMarker(sheet, bookPageFor(sheet, offset));
-    out = out.slice(0, at) + replacement + out.slice(at + `[Page ${sheet}]`.length);
+    parts.push(text.slice(cursor, at));
+    parts.push(pageMarker(sheet, bookPageFor(sheet, offset)));
+    cursor = at + `[Page ${sheet}]`.length;
   }
-  return out;
+  parts.push(text.slice(cursor));
+  return parts.join("");
 }

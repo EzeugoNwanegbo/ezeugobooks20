@@ -1298,6 +1298,277 @@ html.gd-low-power .gd-forming-orb::after {
   animation-duration: 2.6s;
 }
 
+/* ── Answer timeline — the pre-answer wait as a narrated activity log ───────
+   Styles for src/components/answer-timeline.tsx, which replaces the
+   .gd-answer-forming skeleton above. Everything is drawn out of the palette
+   tokens, so all four skins (dark / light / brutal / neo) get it for free; the
+   only skin-specific rule is the brutal one down in the BRUTALISM block, where
+   a 1px hairline and a soft-filled chip would be out of that skin's language.
+
+   The whole thing is muted on purpose. The one signal is BRIGHTNESS: the step in
+   flight is at full --foreground, finished steps sit back at a dimmed
+   --muted-foreground, and nothing here takes an accent colour. Copper on the
+   active row was tried and it turns a loader into the loudest thing on a screen
+   that has nothing else on it. Failure is the single exception — see .is-failed.
+
+   Motion is one row arriving and one rail segment drawing with it. Nothing
+   loops, so this costs nothing while a long answer streams. */
+.gd-timeline {
+  display: grid;
+  gap: 0.3rem;
+  max-width: 560px;
+  font-family: var(--font-sans);
+}
+
+/* Header: "Working for 7s" and the disclosure. Brighter than the rows below it
+   because it is the one line that is ABOUT the wait rather than part of it. */
+.gd-timeline-head {
+  display: flex;
+  align-items: center;
+  min-height: 1.3rem;
+}
+.gd-timeline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  margin: 0;
+  padding: 0.1rem 0.3rem 0.1rem 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.gd-timeline-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.gd-timeline-elapsed {
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  /* Tabular, or the row jogs sideways every time the seconds tick over. */
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+  transition: color 200ms ease;
+}
+.gd-timeline-toggle:hover .gd-timeline-elapsed {
+  color: var(--foreground);
+}
+.gd-timeline-chevron {
+  width: 0.8rem;
+  height: 0.8rem;
+  flex: none;
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.gd-timeline-toggle[aria-expanded="true"] .gd-timeline-chevron {
+  transform: rotate(180deg);
+}
+
+.gd-timeline-steps {
+  display: grid;
+  /* Zero gap on purpose: the rail is one segment per row, so any gap between
+     rows would cut the line into dashes. Row spacing comes from padding. */
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gd-timeline-step {
+  position: relative;
+  padding: 0.2rem 0 0.2rem 1.35rem;
+  animation: gdTimelineIn 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+/* The rail. One segment per row rather than one line behind the list, so it
+   visibly extends as each step arrives instead of being a pre-drawn track
+   waiting to be filled — a full-height rail on the first row would be a picture
+   of work that has not happened yet. */
+.gd-timeline-step::before {
+  content: "";
+  position: absolute;
+  left: 0.31rem;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--foreground) 16%, transparent);
+  transform-origin: top;
+  animation: gdTimelineRail 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+/* The rail stops with the last row instead of running on into empty space. */
+.gd-timeline-step:last-child::before {
+  bottom: 0.42rem;
+}
+
+.gd-timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+.gd-timeline-icon {
+  width: 0.82rem;
+  height: 0.82rem;
+  flex: none;
+  color: color-mix(in srgb, var(--muted-foreground) 78%, transparent);
+  transition: color 420ms ease;
+}
+.gd-timeline-label {
+  min-width: 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+  color: var(--muted-foreground);
+  transition: color 420ms ease;
+}
+/* A quiet trailing metric — "18 chunks". Mono because it is a measurement, the
+   same reason plate numerals are mono everywhere else in this file. */
+.gd-timeline-note {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--muted-foreground) 62%, transparent);
+}
+
+/* The step in flight is the brightest thing here. Brightness, not colour. */
+.gd-timeline-step.is-active > .gd-timeline-row .gd-timeline-label,
+.gd-timeline-step.is-active > .gd-timeline-row .gd-timeline-icon {
+  color: var(--foreground);
+}
+/* Finished, and "ran but found nothing" — both sit back. `empty` is a real
+   outcome with its own honest label from the server, not a failure, so it is
+   styled as settled rather than alarming. */
+.gd-timeline-step.is-done > .gd-timeline-row .gd-timeline-label,
+.gd-timeline-step.is-empty > .gd-timeline-row .gd-timeline-label {
+  color: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
+}
+.gd-timeline-step.is-empty > .gd-timeline-row .gd-timeline-icon {
+  color: color-mix(in srgb, var(--muted-foreground) 55%, transparent);
+}
+
+/* The one place colour is allowed. A step that threw must not read as calm —
+   same call stage-progress.tsx makes for the same reason. */
+.gd-timeline-step.is-failed > .gd-timeline-row .gd-timeline-label,
+.gd-timeline-step.is-failed > .gd-timeline-row .gd-timeline-icon {
+  color: var(--destructive);
+}
+.gd-timeline-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin-top: 0.15rem;
+  min-width: 0;
+}
+.gd-timeline-error .gd-timeline-icon {
+  margin-top: 0.15rem;
+  width: 0.72rem;
+  height: 0.72rem;
+  color: var(--destructive);
+}
+.gd-timeline-error-text {
+  min-width: 0;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--destructive);
+  overflow-wrap: anywhere;
+}
+
+/* Sub-rows: the specific things, indented under the step that found them, on
+   their own fainter rail so the nesting reads without a bullet or a dash. */
+.gd-timeline-subs {
+  position: relative;
+  display: grid;
+  gap: 0;
+  margin: 0.1rem 0 0.15rem;
+  padding: 0 0 0 1.15rem;
+  list-style: none;
+}
+.gd-timeline-subs::before {
+  content: "";
+  position: absolute;
+  left: 0.28rem;
+  top: 0.12rem;
+  bottom: 0.3rem;
+  width: 1px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+.gd-timeline-sub {
+  display: flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-width: 0;
+  padding: 0.13rem 0;
+  animation: gdTimelineIn 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.gd-timeline-sub .gd-timeline-icon {
+  width: 0.72rem;
+  height: 0.72rem;
+  color: color-mix(in srgb, var(--muted-foreground) 58%, transparent);
+}
+.gd-timeline-sub-label {
+  flex: none;
+  font-size: 0.74rem;
+  color: color-mix(in srgb, var(--muted-foreground) 76%, transparent);
+}
+/* The specific thing — a file name, a query — in the plate mono face, on ONE
+   line, truncated rather than wrapped. A student's 90-character PDF title must
+   not turn a loading state into a paragraph. `min-width: 0` is what actually
+   lets it shrink inside the flex row; without it the row grows instead. */
+.gd-timeline-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.02rem 0.34rem;
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 0.69rem;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--foreground) 68%, transparent);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+@keyframes gdTimelineIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes gdTimelineRail {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+/* Reduced motion keeps every row and every rail segment — they are content, not
+   decoration — and only drops the arrival. Same bargain .gd-msg-in makes. */
+@media (prefers-reduced-motion: reduce) {
+  .gd-timeline-step,
+  .gd-timeline-step::before,
+  .gd-timeline-sub {
+    animation: none;
+  }
+  .gd-timeline-label,
+  .gd-timeline-icon,
+  .gd-timeline-elapsed,
+  .gd-timeline-chevron {
+    transition: none;
+  }
+}
+html.gd-low-power .gd-timeline-step,
+html.gd-low-power .gd-timeline-step::before,
+html.gd-low-power .gd-timeline-sub {
+  animation: none;
+}
+
 /* Markdown prose styling */
 .medai-prose {
   color: var(--foreground);
@@ -2898,6 +3169,21 @@ html.gd-low-power [style*="gd-dot-wave"] {
 .brutal .gd-loading-bar::after {
   animation: none;
   background: var(--luxury-soft-strong);
+}
+
+/* The answer timeline in brutal: the rail is ink and the mono chip is a ruled
+   box, not a tinted one. The base rules already resolve correctly here (they are
+   all color-mix on --foreground) - this is only the skin's own language. */
+.brutal .gd-timeline-step::before,
+.brutal .gd-timeline-subs::before {
+  width: 2px;
+  background: var(--brutal-ink);
+}
+.brutal .gd-timeline-chip {
+  border: 2px solid var(--brutal-ink);
+  border-radius: 0;
+  background: var(--surface-elevated);
+  color: var(--brutal-ink);
 }
 
 /* ── 3. Every outline is ink, and thicker ──

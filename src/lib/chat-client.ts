@@ -1,5 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Profile } from "@/lib/auth-context";
+// The progress wire format is DEFINED by the timeline component, not here: it
+// owns the schema, the reducer that folds these frames into rows, and the
+// ordering contract the edge function follows. Importing the type rather than
+// restating it means a change there is a type error here instead of a silent
+// mismatch. `import type` is erased at build, so this adds no runtime edge
+// between a lib module and a component.
+import type { AnswerProgressEvent } from "@/components/answer-timeline";
 import {
   costFor,
   reportCookieSpend,
@@ -18,6 +25,43 @@ const LENGTH_LIMIT_NOTE =
   '\n\nNote: The AI hit its response length limit before finishing. Ask "continue" and it can pick up from here.';
 const INCOMPLETE_STREAM_NOTE =
   '\n\nNote: The connection closed before the AI sent its final completion marker, so this answer may be incomplete. Ask "continue" or retry the question.';
+
+// ── Single-hop document answers: the opt-in switch ──────────────────────────
+//
+// The chat edge function can answer a document-grounded question in one
+// streamed call instead of a blocking research draft followed by a styling
+// rewrite - 8 to 25 seconds of blank screen, removed. It ships OFF: that one
+// deployed function serves this site AND the native mobile app, there is no
+// staging copy of it, and the owner wants the same question run both ways
+// against the real thing before students meet the new shape.
+//
+// So the switch is per request, and it can be thrown without a rebuild:
+//
+//     window.__gdSingleHop = true          // this tab, until reload
+//     localStorage.gd_single_hop = "1"     // this browser, until cleared
+//
+// An explicit `singleHop` argument beats both. When nothing is set the flag is
+// left OUT of the request body entirely, so an unflagged request is byte for
+// byte the request that shipped.
+const SINGLE_HOP_STORAGE_KEY = "gd_single_hop";
+
+function singleHopOverride(): boolean | undefined {
+  if (typeof window === "undefined") return undefined;
+
+  const live = (window as unknown as { __gdSingleHop?: unknown }).__gdSingleHop;
+  if (typeof live === "boolean") return live;
+
+  try {
+    const stored = window.localStorage.getItem(SINGLE_HOP_STORAGE_KEY);
+    if (stored === "1" || stored === "true") return true;
+    if (stored === "0" || stored === "false") return false;
+  } catch {
+    // Private mode, or storage blocked by policy. A missing test flag is never
+    // worth throwing over.
+  }
+
+  return undefined;
+}
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -80,9 +124,11 @@ export async function streamChat({
   documentMode,
   forceWebSearch,
   interlink,
+  singleHop,
   onDelta,
   onMeta,
   onSources,
+  onProgress,
   onDone,
   onError,
   onCancel,
@@ -95,9 +141,18 @@ export async function streamChat({
   documentMode?: DocumentMode;
   forceWebSearch?: boolean;
   interlink?: boolean;
+  /** Force the one-call document route on or off for this request. Unset means
+   *  "whatever the console/localStorage override says", which is normally off. */
+  singleHop?: boolean;
   onDelta: (chunk: string) => void;
   onMeta?: (meta: { model: string; source: string }) => void;
   onSources?: (sources: WebSource[]) => void;
+  /** One frame of the server's account of the wait. Fold each into the timeline
+   *  with `applyAnswerProgress` - the reducer is pure and dedupes replays, so
+   *  the handler is a single setState. Never fires against an edge function
+   *  that predates progress frames; the caller keeps its scripted fallback for
+   *  exactly that case. */
+  onProgress?: (event: AnswerProgressEvent) => void;
   onDone: () => void | Promise<void>;
   onError: (err: string) => void;
   onCancel?: () => void;
@@ -162,6 +217,9 @@ export async function streamChat({
         documentMode,
         forceWebSearch,
         interlink,
+        // JSON.stringify drops undefined keys, so an unflagged request carries
+        // no trace of this at all.
+        singleHop: (singleHop ?? singleHopOverride()) === true ? true : undefined,
       }),
     });
   } catch (err) {
@@ -207,6 +265,10 @@ export async function streamChat({
   let buffer = "";
   let done = false;
   let sawDoneMarker = false;
+  // Set only by a `medai_error` frame - a failure the server could not report
+  // as an HTTP status because it had already opened the stream. See the handler
+  // for it below.
+  let streamError: string | null = null;
   let finishReason: string | null = null;
   let receivedContent = false;
 
@@ -254,6 +316,26 @@ export async function streamChat({
           onSources?.(parsed.medai_sources as WebSource[]);
           continue;
         }
+        // A top-level key, tested BEFORE the delta - the same shape
+        // medai_sources has had since it shipped, and the reason an old client
+        // can read a new stream safely: it is not an array under
+        // medai_sources, it carries no choices[0].delta.content, so it falls
+        // through both branches and is discarded without touching the answer.
+        if (parsed.medai_progress && typeof parsed.medai_progress === "object") {
+          onProgress?.(parsed.medai_progress as AnswerProgressEvent);
+          continue;
+        }
+        // A failure the server hit AFTER committing a 200. It opens the stream
+        // early now, to narrate the slow work behind it, which costs it the
+        // ability to answer with an HTTP error - so the error comes down the
+        // stream instead, in place of an answer, and the stream closes with no
+        // [DONE]. A client that does not know this frame still reports the
+        // failure, via the "ended before any response arrived" path below.
+        if (typeof parsed.medai_error === "string" && parsed.medai_error) {
+          streamError = parsed.medai_error;
+          done = true;
+          break;
+        }
         const content = parsed.choices?.[0]?.delta?.content as string | undefined;
         const parsedFinishReason = parsed.choices?.[0]?.finish_reason as string | null | undefined;
         if (parsedFinishReason) finishReason = parsedFinishReason;
@@ -284,6 +366,26 @@ export async function streamChat({
           onSources?.(parsed.medai_sources as WebSource[]);
           continue;
         }
+        // A top-level key, tested BEFORE the delta - the same shape
+        // medai_sources has had since it shipped, and the reason an old client
+        // can read a new stream safely: it is not an array under
+        // medai_sources, it carries no choices[0].delta.content, so it falls
+        // through both branches and is discarded without touching the answer.
+        if (parsed.medai_progress && typeof parsed.medai_progress === "object") {
+          onProgress?.(parsed.medai_progress as AnswerProgressEvent);
+          continue;
+        }
+        // A failure the server hit AFTER committing a 200. It opens the stream
+        // early now, to narrate the slow work behind it, which costs it the
+        // ability to answer with an HTTP error - so the error comes down the
+        // stream instead, in place of an answer, and the stream closes with no
+        // [DONE]. A client that does not know this frame still reports the
+        // failure, via the "ended before any response arrived" path below.
+        if (typeof parsed.medai_error === "string" && parsed.medai_error) {
+          streamError = parsed.medai_error;
+          done = true;
+          break;
+        }
         const content = parsed.choices?.[0]?.delta?.content as string | undefined;
         const parsedFinishReason = parsed.choices?.[0]?.finish_reason as string | null | undefined;
         if (parsedFinishReason) finishReason = parsedFinishReason;
@@ -295,6 +397,15 @@ export async function streamChat({
         /* ignore */
       }
     }
+  }
+
+  if (streamError) {
+    await reader.cancel().catch(() => {});
+    // The charge happened server-side before the stream opened, and the edge
+    // function refunds it on this path itself; this only reconciles the ring.
+    reportCookiesSettled();
+    onError(streamError);
+    return;
   }
 
   if (finishReason === "length") {

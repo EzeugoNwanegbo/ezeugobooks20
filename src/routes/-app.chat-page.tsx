@@ -4,12 +4,17 @@ import {
   cloneElement,
   isValidElement,
   lazy,
+  memo,
   Suspense,
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type FormEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -26,6 +31,11 @@ import {
 import { takePendingChatDoc } from "@/lib/chat-handoff";
 import { buildContinuationPrompt, buildExplainLastAnswerPrompt } from "@/lib/chat-portability";
 import { StreakOpening, useStreakOpening } from "@/components/streak-opening";
+import {
+  AnswerTimelineLoader,
+  applyAnswerProgress,
+  type AnswerTimelineStep,
+} from "@/components/answer-timeline";
 import {
   emptyGamificationStats,
   loadGamificationStats,
@@ -831,6 +841,35 @@ function studyMaterialMissMessage(scope: "selected" | "library"): string {
   return `I couldn't find an exact hit in ${target}. Try a more exact phrase, select the specific PDF/page, or ask me to answer from general knowledge.`;
 }
 
+// How far the transcript is from the bottom, in pixels. 0 means pinned.
+function distanceFromBottom(el: HTMLElement): number {
+  return el.scrollHeight - el.scrollTop - el.clientHeight;
+}
+
+// Inside this much of the bottom counts as "following the conversation". Past
+// it, the student has deliberately scrolled up to re-read something and NOTHING
+// in this file is allowed to drag them back down. The number is the one the
+// streaming guard has always used; it is shared now so every pin path draws the
+// line in the same place.
+const NEAR_BOTTOM_PX = 120;
+
+// An answer is not finished growing when React commits it. PDF previews mount
+// their canvases, images decode, KaTeX re-typesets - each of those grows the
+// scroller a frame or three after the pin already ran, which is how the chat
+// used to open "nearly" at the bottom. A pin therefore opens a settle window
+// and keeps re-pinning for as long as it stays open.
+const SETTLE_WINDOW_MS = 1200;
+// Restores (tab back to the foreground, bfcache) need a much shorter one: the
+// content is already laid out, only the scroll offset has to be reasserted.
+const RESTORE_SETTLE_MS = 600;
+
+// A downward drag of this many pixels on the composer dismisses the keyboard.
+// Below it, the gesture is a tap or a stray finger and is left alone.
+const PULL_DISMISS_PX = 52;
+// ...unless it was a flick: fast and clearly downward counts even when short.
+const PULL_FLICK_MIN_PX = 22;
+const PULL_FLICK_PX_PER_MS = 0.5;
+
 export function ChatPage() {
   const { user, profile: savedProfile, refreshProfile } = useAuth();
   const profile = savedProfile ?? GUEST_PROFILE;
@@ -875,7 +914,32 @@ export function ChatPage() {
   const [handoffCopied, setHandoffCopied] = useState(false);
   const lastScrollY = useRef(0);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  // The transcript's own box inside the scroller. Watched by a ResizeObserver so
+  // late-painting answer content (previews, images, KaTeX) can re-pin the view.
+  const transcriptRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // "The next time messages land, JUMP to the bottom instead of animating."
+  // Armed on mount and on every conversation switch; consumed once messages
+  // actually exist, so a slow fetch still gets the jump rather than the slide.
+  const pendingInstantPinRef = useRef(true);
+  // Which `messages` identity the load pin already handled, so the arrival
+  // effect below does not follow an instant jump with a smooth animation.
+  const instantPinnedForRef = useRef<DisplayMessage[] | null>(null);
+  // Where the student actually wants to be. Updated only by scrolls that happen
+  // at a stable content height - see the tracker effect for why.
+  const nearBottomRef = useRef(true);
+  // performance.now() deadline for the re-pin window described at SETTLE_WINDOW_MS,
+  // and the scroll height the pin that opened it was already accounting for.
+  const settleUntilRef = useRef(0);
+  const settleHeightRef = useRef(0);
+  // `streaming`, readable from a ResizeObserver callback that is not a render.
+  const streamingRef = useRef(false);
+  // performance.now() deadline during which scroll events are ours, not the
+  // student's. The composer's scroll handler ignores those.
+  const programmaticScrollUntilRef = useRef(0);
+  // In-flight pull-down gesture on the composer, or null.
+  const composerPullRef = useRef<{ pointerId: number; y: number; at: number } | null>(null);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const transcriptBaseRef = useRef("");
   const chatAbortRef = useRef<AbortController | null>(null);
@@ -1001,6 +1065,19 @@ export function ChatPage() {
     () => docs.filter((doc) => selectedDocIds.includes(doc.id)),
     [docs, selectedDocIds],
   );
+
+  // The server's own account of what it is doing, rebuilt frame by frame from
+  // the chat stream. Empty until the first `medai_progress` frame arrives, and
+  // the timeline falls back to its scripted steps for as long as it stays that
+  // way - which is the state every request is in until the edge function
+  // carrying progress frames is actually deployed.
+  const [serverSteps, setServerSteps] = useState<readonly AnswerTimelineStep[]>([]);
+
+  // Memoised rather than mapped inline at the <Message> call site: this is a
+  // new array on every render otherwise, and it is passed to every message in
+  // the transcript. That is the exact prop shape that silently turns a
+  // React.memo into a no-op, so it is stable from the start.
+  const selectedDocNames = useMemo(() => selectedDocs.map((doc) => doc.file_name), [selectedDocs]);
 
   const filteredDocs = useMemo(() => {
     const q = fileSearch.trim().toLowerCase();
@@ -1224,6 +1301,75 @@ export function ChatPage() {
     };
   }, [conversationId, sessionReady, user]);
 
+  // ── Keeping the transcript pinned to the newest message ────────────────────
+  //
+  // Three different moments want the view at the bottom and they emphatically
+  // do not want the same animation:
+  //
+  //   * A LOAD - first paint, a conversation switch, coming back to the page -
+  //     must jump. Animating from the top of a long transcript is a slide the
+  //     student sits and watches before they can read anything, and it is what
+  //     "the chat doesn't open at the bottom" was actually describing.
+  //   * An ARRIVAL in a conversation already on screen animates, so a new
+  //     bubble reads as arriving rather than teleporting.
+  //   * STREAMING jumps - see the judder note on the arrival effect.
+  //
+  // All three stop at the same line: a student who scrolled up to re-read
+  // something is never yanked back down.
+
+  // Every jump this component makes goes through here, so that (a) the settle
+  // observer and the restore handlers cannot disagree about what "the bottom"
+  // means, and (b) the scroll events it causes are marked as ours - otherwise
+  // the composer's scroll handler reads a programmatic pin as the student
+  // flicking down the page and slides the mobile top bar away on open.
+  const jumpToBottom = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    programmaticScrollUntilRef.current = performance.now() + 250;
+    el.scrollTop = el.scrollHeight;
+    nearBottomRef.current = true;
+  }, []);
+
+  // Opens the re-pin window, and records the height the pin that opened it has
+  // ALREADY taken into account. Without that second half the window would fire
+  // on the very growth that triggered it - the message that just mounted - and
+  // a jump would cancel the smooth arrival animation before it drew a frame.
+  // Only content that arrives later than the pin gets to move the view.
+  const armSettle = useCallback((ms: number = SETTLE_WINDOW_MS) => {
+    settleUntilRef.current = performance.now() + ms;
+    settleHeightRef.current = scrollerRef.current?.scrollHeight ?? 0;
+  }, []);
+
+  useEffect(() => {
+    streamingRef.current = streaming;
+  }, [streaming]);
+
+  // Arm the jump for anything that replaces the transcript wholesale rather
+  // than appending to it. This also runs on mount, which is the path that
+  // matters for "changing page and coming back": /app/chat is a lazy route
+  // under the shell's <Outlet/>, so navigating away UNMOUNTS this component and
+  // navigating back mounts a fresh one whose messages then rehydrate from the
+  // persisted session and from Supabase. There is no scroll position to
+  // restore on that path - there is a brand new scroller starting at 0.
+  useEffect(() => {
+    pendingInstantPinRef.current = true;
+  }, [conversationId]);
+
+  // The load pin. useLayoutEffect, not useEffect: it has to land in the same
+  // frame the messages are painted in, or a long transcript flashes its top
+  // before snapping - the flash being a smaller version of the complaint.
+  useLayoutEffect(() => {
+    if (!pendingInstantPinRef.current) return;
+    // Nothing to pin to yet (empty chat, or the fetch has not resolved). Stay
+    // armed rather than burning the jump on an empty scroller.
+    if (messages.length === 0) return;
+    if (!scrollerRef.current) return;
+    pendingInstantPinRef.current = false;
+    instantPinnedForRef.current = messages;
+    jumpToBottom();
+    armSettle();
+  }, [messages, jumpToBottom, armSettle]);
+
   // The reveal loop appends a slice every 12ms, so `messages` changes identity
   // ~83x a second while an answer streams. A `behavior: "smooth"` scroll is an
   // easing ANIMATION: asking for it again that often cancels the one in flight
@@ -1238,13 +1384,107 @@ export function ChatPage() {
     if (!el) return;
     if (streaming) {
       // Never yank back a student who scrolled up to re-read something.
-      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-      if (distanceFromBottom > 120) return;
-      el.scrollTop = el.scrollHeight;
+      if (distanceFromBottom(el) > NEAR_BOTTOM_PX) return;
+      jumpToBottom();
       return;
     }
+    // The load pin above already put this exact commit at the bottom, on
+    // purpose and without an animation. Do not animate it a second time.
+    if (instantPinnedForRef.current === messages) return;
+    programmaticScrollUntilRef.current = performance.now() + 700;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [messages, streaming]);
+    nearBottomRef.current = true;
+    // The answer that just finished streaming is still growing: this is where
+    // its PDF preview mounts and its KaTeX re-typesets. The settle window below
+    // corrects the last few hundred pixels once that lands.
+    armSettle();
+  }, [messages, streaming, jumpToBottom, armSettle]);
+
+  // Remembering where the student actually is. This is deliberately a separate
+  // listener from the composer's handler further down: that one re-registers
+  // whenever focus changes and owns its own baseline bookkeeping, and the two
+  // must not become entangled.
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    // Content growing or shrinking under the scroller moves scrollTop without
+    // the student touching anything, and arrives here as an ordinary scroll
+    // event with a large delta. Reading "they are 800px from the bottom" out of
+    // that would be reading the preview that just mounted, not the reader. Only
+    // a scroll at a STABLE content height says anything about intent.
+    let lastScrollHeight = el.scrollHeight;
+    const track = () => {
+      const height = el.scrollHeight;
+      if (height !== lastScrollHeight) {
+        lastScrollHeight = height;
+        return;
+      }
+      nearBottomRef.current = distanceFromBottom(el) <= NEAR_BOTTOM_PX;
+    };
+    track();
+    el.addEventListener("scroll", track, { passive: true });
+    return () => el.removeEventListener("scroll", track);
+  }, []);
+
+  // The settle window (see SETTLE_WINDOW_MS). Same ResizeObserver shape as the
+  // composer-height effect below, pointed at the transcript instead: while a
+  // window is open, anything that changes the transcript's height re-pins.
+  // nearBottomRef is the guard rather than a fresh distance measurement,
+  // because the growth being reacted to is itself what pushed the bottom away -
+  // measuring after it would read every late-loading image as "they scrolled up".
+  useEffect(() => {
+    const content = transcriptRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const el = scrollerRef.current;
+      if (!el) return;
+      if (performance.now() > settleUntilRef.current) return;
+      // Streaming does its own following, against a LIVE distance measurement.
+      // Leaving this out of it matters: while text is being appended the height
+      // never holds still, so the tracker below cannot tell a real scroll from
+      // the growth and nearBottomRef stays frozen at whatever it last was - a
+      // guard this observer must not lean on mid-answer.
+      if (streamingRef.current) return;
+      if (el.scrollHeight === settleHeightRef.current) return;
+      if (!nearBottomRef.current) return;
+      settleHeightRef.current = el.scrollHeight;
+      jumpToBottom();
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [jumpToBottom]);
+
+  // Coming back to the website. A tab returning from the background and a page
+  // restored from the bfcache (mobile Safari and Chrome both do this on Back)
+  // arrive with the scroll offset they left with, and neither remounts the
+  // route nor changes `messages` - so none of the pins above fire.
+  //
+  // This one re-pins only for a student who WAS at the bottom when they left.
+  // Always re-pinning would mean someone who backgrounded the app half-way up
+  // an answer - the single most common way to leave, because they went to look
+  // something up - loses their place on the way back, which is a worse bug than
+  // the one being fixed. A genuinely fresh conversation load does not depend on
+  // this path at all: it is covered by the load pin, which always jumps.
+  useEffect(() => {
+    const repin = () => {
+      if (!scrollerRef.current) return;
+      if (!nearBottomRef.current) return;
+      jumpToBottom();
+      // Some browsers reassert the saved offset after the event, so claim the
+      // next frame too, then let the settle window mop up any relayout.
+      requestAnimationFrame(() => jumpToBottom());
+      armSettle(RESTORE_SETTLE_MS);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") repin();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pageshow", repin);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pageshow", repin);
+    };
+  }, [jumpToBottom, armSettle]);
 
   // Keep the message list's bottom padding in sync with the composer's actual
   // height (it grows with the mode tabs, library row, and multi-line input).
@@ -1265,12 +1505,13 @@ export function ChatPage() {
     // Content growing or shrinking under the scroller moves scrollTop on its own
     // — a PDF preview mounting inside an answer, its pages painting in, an image
     // loading. Those arrive here as ordinary scroll events with a big delta, and
-    // would slide the composer away as if the student had scrolled. Only a scroll
+    // would slide the top bar away as if the student had scrolled. Only a scroll
     // that happens at a STABLE content height is a real one; anything else just
     // resyncs the baseline and is ignored.
     let lastScrollHeight = scroller.scrollHeight;
 
     const handleScroll = () => {
+      // Typing is not scrolling: while the field has focus the chrome stays put.
       if (isInputFocused) return;
       const currentScrollY = scroller.scrollTop;
       const diff = currentScrollY - lastScrollY.current;
@@ -1282,11 +1523,27 @@ export function ChatPage() {
         return;
       }
 
+      // A pin this component performed is not the student flicking down the
+      // page. Without this, opening a conversation - which now always jumps to
+      // the bottom - would read as one long downward scroll and take the mobile
+      // top bar with it, so the chat would open with its own header missing.
+      if (performance.now() <= programmaticScrollUntilRef.current) {
+        lastScrollY.current = currentScrollY;
+        return;
+      }
+
       // scroll threshold
       if (Math.abs(diff) < 20) return;
 
+      // Scrolling used to slide the COMPOSER away too. That is the automatic
+      // drop the owner asked to have taken back out: a student reading back
+      // through an answer had the input - and on Android the soft keyboard with
+      // it - leave the screen without asking, and the only way to get it back
+      // was to scroll the other way. The composer now only ever leaves on a
+      // deliberate pull-down (see onComposerPointerDown), and scrolling may
+      // only ever bring it BACK. The top bar, which is chrome rather than the
+      // thing being typed into, still hides on the way down.
       if (diff > 0 && currentScrollY > 150) {
-        setHideComposer(true);
         window.dispatchEvent(new CustomEvent("gd:chat-scroll", { detail: { hide: true } }));
       } else {
         setHideComposer(false);
@@ -1312,6 +1569,74 @@ export function ChatPage() {
     setHideComposer(false);
     window.dispatchEvent(new CustomEvent("gd:chat-scroll", { detail: { hide: false } }));
   }, [conversationId]);
+
+  // ── Pull the composer (and the soft keyboard) down by hand ─────────────────
+  //
+  // Nothing in this page dismisses the keyboard on its own any more. It stays up
+  // between messages, it stays up while the transcript scrolls, and the only
+  // thing that puts it away is this: a deliberate downward drag on the composer.
+  //
+  // The gesture deliberately does NOT start inside the text field. A drag there
+  // is the student selecting their own draft or scrolling a long one, and
+  // stealing it would break both. It starts on the bar around the field and on
+  // the grab handle above it, which is what the handle is for.
+  const dismissKeyboard = () => {
+    const field = textareaRef.current;
+    if (field) field.blur();
+    setHideComposer(true);
+  };
+
+  const revealComposer = () => {
+    setHideComposer(false);
+    window.dispatchEvent(new CustomEvent("gd:chat-scroll", { detail: { hide: false } }));
+  };
+
+  // Stops a composer button from stealing focus out of the text field when it is
+  // pressed. See the note on the Send button for the bug this fixes; mousedown
+  // (not pointerdown) because cancelling it is the one form of this that every
+  // engine agrees still delivers the click.
+  const keepFocus = (e: ReactMouseEvent) => {
+    e.preventDefault();
+  };
+
+  const onComposerPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // Mouse users already have Esc, click-away and a keyboard that is not in
+    // the way; a mouse-drag threshold on the composer would only ever fire by
+    // accident while they select text on the bar.
+    if (e.pointerType === "mouse") return;
+    const target = e.target as HTMLElement | null;
+    // The handle is the one control the gesture is allowed to start on - it is
+    // the control FOR the gesture. Everything else interactive keeps its taps.
+    if (!target?.closest("[data-composer-handle]")) {
+      if (target?.closest("textarea, input, button, a, [role='button']")) return;
+    }
+    composerPullRef.current = { pointerId: e.pointerId, y: e.clientY, at: e.timeStamp };
+  };
+
+  const onComposerPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const pull = composerPullRef.current;
+    if (!pull || pull.pointerId !== e.pointerId) return;
+    const dy = e.clientY - pull.y;
+    // Upward on the handle is the way back, and it is the only reason a hidden
+    // composer can be reached at all - the hidden transform below leaves the
+    // handle on screen precisely so this has something to grab.
+    if (dy < 0) {
+      if (hideComposer && dy <= -PULL_FLICK_MIN_PX) {
+        composerPullRef.current = null;
+        revealComposer();
+      }
+      return;
+    }
+    const elapsed = Math.max(1, e.timeStamp - pull.at);
+    const flicked = dy >= PULL_FLICK_MIN_PX && dy / elapsed >= PULL_FLICK_PX_PER_MS;
+    if (dy < PULL_DISMISS_PX && !flicked) return;
+    composerPullRef.current = null;
+    dismissKeyboard();
+  };
+
+  const onComposerPointerEnd = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (composerPullRef.current?.pointerId === e.pointerId) composerPullRef.current = null;
+  };
 
   useEffect(() => {
     return () => chatAbortRef.current?.abort();
@@ -1934,6 +2259,10 @@ export function ChatPage() {
     };
 
     try {
+      // Clear the previous answer's account of itself. Without this the new
+      // timeline opens showing the last request's finished rows, which is a
+      // worse lie than showing nothing.
+      setServerSteps([]);
       logTiming("ai request starting", {
         webSearch,
         documentMode:
@@ -1971,6 +2300,13 @@ export function ChatPage() {
           }
           assistant += chunk;
           startReveal();
+        },
+        onProgress: (event) => {
+          // applyAnswerProgress returns the SAME array reference when a frame
+          // changes nothing, so a duplicate or replayed frame cannot re-render
+          // the transcript. Frames arrive a handful of times per request, not
+          // per token, so this is nowhere near the reveal loop's rate.
+          setServerSteps((prev) => applyAnswerProgress(prev, event));
         },
         onSources: (sources) => {
           webSources = sources;
@@ -2178,6 +2514,41 @@ export function ChatPage() {
     });
   };
 
+  // Stable identities for the three per-message handlers.
+  //
+  // <Message> is wrapped in React.memo (see its definition), and memo is a
+  // shallow prop compare: a single prop that is a fresh object on every render
+  // turns the whole thing into a no-op that still charges you for the
+  // comparison. These three used to be exactly that. They were written inline
+  // at the call site as arrows closing over the map index -
+  // `onRegenerate={() => regenerateAnswer(i)}` - so every message in the
+  // transcript received three brand-new functions on every render, and the
+  // reveal loop re-renders this component ~83x a second (startReveal, 12ms
+  // tick). Every bubble in the conversation therefore re-ran a full
+  // ReactMarkdown parse 83 times a second; on a 20-message thread that is
+  // 1,600+ markdown parses per second, which is why the 12ms tick could not
+  // hold and long answers landed seconds after they should have.
+  //
+  // useCallback alone cannot fix them: editUserMessage and regenerateAnswer
+  // read `messages`, so `messages` would have to be a dependency - and
+  // `messages` is the very thing changing 83x a second. So this uses the
+  // latest-closure ref already used for newChat above: the ref is reassigned
+  // every render, the wrappers never are. The wrappers take the message index
+  // as an argument rather than closing over it, which is what lets one
+  // permanently stable function serve every row in the transcript.
+  const messageHandlersRef = useRef({ editUserMessage, regenerateAnswer, setAnswerVersion });
+  messageHandlersRef.current = { editUserMessage, regenerateAnswer, setAnswerVersion };
+
+  const handleEditUserMessage = useCallback((messageIndex: number, newText: string) => {
+    messageHandlersRef.current.editUserMessage(messageIndex, newText);
+  }, []);
+  const handleRegenerateAnswer = useCallback((assistantIndex: number) => {
+    messageHandlersRef.current.regenerateAnswer(assistantIndex);
+  }, []);
+  const handleAnswerVersionChange = useCallback((assistantIndex: number, versionIndex: number) => {
+    messageHandlersRef.current.setAnswerVersion(assistantIndex, versionIndex);
+  }, []);
+
   return (
     <div
       className="flex h-full min-h-0 flex-1 overflow-hidden bg-background min-w-0"
@@ -2208,6 +2579,7 @@ export function ChatPage() {
           className={`gd-chat-glow min-h-0 overflow-y-auto ${emptyChat ? "shrink" : "flex-1"}`}
         >
           <div
+            ref={transcriptRef}
             className="mx-auto max-w-3xl px-3 pt-4 sm:px-4 md:px-8 md:pt-8"
             style={{ paddingBottom: emptyChat ? 0 : (composerHeight || 150) + 24 }}
           >
@@ -2222,9 +2594,28 @@ export function ChatPage() {
               </div>
             ) : messages.length === 0 ? null : (
               <div className="space-y-8 sm:space-y-10">
+                {/* Every prop below has to hold its identity between reveal
+                    ticks or the React.memo on <Message> is a no-op that still
+                    costs a comparison. The ones that are not primitives:
+                    `m` keeps its identity because the reveal loop replaces only
+                    the LAST element of the array (setAssistantMessage), so
+                    older message objects are literally the same objects;
+                    `profile` is useMemo'd inside the auth provider and only
+                    changes when the profile itself does; `selectedDocNames` is
+                    memoised above for this exact reason; and the three handlers
+                    are the stable wrappers defined near setAnswerVersion.
+                    `index` is passed instead of being closed over so those
+                    wrappers can stay stable.
+                    The memo deliberately uses React's DEFAULT shallow compare
+                    rather than a hand-written one. `streaming` and `isLast`
+                    legitimately flip on the second-to-last message the instant
+                    a new answer starts, and a custom comparator that forgot
+                    that would freeze a bubble mid-stream with no error to show
+                    for it. Comparing every prop catches it for free. */}
                 {messages.map((m, i) => (
                   <div key={i} className="gd-msg-in">
                     <Message
+                      index={i}
                       msg={m}
                       profile={profile}
                       mode={mode}
@@ -2235,9 +2626,15 @@ export function ChatPage() {
                       streaming={streaming && i === messages.length - 1}
                       canEdit={!streaming}
                       hasDocuments={selectedDocs.length > 0}
-                      onEditUserMessage={(newText) => editUserMessage(i, newText)}
-                      onRegenerate={() => regenerateAnswer(i)}
-                      onVersionChange={(versionIndex) => setAnswerVersion(i, versionIndex)}
+                      documentNames={selectedDocNames}
+                      webSearch={webSearch}
+                      // Only the newest bubble renders a loader, so only it
+                      // needs these. Every other row gets a stable `undefined`
+                      // and stays memoised while frames land.
+                      serverSteps={i === messages.length - 1 ? serverSteps : undefined}
+                      onEditUserMessage={handleEditUserMessage}
+                      onRegenerate={handleRegenerateAnswer}
+                      onVersionChange={handleAnswerVersionChange}
                     />
                   </div>
                 ))}
@@ -2254,10 +2651,20 @@ export function ChatPage() {
               ? // Blank chat: in normal flow, taking the leftover height and
                 // centring the greeting + input as one group.
                 "relative z-10 flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-              : `pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${
-                  hideComposer ? "translate-y-[calc(100%+1rem)]" : "translate-y-0"
+              : // The hidden offset stops SHORT of the composer's full height on
+                // purpose: it used to be `100% + 1rem`, which put the whole
+                // block, handle and all, past the bottom edge with no way back
+                // except scrolling the transcript the other way. It now parks
+                // with the grab handle still on screen, so the gesture that put
+                // it away always has something to pull back up.
+                `pointer-events-none absolute bottom-0 left-0 right-0 z-10 px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${
+                  hideComposer ? "translate-y-[calc(100%-2.75rem)]" : "translate-y-0"
                 }`
           }
+          onPointerDown={onComposerPointerDown}
+          onPointerMove={onComposerPointerMove}
+          onPointerUp={onComposerPointerEnd}
+          onPointerCancel={onComposerPointerEnd}
         >
           {/* Outside the composer anchor on purpose: the guided tour spotlights
               [data-tour="composer"], and the greeting is not part of the input. */}
@@ -2279,6 +2686,28 @@ export function ChatPage() {
             </div>
           )}
           <div data-tour="composer" className="pointer-events-auto max-w-3xl mx-auto w-full">
+            {/* The grab handle. It exists because the composer no longer leaves
+                on its own: something has to say "this can be pulled", and it has
+                to stay reachable once it has been. On a phone it is the target
+                for the downward drag that puts the keyboard away, and the
+                upward one that brings the composer back; a tap does the same
+                thing for anyone who would rather not drag. touch-action: none
+                keeps the browser from claiming the drag as a page scroll before
+                the handler ever sees it. */}
+            {!emptyChat && (
+              <button
+                type="button"
+                data-composer-handle=""
+                onClick={() => (hideComposer ? revealComposer() : dismissKeyboard())}
+                aria-label={hideComposer ? "Show the message box" : "Hide the message box"}
+                className="group mx-auto flex h-7 w-16 touch-none items-center justify-center"
+              >
+                <span
+                  aria-hidden="true"
+                  className="h-1 w-9 rounded-full bg-border transition-colors group-active:bg-muted-foreground"
+                />
+              </button>
+            )}
             {/* The "Learn with flash cards" pill that used to float above the
                 composer is gone. It advertised another page from the middle of
                 the one you were already using, and it needed its own dismiss
@@ -2509,6 +2938,7 @@ export function ChatPage() {
                   </button>
                 )}
                 <textarea
+                  ref={textareaRef}
                   value={input}
                   onChange={(e) => {
                     setInput(e.target.value);
@@ -2519,10 +2949,7 @@ export function ChatPage() {
                   }}
                   onFocus={() => {
                     setIsInputFocused(true);
-                    setHideComposer(false);
-                    window.dispatchEvent(
-                      new CustomEvent("gd:chat-scroll", { detail: { hide: false } }),
-                    );
+                    revealComposer();
                   }}
                   onBlur={() => setIsInputFocused(false)}
                   onKeyDown={(e) => {
@@ -2548,6 +2975,7 @@ export function ChatPage() {
                 <button
                   type="button"
                   onClick={() => applySourceMode(webSearch ? "My files only" : "Files + general")}
+                  onMouseDown={keepFocus}
                   title={webSearch ? "General context on" : "Add general context"}
                   aria-pressed={webSearch}
                   aria-label={webSearch ? "Turn general context off" : "Turn general context on"}
@@ -2561,10 +2989,21 @@ export function ChatPage() {
                   <Search className="h-4 w-4" />
                   <span className="hidden sm:inline">{webSearch ? "General" : "Context"}</span>
                 </button>
+                {/* keepFocus, on both of these and on the context toggle: a
+                    <button> takes focus when it is tapped, and taking focus off
+                    the textarea is what puts the Android soft keyboard away.
+                    That is why the keyboard used to disappear after every single
+                    message - tapping Send moved focus to Send, and the button
+                    then disabled itself (empty input) or was swapped for its
+                    twin, dropping focus to the body for good measure. Cancelling
+                    mousedown's default keeps focus in the field without touching
+                    the click, so the keyboard stays up for the follow-up
+                    question. Tab-focus is unaffected. */}
                 {streaming ? (
                   <button
                     type="button"
                     onClick={cancelResponse}
+                    onMouseDown={keepFocus}
                     title="Cancel response"
                     aria-label="Cancel response"
                     className="h-[44px] w-[44px] flex items-center justify-center rounded-xl border border-destructive/40 bg-destructive/10 text-destructive transition-colors hover:bg-destructive/15"
@@ -2575,6 +3014,7 @@ export function ChatPage() {
                   <button
                     type="submit"
                     disabled={!input.trim()}
+                    onMouseDown={keepFocus}
                     className="btn-pop h-[44px] w-[44px] flex items-center justify-center rounded-xl"
                   >
                     <Send className="h-4 w-4" />
@@ -2894,48 +3334,6 @@ function ChatGreeting({ name }: { name: string }) {
         "No rest for you"
       )}
     </h2>
-  );
-}
-
-// Steps shown while an answer is being prepared. They advance on a timer so
-// the loader reads as real progress, then hold on "Writing your answer…" until
-// the first streamed token replaces the whole loader.
-const GROUNDED_LOADER_STEPS = [
-  "Reading your material",
-  "Pulling the strongest sources",
-  "Writing your answer",
-];
-const GENERAL_LOADER_STEPS = ["Thinking it through", "Writing your answer"];
-
-function AnswerLoader({ grounded }: { grounded: boolean }) {
-  const steps = grounded ? GROUNDED_LOADER_STEPS : GENERAL_LOADER_STEPS;
-  const [step, setStep] = useState(0);
-
-  useEffect(() => {
-    if (step >= steps.length - 1) return;
-    const timer = window.setTimeout(
-      () => setStep((current) => Math.min(current + 1, steps.length - 1)),
-      1500,
-    );
-    return () => window.clearTimeout(timer);
-  }, [step, steps.length]);
-
-  return (
-    <div className="gd-answer-forming" aria-live="polite" aria-busy="true">
-      <span className="gd-forming-status">
-        <span className="gd-forming-orb" aria-hidden="true" />
-        {/* key={step} re-mounts the word so its rise-in plays on each advance. */}
-        <span key={step} className="gd-forming-label">
-          {steps[step]}…
-        </span>
-      </span>
-      <div className="gd-skeleton" aria-hidden="true">
-        <span className="gd-skeleton-line" style={{ width: "100%" }} />
-        <span className="gd-skeleton-line" style={{ width: "92%" }} />
-        <span className="gd-skeleton-line" style={{ width: "74%" }} />
-        <span className="gd-skeleton-line" style={{ width: "58%" }} />
-      </div>
-    </div>
   );
 }
 
@@ -3928,7 +4326,8 @@ function ContinueElsewhereButton({
   );
 }
 
-function Message({
+function MessageBody({
+  index,
   msg,
   streaming,
   profile,
@@ -3937,10 +4336,17 @@ function Message({
   isLast,
   canEdit,
   hasDocuments,
+  documentNames,
+  webSearch,
+  serverSteps,
   onEditUserMessage,
   onRegenerate,
   onVersionChange,
 }: {
+  // This message's position in the transcript. Passed down rather than closed
+  // over at the call site, so the three handlers below can be one stable
+  // function each instead of a fresh arrow per row per render.
+  index: number;
   msg: DisplayMessage;
   profile: Profile;
   mode: ChatMode;
@@ -3953,11 +4359,20 @@ function Message({
   // so the step-by-step "reading material" loader is meaningful. When false the
   // question is general and we show only the clean bouncing-dot loader.
   hasDocuments?: boolean;
-  onEditUserMessage?: (newText: string) => void;
+  // The real titles of the documents this answer is grounded in. Shown as the
+  // timeline's sub-rows, so the wait names the student's own files rather than
+  // claiming to read "your material" in the abstract.
+  documentNames?: readonly string[];
+  // The server's own progress frames for THIS answer, when it sent any.
+  serverSteps?: readonly AnswerTimelineStep[];
+  // Whether this answer may reach past the student's files. Adds a "Searching
+  // the web" row, so the timeline accounts for the slowest thing it can do.
+  webSearch?: boolean;
+  onEditUserMessage?: (messageIndex: number, newText: string) => void;
   // Rerun this question. Only offered on the newest answer, since rerunning an
   // older one would drop everything asked after it.
-  onRegenerate?: () => void;
-  onVersionChange?: (versionIndex: number) => void;
+  onRegenerate?: (assistantIndex: number) => void;
+  onVersionChange?: (assistantIndex: number, versionIndex: number) => void;
 }) {
   const [speaking, setSpeaking] = useState(false);
   // Per-answer "Copy" — flips to a checkmark for a beat after a successful copy.
@@ -4378,10 +4793,18 @@ function Message({
 
   const renderInlineMarkdown = () => {
     if (!displayContent) {
-      // A single loader that reads as an answer forming. Grounded questions get
-      // material-aware step wording; general questions get a shorter sequence.
-      // The steps actually advance (see AnswerLoader), unlike the old static list.
-      return <AnswerLoader grounded={Boolean(hasDocuments)} />;
+      // An activity log of the work, not a skeleton that draws a fake answer.
+      // Collapsed by default; the chevron opens the real file names. The
+      // sub-rows are only honest because `documentNames` carries the student's
+      // own titles down - without it the timeline still renders, just bare.
+      return (
+        <AnswerTimelineLoader
+          grounded={Boolean(hasDocuments)}
+          documentNames={documentNames}
+          webSearch={webSearch}
+          serverSteps={serverSteps}
+        />
+      );
     }
 
     // Wrap detected key terms in dotted-underline lookup buttons. `termUsed` is
@@ -4603,7 +5026,7 @@ function Message({
       const trimmed = editDraft.trim();
       if (!trimmed) return;
       setIsEditing(false);
-      if (trimmed !== msg.content) onEditUserMessage?.(trimmed);
+      if (trimmed !== msg.content) onEditUserMessage?.(index, trimmed);
     };
 
     if (isEditing) {
@@ -4880,7 +5303,7 @@ function Message({
             {isLast && canEdit && onRegenerate && (
               <button
                 type="button"
-                onClick={onRegenerate}
+                onClick={() => onRegenerate(index)}
                 title="Answer this again"
                 aria-label="Answer this again"
                 className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
@@ -4948,7 +5371,7 @@ function Message({
           <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
             <button
               type="button"
-              onClick={() => onVersionChange?.(Math.max(0, (msg.activeVersion ?? 0) - 1))}
+              onClick={() => onVersionChange?.(index, Math.max(0, (msg.activeVersion ?? 0) - 1))}
               disabled={(msg.activeVersion ?? 0) <= 0}
               title="Previous answer"
               aria-label="Previous answer"
@@ -4962,7 +5385,10 @@ function Message({
             <button
               type="button"
               onClick={() =>
-                onVersionChange?.(Math.min(msg.versions!.length - 1, (msg.activeVersion ?? 0) + 1))
+                onVersionChange?.(
+                  index,
+                  Math.min(msg.versions!.length - 1, (msg.activeVersion ?? 0) + 1),
+                )
               }
               disabled={(msg.activeVersion ?? 0) >= msg.versions.length - 1}
               title="Next answer"
@@ -4977,6 +5403,16 @@ function Message({
     </div>
   );
 }
+
+// The whole point of the exercise. Without this, the reveal loop's ~83
+// re-renders a second each re-rendered every bubble in the transcript, and each
+// bubble re-parsed its entire content through ReactMarkdown (remark -> mdast ->
+// hast -> React elements). Memoised, only the message whose object actually
+// changed - the one being streamed - does any work per tick.
+//
+// Default shallow compare on purpose; see the note at the call site for why a
+// custom comparator is a trap here.
+const Message = memo(MessageBody);
 
 function InlineThreadView({
   thread,
