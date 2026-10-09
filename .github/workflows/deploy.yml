@@ -98,3 +98,30 @@ jobs:
             echo "::error::No phc_ PostHog token found in dist/assets — analytics would be dead in this build."
             exit 1
           fi
+
+  # Hostinger deploys this same commit through its GitHub integration, outside
+  # Actions. Poll the public build marker so a green workflow also proves the
+  # production site actually moved to this revision.
+  verify-live:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for gd1.online to serve this commit
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          expected="${EXPECTED_SHA:0:7}"
+          for attempt in $(seq 1 30); do
+            html="$(curl --fail --silent --show-error \
+              --header 'Cache-Control: no-cache' \
+              "https://gd1.online/?deploy-check=${EXPECTED_SHA}-${attempt}")"
+            if grep -q "name=\"app-build\" content=\"${expected}-" <<<"$html"; then
+              echo "gd1.online is serving commit ${expected}."
+              exit 0
+            fi
+            echo "Attempt ${attempt}/30: production has not reached ${expected} yet."
+            sleep 10
+          done
+          echo "::error::gd1.online did not serve commit ${expected} within five minutes."
+          exit 1
