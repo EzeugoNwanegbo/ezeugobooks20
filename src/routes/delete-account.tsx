@@ -12,13 +12,16 @@ export const Route = createFileRoute("/delete-account")({
 
 function DeleteAccountPage() {
   return (
-    <main className="luxury-page">
+    <main className="gd-legal-page luxury-page">
       <div className="symbiote-blob blob-one" />
       <div className="symbiote-blob blob-two" />
 
       <nav className="luxury-nav" aria-label="Primary navigation">
         <Link to="/" className="luxury-logo">
           G&D
+        </Link>
+        <Link to="/" className="gd-legal-back">
+          Back to G&amp;D <span aria-hidden="true">↗</span>
         </Link>
       </nav>
 
@@ -32,8 +35,9 @@ function DeleteAccountPage() {
       </section>
 
       <section
+        className="gd-legal-body"
         style={{
-          maxWidth: "640px",
+          maxWidth: "720px",
           margin: "0 auto",
           padding: "0 1.5rem 4rem",
           display: "flex",
@@ -58,8 +62,7 @@ function DeleteAccountPage() {
             <li>Open the G&D app and sign in to your account.</li>
             <li>Tap the menu icon (top-left on mobile, or the sidebar on desktop).</li>
             <li>
-              Scroll to the bottom of the menu and tap{" "}
-              <strong>Delete account</strong>.
+              Scroll to the bottom of the menu and tap <strong>Delete account</strong>.
             </li>
             <li>
               Read the confirmation prompt, then tap <strong>Delete account</strong> to confirm.
@@ -116,6 +119,10 @@ function DeleteAccountPage() {
           </p>
         </div>
       </section>
+      <footer className="gd-legal-footer">
+        <span>G&amp;D · A little more understanding, every day.</span>
+        <Link to="/privacy">Privacy</Link>
+      </footer>
     </main>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { BrainCircuit, ChevronRight, FileText, Play, Route, Zap } from "lucide-react";
+import { BrainCircuit, Check, ChevronRight, FileText, Play, Plus, Route, Zap } from "lucide-react";
 import { StageProgress, type ProgressStage } from "@/components/stage-progress";
 import { ChallengeFriendButton } from "@/components/challenge-friend-button";
 import { friendList, socialEnabled, MAX_CHALLENGE_QUESTIONS } from "@/lib/social";
@@ -12,6 +12,7 @@ import { takeLastMinuteForCoach } from "@/lib/last-minute-handoff";
 import { generateStudyPlan, type StudyRoadmapTopic } from "@/lib/studybody-client";
 import { PageHeader } from "@/components/ui/page-header";
 import { Segmented } from "@/components/ui/segmented";
+import "@/study-pages.css";
 import {
   createStraightInSession,
   db,
@@ -128,15 +129,15 @@ function Step({
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-2.5">
+    <div className="gd-study-step space-y-3.5">
       <div className="flex items-center gap-2">
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-pop/12 text-[11px] font-semibold tabular-nums text-pop">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-pop/15 bg-pop/10 text-xs font-semibold tabular-nums text-pop">
           {n}
         </span>
         <span className="text-sm font-semibold tracking-[-0.01em]">{label}</span>
         {hint && <span className="ml-auto text-xs text-muted-foreground">{hint}</span>}
       </div>
-      <div className="sm:pl-7">{children}</div>
+      <div className="sm:pl-9">{children}</div>
     </div>
   );
 }
@@ -492,9 +493,22 @@ export function StudyBodyPage() {
   const visiblePlans = showAllPlans ? plans : plans.slice(0, PLAN_PREVIEW_COUNT);
 
   return (
-    <div className="gd-content-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 overflow-x-hidden">
-        <PageHeader eyebrow="PQ" title="Practice Questions" />
+    <div className="gd-content-page gd-study-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-7 overflow-x-hidden">
+        <PageHeader
+          eyebrow="Active recall"
+          title="Practice Questions"
+          subtitle="Turn what you have read into what you remember. Build a roadmap or jump straight into questions."
+          actions={
+            <Link
+              to="/app/library"
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium transition-colors hover:border-pop/40 hover:text-pop"
+            >
+              <Plus className="h-4 w-4" />
+              Add study material
+            </Link>
+          }
+        />
 
         {schemaMissing && (
           <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm">
@@ -518,21 +532,32 @@ export function StudyBodyPage() {
             be a sidebar column beside the build form, which put the thing they
             wanted second on a phone. */}
         {plans.length > 0 && (
-          <section className="space-y-2">
-            <h2 className="text-sm font-semibold tracking-[-0.01em]">Continue</h2>
-            <div className="grid gap-2 sm:grid-cols-2">
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold tracking-[-0.01em]">
+                Pick up where you left off
+              </h2>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {plans.length} {plans.length === 1 ? "roadmap" : "roadmaps"}
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
               {visiblePlans.map((plan) => (
                 <Link
                   key={plan.id}
                   to="/app/practice"
                   search={{ plan: plan.id }}
-                  className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-surface px-3 py-3 text-left transition-colors hover:border-pop/40 hover:bg-pop/5"
+                  className="flex min-w-0 items-center gap-3 rounded-2xl border border-border bg-surface p-4 text-left transition-colors hover:border-pop/40 hover:bg-pop/5"
                 >
-                  <Play className="h-4 w-4 shrink-0 text-pop" />
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-pop/10 text-pop">
+                    <Play className="h-4 w-4" />
+                  </span>
                   <span className="min-w-0 flex-1">
                     <span className="block break-words text-sm font-medium">{plan.title}</span>
-                    <span className="block text-xs text-muted-foreground">
-                      {plan.source_type}
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {plan.source_document_ids?.length
+                        ? `${plan.source_document_ids.length} ${plan.source_document_ids.length === 1 ? "source file" : "source files"}`
+                        : "Course outline"}
                       {plan.created_at ? ` \u00b7 ${formatDate(plan.created_at)}` : ""}
                     </span>
                   </span>
@@ -556,26 +581,41 @@ export function StudyBodyPage() {
             Material comes first because both routes need it and nothing below
             can be decided without it - it used to sit at the very bottom, under
             every option, inside its own scrolling box. */}
-        <section className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
+        <section className="gd-study-panel gd-study-builder">
+          <div className="gd-study-builder-heading">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-pop/10 text-pop">
+              <BrainCircuit className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="font-display text-xl">Build your next session</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Choose your material, then make it your own.
+              </p>
+            </div>
+          </div>
           <div className="space-y-6">
             <Step
               n={1}
-              label="Material"
+              label="Choose your material"
               hint={selectedDocIds.length ? `${selectedDocIds.length} selected` : undefined}
             >
               {docs.length === 0 ? (
                 <Link
                   to="/app/library"
-                  className="block rounded-xl border border-dashed border-border p-3 text-sm text-pop"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-pop/30 bg-pop/5 p-4 text-sm text-pop transition-colors hover:bg-pop/10"
                 >
-                  Upload files in Library
+                  <span className="flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Add your first file in Library
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0" />
                 </Link>
               ) : (
                 <>
                   {/* Chips that wrap, not a list that scrolls. A scrolling box
                       inside a scrolling page is the worst thing to operate on a
                       phone, and this one held the choice everything else needs. */}
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="grid gap-2 sm:grid-cols-2">
                     {visibleDocs.map((doc) => {
                       const selected = selectedDocIds.includes(doc.id);
                       return (
@@ -584,14 +624,23 @@ export function StudyBodyPage() {
                           type="button"
                           onClick={() => toggleDoc(doc.id)}
                           title={folderName(doc) || "Uncategorised"}
-                          className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
+                          aria-pressed={selected}
+                          className={`gd-study-source inline-flex max-w-full items-center gap-2.5 rounded-xl border p-3 text-left text-xs transition-colors ${
                             selected
                               ? "border-pop/50 bg-pop/10 text-pop"
                               : "border-border text-muted-foreground hover:border-pop/30 hover:bg-foreground/[0.02]"
                           }`}
                         >
-                          <FileText className="h-3.5 w-3.5 shrink-0" />
-                          <span className="max-w-[14rem] truncate">{doc.file_name}</span>
+                          <FileText className="h-4 w-4 shrink-0" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium">{doc.file_name}</span>
+                            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                              {folderName(doc) || "Uncategorised"}
+                            </span>
+                          </span>
+                          <span className="gd-study-source-check flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border text-transparent">
+                            <Check className="h-3 w-3" />
+                          </span>
                         </button>
                       );
                     })}
@@ -609,7 +658,7 @@ export function StudyBodyPage() {
               )}
             </Step>
 
-            <Step n={2} label="How">
+            <Step n={2} label="Choose your approach">
               <div className="grid grid-cols-2 gap-2">
                 {ENTRY_OPTIONS.map((option) => {
                   const selected = entry === option;
@@ -617,12 +666,13 @@ export function StudyBodyPage() {
                     <button
                       key={option}
                       type="button"
+                      aria-pressed={selected}
                       onClick={() => {
                         setEntry(option);
                         setStageError(null);
                         setBuiltSet(null);
                       }}
-                      className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors ${
+                      className={`gd-study-mode flex flex-col items-start gap-2 rounded-xl border text-left transition-colors ${
                         selected
                           ? "border-pop/50 bg-pop/10"
                           : "border-border hover:border-pop/30 hover:bg-foreground/[0.02]"
@@ -638,12 +688,12 @@ export function StudyBodyPage() {
                         />
                       )}
                       <span className="text-sm font-semibold">
-                        {option === "roadmap" ? "Roadmap" : "Straight in"}
+                        {option === "roadmap" ? "Follow a roadmap" : "Jump straight in"}
                       </span>
                       <span className="text-[11px] leading-snug text-muted-foreground">
                         {option === "roadmap"
-                          ? "Ordered topics, one at a time"
-                          : "Questions right now, no plan"}
+                          ? "Learn topic by topic, with a plan to guide you."
+                          : "Get a question set from across your files."}
                       </span>
                     </button>
                   );
@@ -658,6 +708,7 @@ export function StudyBodyPage() {
                     value={planTitle}
                     onChange={(event) => setPlanTitle(event.target.value)}
                     placeholder="Course or topic name"
+                    aria-label="Course or topic name"
                     className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop focus:ring-2 focus:ring-pop/20"
                   />
 
@@ -673,6 +724,7 @@ export function StudyBodyPage() {
                       value={topicFocus}
                       onChange={(event) => setTopicFocus(event.target.value)}
                       placeholder="Which topic? e.g. the nephron"
+                      aria-label="Topic to focus on"
                       className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop focus:ring-2 focus:ring-pop/20"
                     />
                   ) : (
@@ -680,6 +732,7 @@ export function StudyBodyPage() {
                       value={aiNote}
                       onChange={(event) => setAiNote(event.target.value)}
                       placeholder="Anything G&D should focus on? (optional)"
+                      aria-label="Optional focus for your roadmap"
                       className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop focus:ring-2 focus:ring-pop/20"
                     />
                   )}
@@ -692,6 +745,7 @@ export function StudyBodyPage() {
                       value={courseOutline}
                       onChange={(event) => setCourseOutline(event.target.value)}
                       placeholder="Paste your course outline"
+                      aria-label="Course outline"
                       autoFocus
                       className="min-h-28 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop focus:ring-2 focus:ring-pop/20"
                     />
@@ -716,6 +770,7 @@ export function StudyBodyPage() {
                       <button
                         key={option}
                         type="button"
+                        aria-pressed={!straightCustom && straightCount === option}
                         onClick={() => {
                           setStraightCustom(false);
                           setStraightCount(option);
@@ -744,6 +799,7 @@ export function StudyBodyPage() {
                         )
                       }
                       placeholder={`How many? (1-${MAX_GENERATED_QUESTIONS})`}
+                      aria-label={`Number of questions, 1 to ${MAX_GENERATED_QUESTIONS}`}
                       className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop focus:ring-2 focus:ring-pop/20"
                     />
                   ) : (
@@ -783,6 +839,7 @@ export function StudyBodyPage() {
                     value={aiNote}
                     onChange={(event) => setAiNote(event.target.value)}
                     placeholder="Anything G&D should focus on? (optional)"
+                    aria-label="Optional focus for your questions"
                     className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop focus:ring-2 focus:ring-pop/20"
                   />
                 </div>

@@ -70,6 +70,7 @@ import {
 } from "@/lib/gamification";
 import { getCached, setCached } from "@/lib/data-cache";
 import { supabase } from "@/integrations/supabase/client";
+import "./app-shell.css";
 
 type ConversationRow = {
   id: string;
@@ -199,6 +200,44 @@ function AppLayout() {
   // the early returns below).
   const contentTouchRef = useRef<{ x: number; y: number; edge: boolean } | null>(null);
   const drawerTouchRef = useRef<{ x: number; y: number } | null>(null);
+  const mobileDrawerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!mobileMenuOpen || tourOpen || cookieDialog || personalizeOpen || showDeleteDialog) return;
+    const previousFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const drawer = mobileDrawerRef.current;
+    const focusableElements = () =>
+      Array.from(
+        drawer?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex="0"]') ??
+          [],
+      ).filter((element) => element.getClientRects().length > 0);
+    const frame = window.requestAnimationFrame(() => focusableElements()[0]?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileMenuOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const elements = focusableElements();
+      const first = elements[0];
+      const last = elements.at(-1);
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus();
+    };
+  }, [mobileMenuOpen, tourOpen, cookieDialog, personalizeOpen, showDeleteDialog]);
 
   useEffect(() => {
     if (loading) return;
@@ -263,6 +302,7 @@ function AppLayout() {
   // battle-royale-client.ts on a refused client-side charge.
   useEffect(() => {
     return onOutOfCookies((info) => {
+      setMobileMenuOpen(false);
       setCookieDialog({ remaining: info.remaining ?? null, allowance: info.allowance ?? null });
     });
   }, []);
@@ -274,6 +314,7 @@ function AppLayout() {
   // the dialog saying the same thing.
   useEffect(() => {
     return onCookieDialogRequested(() => {
+      setMobileMenuOpen(false);
       setCookieDialog(
         cookies.status === "ready"
           ? { remaining: cookies.balance.remaining, allowance: cookies.balance.allowance }
@@ -321,6 +362,15 @@ function AppLayout() {
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [location.pathname, location.searchStr]);
+
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 768px)");
+    const onResize = () => {
+      if (desktop.matches) setMobileMenuOpen(false);
+    };
+    desktop.addEventListener("change", onResize);
+    return () => desktop.removeEventListener("change", onResize);
+  }, []);
 
   // Remember where the user is so reopening the app returns them here.
   useEffect(() => {
@@ -426,6 +476,7 @@ function AppLayout() {
   // header note on CookieEmptyDialog for why its copy adapts instead of
   // always claiming "you're out" when it might not be true yet.
   const openCookieDialog = () => {
+    setMobileMenuOpen(false);
     setCookieDialog(
       cookies.status === "ready"
         ? { remaining: cookies.balance.remaining, allowance: cookies.balance.allowance }
@@ -474,9 +525,9 @@ function AppLayout() {
   // Only highlight a conversation while the chat screen is actually showing it.
   const activeConvoId = onChat ? search.c : undefined;
 
-  // Content edge-swipe: a right-swipe starting at the very left edge returns to
-  // Chat from any other screen (and opens the menu when already on Chat) - the
-  // iOS-style "back to the core experience" gesture, no button press needed.
+  // The drawer only exists below the desktop breakpoint, including on touch
+  // devices. Opening it at a wider viewport would make the content inert while
+  // the drawer itself is hidden.
   const onContentTouchStart = (event: React.TouchEvent) => {
     const touch = event.touches[0];
     if (!touch) return;
@@ -485,7 +536,8 @@ function AppLayout() {
   const onContentTouchEnd = (event: React.TouchEvent) => {
     const start = contentTouchRef.current;
     contentTouchRef.current = null;
-    if (!start || !start.edge || mobileMenuOpen) return;
+    if (!start || !start.edge || mobileMenuOpen || window.matchMedia("(min-width: 768px)").matches)
+      return;
     const touch = event.changedTouches[0];
     if (!touch) return;
     const dx = touch.clientX - start.x;
@@ -525,6 +577,7 @@ function AppLayout() {
       <Link
         to={to}
         data-tour={tourAnchor}
+        aria-current={active ? "page" : undefined}
         className={`gd-side-nav-item gd-side-nav-${accent} ${active ? "gd-side-nav-active" : ""} group/nav relative flex items-center overflow-hidden rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-200 ${
           active
             ? "text-foreground"
@@ -538,7 +591,7 @@ function AppLayout() {
           className={`whitespace-nowrap transition-all duration-300 ${
             isSidebarCollapsed
               ? "max-w-0 -translate-x-2 opacity-0"
-              : "max-w-32 translate-x-0 opacity-100"
+              : "max-w-48 translate-x-0 opacity-100"
           }`}
           // Collapsed, the aria-label above is the accessible name - keep the
           // clipped text out of the tree so it is not announced twice.
@@ -586,7 +639,7 @@ function AppLayout() {
         className={`whitespace-nowrap transition-all duration-300 ${
           isSidebarCollapsed
             ? "max-w-0 -translate-x-2 opacity-0"
-            : "max-w-32 translate-x-0 opacity-100"
+            : "max-w-48 translate-x-0 opacity-100"
         }`}
         // Collapsed, the aria-label above is the accessible name - keep the
         // clipped text out of the tree so it is not announced twice.
@@ -636,8 +689,67 @@ function AppLayout() {
     }
   };
 
+  const renderAccountCard = () => (
+    <div className="gd-shell-account-card">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className="gd-profile-mark shrink-0">
+          {(profile.name || "S").slice(0, 1).toUpperCase()}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold">{profile.name || "Student"}</div>
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+            <RankBadge rank={rank.rank} size="sm" className="h-4 w-4 rounded" />
+            <span className="truncate text-[11px] text-muted-foreground">{rank.rank.name}</span>
+          </div>
+        </div>
+        <Link
+          to="/app/settings"
+          aria-current={location.pathname.startsWith("/app/settings") ? "page" : undefined}
+          title="Account settings"
+          aria-label="Account settings"
+          className="gd-shell-icon-button shrink-0"
+        >
+          <Settings className="h-4 w-4" />
+        </Link>
+      </div>
+      <RankLadderBar points={gamification.points} className="mt-3" />
+      <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-muted-foreground tabular-nums">
+        <span>{gamification.points.toLocaleString()} points</span>
+        <span>{gamification.currentStreak} day streak</span>
+      </div>
+      {cookies.status === "ready" && (
+        <div className="gd-shell-credit-balance">
+          <CookieRing
+            remaining={cookies.balance.remaining}
+            allowance={cookies.balance.allowance}
+            onClick={openCookieDialog}
+            size={30}
+          />
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+            onClick={openCookieDialog}
+            aria-label={`${cookies.balance.remaining} AI credits remaining. View usage details`}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-medium text-foreground">
+                {cookies.balance.remaining} AI credits left
+              </span>
+              <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                {cookies.balance.allowance} available today
+              </span>
+            </span>
+            <span className="gd-shell-credit-detail" aria-hidden="true">
+              View
+            </span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
-    <div className="luxury-app-shell flex h-dvh min-h-dvh flex-col overflow-hidden bg-background md:flex-row">
+    <div className="gd-polished-shell luxury-app-shell flex h-dvh min-h-dvh flex-col overflow-hidden bg-background md:flex-row">
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -664,10 +776,12 @@ function AppLayout() {
       </AlertDialog>
 
       <aside
-        className={`gd-app-sidebar hidden md:flex flex-col overflow-hidden border-r border-border/70 bg-background/95 transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] md:shrink-0 ${isSidebarCollapsed ? "md:w-16 xl:w-16" : "md:w-60 xl:w-64"}`}
+        aria-label="Main navigation"
+        data-collapsed={isSidebarCollapsed}
+        className={`gd-app-sidebar hidden md:flex flex-col overflow-hidden border-r border-border/70 bg-background/95 transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] md:shrink-0 ${isSidebarCollapsed ? "md:w-[4.5rem]" : "md:w-[17rem] xl:w-[17.5rem]"}`}
       >
         <div
-          className={`flex shrink-0 items-center transition-[padding] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+          className={`gd-shell-brand-row flex shrink-0 items-center transition-[padding] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
             isSidebarCollapsed ? "justify-center px-2 py-4" : "justify-between px-5 py-5"
           }`}
         >
@@ -686,8 +800,9 @@ function AppLayout() {
             </button>
           ) : (
             <>
-              <Link to="/app/chat" className="gd-sidebar-brand luxury-brand-text whitespace-nowrap">
-                G&D
+              <Link to="/app/chat" className="gd-shell-brand" aria-label="G&D study workspace">
+                <span className="gd-sidebar-brand luxury-brand-text whitespace-nowrap">G&D</span>
+                <span className="gd-shell-brand-caption">Your study workspace</span>
               </Link>
               <button
                 type="button"
@@ -711,7 +826,7 @@ function AppLayout() {
             onClick={openNewChat}
             title="New chat"
             aria-label="New chat"
-            className={`flex items-center overflow-hidden rounded-lg border border-border/70 text-foreground transition-colors hover:border-pop/40 hover:bg-foreground/[0.05] ${
+            className={`gd-shell-new-chat flex items-center overflow-hidden rounded-lg border border-border/70 text-foreground transition-colors hover:border-pop/40 hover:bg-foreground/[0.05] ${
               isSidebarCollapsed
                 ? "mx-auto h-10 w-10 justify-center"
                 : "w-full gap-2 px-3 py-2.5 text-sm font-medium"
@@ -741,15 +856,9 @@ function AppLayout() {
             always reachable no matter how short the viewport or how tall the
             skin makes the rows. */}
         <div className="gd-no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain">
-          {/* The map of the app, in one falling order rather than two labelled
-              groups. The labels ("Study space" / "Your work") were doing no
-              work a student could use - every row already says what it is - and
-              they split the six places people actually go across two headings.
-              Order now carries the meaning: the daily six first, then the two
-              you reach for occasionally, then a fold for the once-a-term rows.
-              Nine rows at rest instead of eleven plus two headings. */}
-          <nav className="shrink-0 space-y-4 px-3 py-2">
-            <div className="space-y-1">
+          <nav className="gd-shell-navigation shrink-0 px-3 py-3" aria-label="Study tools">
+            <div className="gd-shell-nav-section">
+              {!isSidebarCollapsed && <p className="gd-shell-section-label">Study</p>}
               {navItem("/app/chat", <MessageSquare className="h-4 w-4 shrink-0" />, "Chat", "blue")}
               {navItem(
                 "/app/library",
@@ -758,17 +867,23 @@ function AppLayout() {
                 "blue",
                 "nav-library",
               )}
-              {/* "PQ" in the rail, "Practice Questions" as the page's own
-                  heading - the short form is what students call it and it fits
-                  the collapsed rail; the icon is a checklist because that is
-                  what sitting questions looks like. */}
               {navItem(
                 "/app/studybody",
                 <ListChecks className="h-4 w-4 shrink-0" />,
-                "PQ",
+                "Practice questions",
                 "violet",
                 "nav-pq",
               )}
+              {navItem(
+                "/app/last-minute",
+                <TimerReset className="h-4 w-4 shrink-0" />,
+                "Last Minute",
+                "coral",
+                "nav-last-minute",
+              )}
+            </div>
+            <div className="gd-shell-nav-section">
+              {!isSidebarCollapsed && <p className="gd-shell-section-label">Community</p>}
               {navItem(
                 "/app/leaderboard",
                 <Trophy className="h-4 w-4 shrink-0" />,
@@ -776,9 +891,6 @@ function AppLayout() {
                 "amber",
                 "nav-leaderboard",
               )}
-              {/* Hidden entirely until the social migration is applied, and
-                  hidden from guests always — see socialEnabled(). The route
-                  still exists; this only decides whether it is advertised. */}
               {socialEnabled(user) &&
                 navItem(
                   "/app/friends",
@@ -787,9 +899,6 @@ function AppLayout() {
                   "coral",
                   "nav-friends",
                 )}
-              {/* Same gate as Friends — a battle needs an opponent, which needs
-                  the same schema. It sits directly under Friends because the
-                  opponent comes from there. */}
               {socialEnabled(user) &&
                 navItem(
                   "/app/battle-royale",
@@ -799,14 +908,8 @@ function AppLayout() {
                   "nav-battle-royale",
                 )}
             </div>
-            <div className="space-y-1 border-t border-border/60 pt-4">
-              {navItem(
-                "/app/last-minute",
-                <TimerReset className="h-4 w-4 shrink-0" />,
-                "Last Minute",
-                "coral",
-                "nav-last-minute",
-              )}
+            <div className="gd-shell-nav-section">
+              {!isSidebarCollapsed && <p className="gd-shell-section-label">Your space</p>}
               {navItem(
                 "/app/history",
                 <Clock className="h-4 w-4 shrink-0" />,
@@ -814,10 +917,6 @@ function AppLayout() {
                 "slate",
                 "nav-history",
               )}
-              {/* Personalize, Feedback and Admin are set-once or once-a-term
-                  rows. Folded away, they stop competing with the six above;
-                  the unset-personalization pip rides up onto More while it is
-                  closed so the nudge is not hidden with them. */}
               {navAction(
                 navMoreOpen ? (
                   <ChevronUp className="h-4 w-4 shrink-0" />
@@ -840,10 +939,6 @@ function AppLayout() {
                     !profile?.personalization_background,
                   )}
                   {navItem("/app/feedback", <Heart className="h-4 w-4 shrink-0" />, "Feedback")}
-                  {/* Settings is not in this list at all - it lives with the
-                    account, as the gear in the footer user row (and at the foot
-                    of the collapsed rail). Same /app/settings route, one entry
-                    point. */}
                   {profile?.is_admin &&
                     navItem(
                       "/app/admin",
@@ -861,12 +956,17 @@ function AppLayout() {
               (Today / Yesterday / … / Older), its delete control and its
               empty + guest states rather than a flat capped list. */}
           {!isSidebarCollapsed && (
-            <div className="px-3 pb-2 pt-5">
-              <p className="gd-nav-label px-3 pb-2">Recent</p>
+            <div className="gd-shell-history px-3 pb-4 pt-4">
+              <p className="gd-shell-section-label">Recent conversations</p>
               {recentConvos.length === 0 ? (
-                <p className="px-3 text-xs text-muted-foreground">
-                  {isGuest ? "Guest chats are not saved." : "No chats yet."}
-                </p>
+                <div className="gd-shell-empty-history">
+                  <MessageSquare className="h-4 w-4" />
+                  <p>
+                    {isGuest
+                      ? "Guest chats are not saved."
+                      : "Your conversations will appear here."}
+                  </p>
+                </div>
               ) : (
                 <div className="space-y-3">
                   <SidebarConvoGroup
@@ -904,172 +1004,111 @@ function AppLayout() {
             </div>
           )}
         </div>
-        {/* The footer is pinned and never shrinks, so everything in it - the
-            Appearance picker included - stays on screen. The max-height is the
-            belt-and-braces case: on a viewport too short for even the footer
-            (and the .brutal skin makes every row taller), it scrolls itself
-            rather than letting its lower half be clipped away by the aside's
-            overflow-hidden, which is how the theme picker went missing. */}
+        {/* Account and appearance stay reachable when the navigation scrolls. */}
         <div
-          className={`gd-no-scrollbar max-h-[55%] shrink-0 overflow-y-auto overscroll-contain border-t border-border/70 ${
-            isSidebarCollapsed ? "flex flex-col items-center gap-3 p-3" : "p-4"
-          }`}
+          className={`gd-shell-footer gd-no-scrollbar max-h-[48%] shrink-0 overflow-y-auto overscroll-contain border-t border-border/70 ${isSidebarCollapsed ? "flex flex-col items-center gap-2.5 px-2 py-3" : "p-3"}`}
         >
-          {/* The account block. Collapsed it is the foot of the rail - settings
-              gear above the avatar (screenshot A), pushed last by order-last so
-              the guide/theme/sign-out icons stack above it. Expanded it is the
-              pinned user row: avatar + name on the left, gear on the right. */}
           {isSidebarCollapsed ? (
-            <div className="order-last flex flex-col items-center gap-3">
-              {/* Collapsed, there is no room for a name or a bar, so the rail
-                  carries the badge alone - the rank is still legible at a
-                  glance and the title spells it out. */}
-              <span title={`${rank.rank.name} · ${gamification.points.toLocaleString()} pts`}>
-                <RankBadge rank={rank.rank} size="sm" />
-              </span>
-              {/* Absent (not just hidden) until useCookies() confirms the
-                  schema is there - "no meter is better than a wrong meter". */}
-              {cookies.status === "ready" && (
-                <CookieRing
-                  remaining={cookies.balance.remaining}
-                  allowance={cookies.balance.allowance}
-                  onClick={openCookieDialog}
-                  size={28}
-                />
-              )}
-              <Link
-                to="/app/settings"
-                title="Settings"
-                aria-label="Settings"
-                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-              >
-                <Settings className="h-4 w-4" />
-              </Link>
+            <>
               <button
                 type="button"
-                onClick={() => chooseSidebarCollapsed(false)}
-                title={`${profile.name || "Student"} - open menu`}
-                aria-label={`${profile.name || "Student"} - open menu`}
-                className="rounded-[0.45rem] transition-opacity hover:opacity-80"
+                data-tour="tour-launcher"
+                onClick={() => setTourOpen(true)}
+                title="Replay the app guide"
+                aria-label="Replay the app guide"
+                className="gd-shell-icon-button"
               >
-                <span className="gd-profile-mark">
-                  {(profile.name || "S").slice(0, 1).toUpperCase()}
-                </span>
+                <Map className="h-4 w-4" />
               </button>
-            </div>
-          ) : (
-            <div className="gd-sidebar-profile mb-3 px-2">
-              <div className="flex items-center gap-2">
-                <span className="gd-profile-mark shrink-0">
-                  {(profile.name || "S").slice(0, 1).toUpperCase()}
+              <ThemeToggle />
+              <button
+                type="button"
+                onClick={async () => {
+                  if (await confirmAndSignOut()) navigate({ to: "/" });
+                }}
+                title="Sign out"
+                aria-label="Sign out"
+                className="gd-shell-icon-button"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+              <div className="gd-shell-rail-account flex flex-col items-center gap-2.5">
+                <span title={`${rank.rank.name} · ${gamification.points.toLocaleString()} points`}>
+                  <RankBadge rank={rank.rank} size="sm" />
                 </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{profile.name || "Student"}</div>
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <RankBadge rank={rank.rank} size="sm" className="h-4 w-4 rounded" />
-                    <span className="truncate text-[11px] font-medium text-foreground">
-                      {rank.rank.name}
-                    </span>
-                  </div>
-                </div>
                 {cookies.status === "ready" && (
                   <CookieRing
                     remaining={cookies.balance.remaining}
                     allowance={cookies.balance.allowance}
                     onClick={openCookieDialog}
-                    size={30}
+                    size={28}
                   />
                 )}
                 <Link
                   to="/app/settings"
+                  aria-current={location.pathname.startsWith("/app/settings") ? "page" : undefined}
                   title="Settings"
                   aria-label="Settings"
-                  className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+                  className="gd-shell-icon-button"
                 >
                   <Settings className="h-4 w-4" />
                 </Link>
+                <button
+                  type="button"
+                  onClick={() => chooseSidebarCollapsed(false)}
+                  title={`${profile.name || "Student"} - open menu`}
+                  aria-label={`${profile.name || "Student"} - open menu`}
+                  className="rounded-xl transition-opacity hover:opacity-80"
+                >
+                  <span className="gd-profile-mark">
+                    {(profile.name || "S").slice(0, 1).toUpperCase()}
+                  </span>
+                </button>
               </div>
-              {/* The whole journey, not just this rank - see RankLadderBar in
-                  rank-badge.tsx. The bar answers "how close am I to the top",
-                  the line underneath answers "to what, right now". */}
-              <RankLadderBar points={gamification.points} className="mt-2" />
-              <div className="mt-1 truncate text-[11px] text-muted-foreground tabular-nums">
-                {gamification.points.toLocaleString()} pts ·{" "}
-                {rank.next
-                  ? `${rank.pointsToNext.toLocaleString()} to ${rank.next.name}`
-                  : "top rank"}{" "}
-                · {gamification.currentStreak}d
+            </>
+          ) : (
+            <>
+              {renderAccountCard()}
+              <ThemePicker className="gd-shell-theme-picker mt-3" />
+              <div className="gd-shell-account-actions mt-2">
+                <button
+                  type="button"
+                  data-tour="tour-launcher"
+                  onClick={() => setTourOpen(true)}
+                  title="Replay the app guide"
+                  className="gd-shell-footer-action"
+                >
+                  <Map className="h-3.5 w-3.5" />
+                  Guide
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (await confirmAndSignOut()) navigate({ to: "/" });
+                  }}
+                  className="gd-shell-footer-action"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Sign out
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteDialog(true)}
+                  title="Delete account"
+                  aria-label="Delete account"
+                  className="gd-shell-delete-action"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
               </div>
-              <div className="mt-1 truncate text-xs text-muted-foreground">
-                {[profile.year, profile.university].filter(Boolean).join(" - ")}
-              </div>
-            </div>
-          )}
-          <button
-            type="button"
-            data-tour="tour-launcher"
-            onClick={() => setTourOpen(true)}
-            title={isSidebarCollapsed ? "Guide" : "Replay the app guide"}
-            aria-label="Replay the app guide"
-            className={`mb-1 flex items-center text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground ${
-              isSidebarCollapsed
-                ? "justify-center rounded-lg p-2"
-                : "w-full gap-3 rounded-lg px-3 py-2 text-sm font-medium"
-            }`}
-          >
-            <Map className="h-4 w-4 shrink-0" />
-            <span
-              className={`whitespace-nowrap transition-all duration-300 ${
-                isSidebarCollapsed
-                  ? "max-w-0 -translate-x-2 opacity-0"
-                  : "max-w-24 translate-x-0 opacity-100"
-              }`}
-              aria-hidden={isSidebarCollapsed}
-            >
-              Guide
-            </span>
-          </button>
-          {/* Expanded, the side menu has room to show all four themes at once;
-              collapsed it does not, so it falls back to the cycling button. */}
-          {isSidebarCollapsed ? <ThemeToggle /> : <ThemePicker className="mb-2 px-3" />}
-          <button
-            onClick={async () => {
-              if (await confirmAndSignOut()) navigate({ to: "/" });
-            }}
-            className={`flex items-center text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground ${
-              isSidebarCollapsed
-                ? "justify-center rounded-lg p-2"
-                : "w-full gap-3 rounded-lg px-3 py-2 text-sm font-medium"
-            }`}
-            title={isSidebarCollapsed ? "Sign out" : undefined}
-            aria-label="Sign out"
-          >
-            <LogOut className="h-4 w-4 shrink-0" />
-            <span
-              className={`whitespace-nowrap transition-all duration-300 ${
-                isSidebarCollapsed
-                  ? "max-w-0 -translate-x-2 opacity-0"
-                  : "max-w-24 translate-x-0 opacity-100"
-              }`}
-              aria-hidden={isSidebarCollapsed}
-            >
-              Sign out
-            </span>
-          </button>
-          {!isSidebarCollapsed && (
-            <button
-              onClick={() => setShowDeleteDialog(true)}
-              className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
-            >
-              <Trash2 className="h-3.5 w-3.5 shrink-0" />
-              Account deletion
-            </button>
+            </>
           )}
         </div>
       </aside>
 
       <div
-        className={`mobile-app-topbar sticky top-0 z-[60] flex h-[calc(3rem+env(safe-area-inset-top))] shrink-0 items-center justify-between overflow-hidden border-b border-border/70 bg-background/80 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-md transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform md:hidden ${
+        inert={mobileMenuOpen}
+        className={`mobile-app-topbar sticky top-0 z-30 flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center justify-between overflow-hidden border-b border-border/70 bg-background/80 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-md transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform md:hidden ${
           hideMobileTopbar
             ? "pointer-events-none -translate-y-full opacity-0"
             : "translate-y-0 opacity-100"
@@ -1080,12 +1119,13 @@ function AppLayout() {
           onClick={() => setMobileMenuOpen((open) => !open)}
           className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
           aria-expanded={mobileMenuOpen}
+          aria-controls="gd-mobile-workspace-menu"
           aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
           title={mobileMenuOpen ? "Close menu" : "Menu"}
         >
           {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
-        <Link to="/app/chat" className="luxury-brand-text small">
+        <Link to="/app/chat" className="gd-shell-mobile-brand luxury-brand-text small">
           G&D
         </Link>
         <div className="flex items-center gap-1.5">
@@ -1119,121 +1159,121 @@ function AppLayout() {
         <div
           onClick={() => setMobileMenuOpen(false)}
           aria-hidden="true"
-          className={`fixed inset-0 z-40 bg-black/55 backdrop-blur-[1px] transition-opacity duration-200 md:hidden ${
+          className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-[3px] transition-opacity duration-200 md:hidden ${
             mobileMenuOpen ? "opacity-100" : "pointer-events-none opacity-0"
           }`}
         />
         <aside
+          ref={mobileDrawerRef}
+          id="gd-mobile-workspace-menu"
+          role="dialog"
+          aria-modal={mobileMenuOpen ? true : undefined}
+          aria-label="Study workspace menu"
+          inert={!mobileMenuOpen}
           onTouchStart={onDrawerTouchStart}
           onTouchEnd={onDrawerTouchEnd}
           aria-hidden={!mobileMenuOpen}
-          className={`gd-mobile-menu fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-[19rem] flex-col border-r border-border/60 text-foreground shadow-[20px_0_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-transform will-change-transform md:hidden ${
-            mobileMenuOpen
-              ? "translate-x-0 duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
-              : "-translate-x-full duration-200 ease-in"
-          }`}
+          className={`gd-mobile-menu fixed inset-y-0 left-0 z-50 flex w-[88vw] max-w-[21rem] flex-col border-r border-border/60 text-foreground shadow-[20px_0_48px_rgba(0,0,0,0.28)] transition-transform will-change-transform md:hidden ${mobileMenuOpen ? "translate-x-0 duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]" : "-translate-x-full duration-200 ease-in"}`}
           style={{ paddingTop: "env(safe-area-inset-top)" }}
         >
-          {/* ── Pinned top section: New Chat + Nav ── */}
-          <div className="shrink-0 px-3 pb-3 pt-4">
+          <div className="shrink-0 px-4 pb-3 pt-5">
+            <div className="gd-shell-drawer-brand-row mb-5 flex items-center justify-between gap-4">
+              <Link
+                to="/app/chat"
+                className="gd-shell-brand"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <span className="gd-sidebar-brand luxury-brand-text">G&D</span>
+                <span className="gd-shell-brand-caption">Your study workspace</span>
+              </Link>
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(false)}
+                aria-label="Close menu"
+                className="gd-shell-icon-button"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
             <button
               type="button"
               onClick={openNewChat}
-              className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-md transition-opacity active:opacity-80"
+              className="gd-shell-new-chat flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold"
             >
               <Plus className="h-4 w-4" />
               New chat
             </button>
+          </div>
 
-            {/* The drawer is the whole map below md, so it reads in exactly the
-                sidebar's order and folds the same tail away. Kept in step
-                deliberately: a student who learns the app on a laptop should
-                not have to relearn it on a phone. */}
-            <nav className="mt-3 grid gap-0.5">
-              <MobileDrawerNavItem
-                active={location.pathname.includes("chat")}
-                icon={<MessageSquare className="h-4 w-4" />}
-                label="Chat"
-                onPick={() => goToMobileRoute("/app/chat")}
-              />
-              <MobileDrawerNavItem
-                active={location.pathname.includes("library")}
-                icon={<BookOpen className="h-4 w-4" />}
-                label="Library"
-                onPick={() => goToMobileRoute("/app/library")}
-                tourAnchor="nav-library"
-              />
-              <MobileDrawerNavItem
-                active={location.pathname.includes("studybody")}
-                icon={<ListChecks className="h-4 w-4" />}
-                label="PQ"
-                onPick={() => goToMobileRoute("/app/studybody")}
-                tourAnchor="nav-pq"
-              />
-              <MobileDrawerNavItem
-                active={location.pathname.includes("leaderboard")}
-                icon={<Trophy className="h-4 w-4" />}
-                label="Leaderboard"
-                onPick={() => goToMobileRoute("/app/leaderboard")}
-                tourAnchor="nav-leaderboard"
-              />
-              {/* Same gate as the desktop sidebar's Friends and Battle Royale
-                  entries — see socialEnabled(). Kept in step with the sidebar
-                  deliberately: the route resolves at any width, so it must be
-                  reachable at any width too, and the drawer is the only nav
-                  below md. Friends, then Battle Royale, which is the opponent
-                  you pick from it. */}
-              {socialEnabled(user) && (
+          {/* Navigation and history share one scroll region on short screens. */}
+          <div className="gd-no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-4">
+            <nav className="gd-shell-navigation" aria-label="Study tools">
+              <div className="gd-shell-nav-section">
+                <p className="gd-shell-section-label">Study</p>
                 <MobileDrawerNavItem
-                  active={location.pathname.includes("friends")}
-                  icon={<Users className="h-4 w-4" />}
-                  label="Friends"
-                  onPick={() => goToMobileRoute("/app/friends")}
-                  tourAnchor="nav-friends"
+                  active={location.pathname.startsWith("/app/chat")}
+                  icon={<MessageSquare className="h-4 w-4" />}
+                  label="Chat"
+                  onPick={() => goToMobileRoute("/app/chat")}
                 />
-              )}
-              {socialEnabled(user) && (
                 <MobileDrawerNavItem
-                  active={location.pathname.includes("battle-royale")}
-                  icon={<Swords className="h-4 w-4" />}
-                  label="Battle Royale"
-                  onPick={() => goToMobileRoute("/app/battle-royale")}
-                  tourAnchor="nav-battle-royale"
+                  active={location.pathname.startsWith("/app/library")}
+                  icon={<BookOpen className="h-4 w-4" />}
+                  label="Library"
+                  onPick={() => goToMobileRoute("/app/library")}
+                  tourAnchor="nav-library"
                 />
-              )}
-
-              <div className="mt-2 grid gap-0.5 border-t border-border/50 pt-2">
                 <MobileDrawerNavItem
-                  active={location.pathname.includes("last-minute")}
+                  active={location.pathname.startsWith("/app/studybody")}
+                  icon={<ListChecks className="h-4 w-4" />}
+                  label="Practice questions"
+                  onPick={() => goToMobileRoute("/app/studybody")}
+                  tourAnchor="nav-pq"
+                />
+                <MobileDrawerNavItem
+                  active={location.pathname.startsWith("/app/last-minute")}
                   icon={<TimerReset className="h-4 w-4" />}
                   label="Last Minute"
                   onPick={() => goToMobileRoute("/app/last-minute")}
                   tourAnchor="nav-last-minute"
                 />
+              </div>
+              <div className="gd-shell-nav-section">
+                <p className="gd-shell-section-label">Community</p>
                 <MobileDrawerNavItem
-                  active={location.pathname.includes("history")}
+                  active={location.pathname.startsWith("/app/leaderboard")}
+                  icon={<Trophy className="h-4 w-4" />}
+                  label="Leaderboard"
+                  onPick={() => goToMobileRoute("/app/leaderboard")}
+                  tourAnchor="nav-leaderboard"
+                />
+                {socialEnabled(user) && (
+                  <MobileDrawerNavItem
+                    active={location.pathname.startsWith("/app/friends")}
+                    icon={<Users className="h-4 w-4" />}
+                    label="Friends"
+                    onPick={() => goToMobileRoute("/app/friends")}
+                    tourAnchor="nav-friends"
+                  />
+                )}
+                {socialEnabled(user) && (
+                  <MobileDrawerNavItem
+                    active={location.pathname.startsWith("/app/battle-royale")}
+                    icon={<Swords className="h-4 w-4" />}
+                    label="Battle Royale"
+                    onPick={() => goToMobileRoute("/app/battle-royale")}
+                    tourAnchor="nav-battle-royale"
+                  />
+                )}
+              </div>
+              <div className="gd-shell-nav-section">
+                <p className="gd-shell-section-label">Your space</p>
+                <MobileDrawerNavItem
+                  active={location.pathname.startsWith("/app/history")}
                   icon={<Clock className="h-4 w-4" />}
                   label="History"
                   onPick={() => goToMobileRoute("/app/history")}
                   tourAnchor="nav-history"
-                />
-                <MobileDrawerNavItem
-                  active={location.pathname.includes("settings")}
-                  icon={<Settings className="h-4 w-4" />}
-                  label="Settings"
-                  onPick={() => goToMobileRoute("/app/settings")}
-                />
-                {/* Guide stays out of the fold: the tour's closing step points
-                    at it, and on a phone this row is the only copy of it. */}
-                <MobileDrawerNavItem
-                  active={false}
-                  icon={<Map className="h-4 w-4" />}
-                  label="Guide"
-                  onPick={() => {
-                    setMobileMenuOpen(false);
-                    setTourOpen(true);
-                  }}
-                  tourAnchor="tour-launcher"
                 />
                 <MobileDrawerNavItem
                   active={false}
@@ -1262,16 +1302,14 @@ function AppLayout() {
                       }}
                     />
                     <MobileDrawerNavItem
-                      active={location.pathname.includes("feedback")}
+                      active={location.pathname.startsWith("/app/feedback")}
                       icon={<Heart className="h-4 w-4" />}
                       label="Feedback"
                       onPick={() => goToMobileRoute("/app/feedback")}
                     />
-                    {/* Was desktop-only before; the drawer is the phone's whole
-                        nav, so an admin on a phone had no way in. */}
                     {profile?.is_admin && (
                       <MobileDrawerNavItem
-                        active={location.pathname.includes("admin")}
+                        active={location.pathname.startsWith("/app/admin")}
                         icon={<ShieldCheck className="h-4 w-4" />}
                         label="Admin"
                         onPick={() => goToMobileRoute("/app/admin")}
@@ -1281,99 +1319,63 @@ function AppLayout() {
                 )}
               </div>
             </nav>
-          </div>
-
-          {/* ── Scrollable chat history ── */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-border/50 px-3 py-3">
-            <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Recent chats
-            </p>
-            {recentConvos.length === 0 ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center">
-                <MessageSquare className="h-8 w-8 text-muted-foreground/30" />
-                <p className="text-xs text-muted-foreground">No chats yet. Start one above!</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <MobileConvoGroup
-                  title="Today"
-                  items={groupedRecentConvos.today}
-                  activeId={search.c}
-                  onPick={(id) => {
-                    navigate({ to: "/app/chat", search: { c: id } });
-                    setMobileMenuOpen(false);
-                  }}
-                />
-                <MobileConvoGroup
-                  title="Yesterday"
-                  items={groupedRecentConvos.yesterday}
-                  activeId={search.c}
-                  onPick={(id) => {
-                    navigate({ to: "/app/chat", search: { c: id } });
-                    setMobileMenuOpen(false);
-                  }}
-                />
-                <MobileConvoGroup
-                  title="This week"
-                  items={groupedRecentConvos.thisWeek}
-                  activeId={search.c}
-                  onPick={(id) => {
-                    navigate({ to: "/app/chat", search: { c: id } });
-                    setMobileMenuOpen(false);
-                  }}
-                />
-                <MobileConvoGroup
-                  title="This month"
-                  items={groupedRecentConvos.thisMonth}
-                  activeId={search.c}
-                  onPick={(id) => {
-                    navigate({ to: "/app/chat", search: { c: id } });
-                    setMobileMenuOpen(false);
-                  }}
-                />
-                <MobileConvoGroup
-                  title="Older"
-                  items={groupedRecentConvos.older}
-                  activeId={search.c}
-                  onPick={(id) => {
-                    navigate({ to: "/app/chat", search: { c: id } });
-                    setMobileMenuOpen(false);
-                  }}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* ── Pinned footer: user info + actions ── */}
-          <div
-            className="shrink-0 border-t border-border/50 px-3 py-3"
-            style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
-          >
-            {/* The name had to share this row with the theme button, which
-                truncated it early on narrow phones. It gets the full width now,
-                and the theme control moves to its own row below. The ring
-                joins it because the drawer IS the whole nav below md - the
-                shell header's copy of it (above) never renders here. */}
-            <div className="mb-2 flex min-w-0 items-center gap-2 px-1">
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold leading-tight">
-                  {profile.name || "Student"}
+            <div className="gd-shell-history mt-4 pt-4">
+              <p className="gd-shell-section-label">Recent conversations</p>
+              {recentConvos.length === 0 ? (
+                <div className="gd-shell-empty-history">
+                  <MessageSquare className="h-4 w-4" />
+                  <p>
+                    {isGuest
+                      ? "Guest chats are not saved."
+                      : "Your conversations will appear here."}
+                  </p>
                 </div>
-                <div className="truncate text-[11px] text-muted-foreground">
-                  {[profile.year, profile.university].filter(Boolean).join(" · ")}
+              ) : (
+                <div className="space-y-3">
+                  {(
+                    [
+                      ["Today", groupedRecentConvos.today],
+                      ["Yesterday", groupedRecentConvos.yesterday],
+                      ["This week", groupedRecentConvos.thisWeek],
+                      ["This month", groupedRecentConvos.thisMonth],
+                      ["Older", groupedRecentConvos.older],
+                    ] as const
+                  ).map(([title, items]) => (
+                    <MobileConvoGroup
+                      key={title}
+                      title={title}
+                      items={items}
+                      activeId={activeConvoId}
+                      onPick={(id) => {
+                        navigate({ to: "/app/chat", search: { c: id } });
+                        setMobileMenuOpen(false);
+                      }}
+                    />
+                  ))}
                 </div>
-              </div>
-              {cookies.status === "ready" && (
-                <CookieRing
-                  remaining={cookies.balance.remaining}
-                  allowance={cookies.balance.allowance}
-                  onClick={openCookieDialog}
-                  size={32}
-                />
               )}
             </div>
-            <ThemePicker className="mb-3 px-1" />
-            <div className="flex gap-1">
+          </div>
+
+          <div
+            className="gd-shell-footer gd-no-scrollbar max-h-[45%] shrink-0 overflow-y-auto border-t border-border/50 px-3 py-3"
+            style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+          >
+            {renderAccountCard()}
+            <ThemePicker className="gd-shell-theme-picker mt-3" />
+            <div className="gd-shell-account-actions mt-2">
+              <button
+                type="button"
+                data-tour="tour-launcher"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setTourOpen(true);
+                }}
+                className="gd-shell-footer-action"
+              >
+                <Map className="h-3.5 w-3.5" />
+                Guide
+              </button>
               <button
                 type="button"
                 onClick={async () => {
@@ -1381,7 +1383,7 @@ function AppLayout() {
                   setMobileMenuOpen(false);
                   navigate({ to: "/" });
                 }}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+                className="gd-shell-footer-action"
               >
                 <LogOut className="h-3.5 w-3.5" />
                 Sign out
@@ -1392,16 +1394,18 @@ function AppLayout() {
                   setMobileMenuOpen(false);
                   setShowDeleteDialog(true);
                 }}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-destructive"
+                title="Delete account"
+                aria-label="Delete account"
+                className="gd-shell-delete-action"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                Delete account
               </button>
             </div>
           </div>
         </aside>
 
         <main
+          inert={mobileMenuOpen}
           onTouchStart={onContentTouchStart}
           onTouchEnd={onContentTouchEnd}
           className="gd-workspace flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:pb-0"
@@ -1518,9 +1522,10 @@ function MobileDrawerNavItem({
       data-tour={tourAnchor}
       onClick={onPick}
       aria-expanded={expanded}
-      className={`flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors ${
+      aria-current={active ? "page" : undefined}
+      className={`gd-shell-drawer-nav-item ${active ? "is-active" : ""} flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors ${
         active
-          ? "bg-primary/10 text-foreground shadow-[inset_2px_0_0_var(--primary)]"
+          ? "text-foreground"
           : "text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
       }`}
     >
@@ -1533,7 +1538,7 @@ function MobileDrawerNavItem({
           />
         )}
       </span>
-      {label}
+      <span>{label}</span>
     </button>
   );
 }
@@ -1559,7 +1564,7 @@ function SidebarConvoGroup({
 
   return (
     <section>
-      <p className="gd-nav-label px-3 pb-1">{title}</p>
+      <p className="gd-shell-history-date px-3 pb-1">{title}</p>
       <ul className="space-y-0.5">
         {items.map((convo) => {
           const label = convo.title || "New conversation";
@@ -1570,7 +1575,8 @@ function SidebarConvoGroup({
                 to="/app/chat"
                 search={{ c: convo.id }}
                 title={label}
-                className={`block truncate rounded-lg py-1.5 pl-3 pr-8 text-[13px] transition-colors ${
+                aria-current={active ? "page" : undefined}
+                className={`gd-shell-conversation block truncate rounded-lg py-2 pl-3 pr-8 text-[12px] transition-colors ${
                   active
                     ? "bg-foreground/[0.07] text-foreground"
                     : "text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground"
@@ -1612,16 +1618,15 @@ function MobileConvoGroup({
 
   return (
     <section className="w-full">
-      <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-        {title}
-      </p>
-      <div className="divide-y divide-border/50">
+      <p className="gd-shell-history-date px-3 pb-1">{title}</p>
+      <div className="space-y-0.5">
         {items.map((item) => (
           <button
             key={item.id}
             type="button"
             onClick={() => onPick(item.id)}
-            className={`w-full px-1 py-2.5 text-left text-xs transition-colors ${
+            aria-current={activeId === item.id ? "page" : undefined}
+            className={`gd-shell-conversation w-full rounded-lg px-3 py-2.5 text-left text-xs transition-colors ${
               activeId === item.id
                 ? "text-foreground"
                 : "text-muted-foreground hover:text-foreground"

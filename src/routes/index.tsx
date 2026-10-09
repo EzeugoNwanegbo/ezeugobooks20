@@ -1,142 +1,56 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
+import {
+  ArrowDown,
+  ArrowRight,
+  BookOpen,
+  Check,
+  ChevronRight,
+  FileText,
+  Layers,
+  MessageSquare,
+  Plus,
+  Search,
+  Sparkles,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { isNativeApp } from "@/lib/native";
 import { signInWithGoogleNative } from "@/lib/native-auth";
+import "@/components/landing-page.css";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "G&D - a search engine for your textbooks" },
+      { title: "G&D — less searching, more clarity" },
       {
         name: "description",
         content:
-          "Google, but for textbooks. Upload thousand-page PDFs, slides and notes, then ask questions and get answers quoted straight from your own material.",
+          "Bring your textbooks, notes and slides together. Ask questions grounded in your material, build study roadmaps and practise what you learn with G&D.",
       },
     ],
   }),
   component: Landing,
 });
 
-// One screen: headline + auth on the left, a meme slideshow on the right.
-// Discipline (medicine / law) is picked later in onboarding, so the landing
-// page carries a single neutral dark theme instead of per-track variants.
-
 const FONTS_HREF =
-  "https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap";
+  "https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap";
 
-/* The tail of the headline, cycled forever. */
-const PHRASES = [
-  "big files",
-  "thousand-page textbooks",
-  "PDFs",
-  "PowerPoint slides",
-  "Word documents",
-];
-const LONGEST_PHRASE = "thousand-page textbooks";
-const PHRASE_MS = 2200;
-
-/* Slideshow. Purely decorative ambience - the panel is hidden from assistive
-   tech (see MemeSlideshow), so these carry no alt copy of their own. */
-const MEMES: string[] = [
-  "/memes/meme-01.jpg",
-  "/memes/spongebob.jpg",
-  "/memes/meme-02.jpg",
-  "/memes/jake.jpg",
-  "/memes/meme-03.jpg",
-  "/memes/delulu.jpg",
-  "/memes/meme-04.jpg",
-  "/memes/in-the-beginning.jpg",
-  "/memes/meme-05.jpg",
-  "/memes/ann14a.jpg",
-  "/memes/funny-viral-meme.jpg",
-  "/memes/textbook-study-memes.jpg",
-];
-const SLIDE_MS = 3500;
-
-/** True when the visitor asked the OS to reduce motion. SSR-safe. */
-function useReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(mq.matches);
-    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return reduced;
-}
-
-/* ----------------------------------------------------------------- */
-/* Nav action.                                                         */
-/*                                                                     */
-/* This was "Try for free", which opened a no-signup guest session.     */
-/* Anonymous sign-ins are disabled on the project, so that button could */
-/* only ever fail - it advertised a door that was locked, and the owner */
-/* chose to remove it rather than switch the provider on.               */
-/*                                                                     */
-/* It is a plain route now, not nothing, because a signed-in student    */
-/* landing on the marketing page still needs a way back into the app;   */
-/* deleting the button outright would strand them with only the Google  */
-/* card. startGuestSession() has no callers left, but guest sessions    */
-/* still work everywhere else (isGuestUser, the upgrade flow) for       */
-/* anyone who already holds one.                                        */
-/* ----------------------------------------------------------------- */
-function NavAction({ className = "" }: { className?: string }) {
+function NavAction() {
   const { user } = useAuth();
-
   return user ? (
-    <Link to="/app/chat" className={`gd-btn gd-btn-ghost ${className}`}>
-      Open G&amp;D
+    <Link to="/app/chat" className="gd-home-button gd-home-button-small">
+      Open workspace <ArrowRight size={15} aria-hidden="true" />
     </Link>
   ) : (
-    <Link to="/auth" search={{ mode: "signin" }} className={`gd-btn gd-btn-ghost ${className}`}>
-      Sign in
+    <Link to="/auth" search={{ mode: "signin" }} className="gd-home-nav-signin">
+      Sign in <ArrowRight size={15} aria-hidden="true" />
     </Link>
   );
 }
 
-/* ----------------------------------------------------------------- */
-/* Headline - static lead-in, infinitely rotating tail.                */
-/* ----------------------------------------------------------------- */
-function RotatingHeadline() {
-  const reduced = useReducedMotion();
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    if (reduced) return;
-    const id = setInterval(() => {
-      setIndex((i) => (i + 1) % PHRASES.length);
-    }, PHRASE_MS);
-    return () => clearInterval(id);
-  }, [reduced]);
-
-  return (
-    <h1 className="gd-h1">
-      {/* One stable sentence for screen readers and SEO. */}
-      <span className="gd-sr-only">A search engine for thousand-page textbooks.</span>
-      <span aria-hidden="true">
-        <span className="gd-h1-lead">A search engine for</span>
-        <span className="gd-rotator" aria-live="off">
-          {/* Invisible longest phrase reserves the box so nothing reflows. */}
-          <span className="gd-rotator-sizer">{LONGEST_PHRASE}</span>
-          <span key={reduced ? "static" : index} className="gd-rotator-word">
-            {PHRASES[reduced ? 0 : index]}
-          </span>
-        </span>
-      </span>
-    </h1>
-  );
-}
-
-/* ----------------------------------------------------------------- */
-/* Auth card - the same Google flow /auth uses; email hands off there. */
-/* ----------------------------------------------------------------- */
 function AuthCard() {
-  const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const { user } = useAuth();
   const [googleBusy, setGoogleBusy] = useState(false);
 
   const handleGoogle = async () => {
@@ -144,10 +58,10 @@ function AuthCard() {
     setGoogleBusy(true);
     try {
       if (isNativeApp()) {
-        // Google blocks OAuth inside embedded webviews, so the native build
-        // hands off to the system browser and finishes via the deep link.
+        // Embedded webviews must use the system browser and native deep link.
         await signInWithGoogleNative();
-        return; // spinner holds; we've left the app
+        setGoogleBusy(false);
+        return;
       }
       const { supabase } = await import("@/integrations/supabase/client");
       const { error } = await supabase.auth.signInWithOAuth({
@@ -155,87 +69,49 @@ function AuthCard() {
         options: { redirectTo: `${window.location.origin}/auth` },
       });
       if (error) throw error;
-
-      // The success path used to just `return`, leaving googleBusy true on the
-      // assumption that the browser was already on its way to Google. When that
-      // navigation does not happen - a blocked redirect, an extension, a slow
-      // or dropped connection - the button stayed disabled behind a spinner
-      // with no error and no way back. The page looked frozen, and a reload was
-      // the only escape.
-      //
-      // Nothing here can observe "the navigation failed", so this asks the only
-      // question that can be answered: are we still on this page a few seconds
-      // later? If so the redirect did not happen, and the student gets their
-      // button back. If it did, this timer dies with the page.
+      // Restore the button if a blocked or interrupted redirect leaves us here.
       window.setTimeout(() => {
         setGoogleBusy(false);
         toast.error("Google sign-in did not open. Check your connection and try again.");
       }, 6000);
-      return;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Google sign-in failed");
       setGoogleBusy(false);
     }
   };
 
-  // /auth's search schema only accepts `mode`, so the address is collected
-  // again there rather than smuggled through a param it would reject.
-  const handleEmail = (e: React.FormEvent) => {
-    e.preventDefault();
-    navigate({ to: "/auth", search: { mode: "signup" } });
-  };
+  if (user) {
+    return (
+      <div className="gd-home-auth">
+        <Link to="/app/chat" className="gd-home-button gd-home-button-block">
+          Back to your workspace <ArrowRight size={18} aria-hidden="true" />
+        </Link>
+        <p className="gd-home-auth-note">Your next good study session starts here.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="gd-auth">
+    <div className="gd-home-auth">
       <button
         type="button"
-        className="gd-btn gd-btn-google"
+        className="gd-home-button gd-home-google"
         onClick={handleGoogle}
         disabled={googleBusy}
         aria-busy={googleBusy}
       >
-        {googleBusy ? (
-          <span className="gd-spinner gd-spinner-dark" aria-hidden="true" />
-        ) : (
-          <GoogleMark />
-        )}
-        {googleBusy ? "Opening Google…" : "Continue with Google"}
+        {googleBusy ? <span className="gd-home-spinner" aria-hidden="true" /> : <GoogleMark />}
+        {googleBusy ? "Opening Google…" : "Get started with Google"}
+        {!googleBusy && <ArrowRight size={17} aria-hidden="true" />}
       </button>
-
-      <div className="gd-or">
-        <span className="gd-or-rule" />
-        OR
-        <span className="gd-or-rule" />
-      </div>
-
-      <form className="gd-email-form" onSubmit={handleEmail}>
-        <label className="gd-sr-only" htmlFor="gd-email">
-          Email address
-        </label>
-        <input
-          id="gd-email"
-          className="gd-input"
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Enter your personal or work email"
-          autoComplete="email"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-        />
-        <button type="submit" className="gd-btn gd-btn-primary gd-btn-block">
-          Continue with email
-        </button>
-      </form>
-
-      <p className="gd-fineprint">
-        By continuing you agree to our{" "}
-        <Link to="/privacy" className="gd-fineprint-link">
-          Privacy Policy
-        </Link>
-        .
+      <Link to="/auth" search={{ mode: "signup" }} className="gd-home-email">
+        Prefer email?{" "}
+        <span>
+          Start here <ArrowRight size={13} aria-hidden="true" />
+        </span>
+      </Link>
+      <p className="gd-home-auth-note">
+        By continuing, you agree to our <Link to="/privacy">Privacy Policy</Link>.
       </p>
     </div>
   );
@@ -264,312 +140,361 @@ function GoogleMark() {
   );
 }
 
-/* ----------------------------------------------------------------- */
-/* Meme slideshow - crossfading panel on the right.                    */
-/*                                                                     */
-/* Decorative only: it advances by itself and offers nothing to click, */
-/* so the whole panel is hidden from assistive tech and the images     */
-/* carry empty alts. Nothing here announces how many memes there are.  */
-/* It stops for prefers-reduced-motion, which is the one real gate.    */
-/* ----------------------------------------------------------------- */
-function MemeSlideshow() {
-  const reduced = useReducedMotion();
-  const [index, setIndex] = useState(0);
+type PreviewSubject = "medicine" | "law";
 
-  useEffect(() => {
-    if (reduced) return;
-    const id = setInterval(() => {
-      setIndex((i) => (i + 1) % MEMES.length);
-    }, SLIDE_MS);
-    return () => clearInterval(id);
-  }, [reduced]);
+const PREVIEW_EXAMPLES = {
+  medicine: {
+    label: "Medicine",
+    folder: "Human physiology",
+    file: "Cardiovascular physiology.pdf",
+    question: "Why does the heart beat faster during exercise?",
+    answer:
+      "During exercise, your muscles need more oxygen. The heart responds by pumping more blood each minute.",
+    points: [
+      ["Heart rate rises", "Sympathetic activity makes the heart beat faster."],
+      ["More blood reaches muscles", "Cardiac output increases to meet the extra demand."],
+    ],
+    source: "Cardiovascular physiology · Exercise response",
+  },
+  law: {
+    label: "Law",
+    folder: "Contract law",
+    file: "Foundations of contract law.pdf",
+    question: "What is the difference between an offer and an invitation to treat?",
+    answer:
+      "An offer shows a clear willingness to be bound when accepted. An invitation to treat invites someone else to make an offer.",
+    points: [
+      ["An offer can be accepted", "Acceptance may create a binding agreement."],
+      ["An invitation starts negotiation", "A shop display is a common example."],
+    ],
+    source: "Foundations of contract law · Agreement",
+  },
+} satisfies Record<
+  PreviewSubject,
+  {
+    label: string;
+    folder: string;
+    file: string;
+    question: string;
+    answer: string;
+    points: string[][];
+    source: string;
+  }
+>;
 
-  const active = reduced ? 0 : index;
+function WorkspacePreview() {
+  const [subject, setSubject] = useState<PreviewSubject>("medicine");
+  const example = PREVIEW_EXAMPLES[subject];
 
   return (
-    <div className="gd-slideshow" aria-hidden="true">
-      <div className="gd-slides">
-        {MEMES.map((src, i) => (
-          <img
-            key={src}
-            className={`gd-slide ${i === active ? "is-on" : ""}`}
-            src={src}
-            alt=""
-            loading={i === 0 ? "eager" : "lazy"}
-            decoding="async"
-            draggable={false}
-          />
-        ))}
+    <div className="gd-home-preview-wrap" id="workspace-preview">
+      <div className="gd-home-preview-label">
+        <span className="gd-home-status-dot" aria-hidden="true" />A LOOK INSIDE YOUR WORKSPACE
+      </div>
+      <div className="gd-home-preview">
+        <div className="gd-home-preview-topbar">
+          <span className="gd-home-preview-brand">
+            G&amp;D<span> / workspace</span>
+          </span>
+          <span className="gd-home-preview-avatar" aria-hidden="true">
+            S
+          </span>
+        </div>
+        <div className="gd-home-preview-body">
+          <div className="gd-home-preview-rail" aria-hidden="true">
+            <span className="gd-home-rail-item is-active">
+              <MessageSquare size={17} />
+            </span>
+            <span className="gd-home-rail-item">
+              <BookOpen size={17} />
+            </span>
+            <span className="gd-home-rail-item">
+              <Layers size={17} />
+            </span>
+            <span className="gd-home-rail-plus">
+              <Plus size={17} />
+            </span>
+          </div>
+          <div className="gd-home-preview-content">
+            <div className="gd-home-preview-breadcrumb">
+              Library <ChevronRight size={11} aria-hidden="true" /> <span>{example.folder}</span>
+            </div>
+            <div className="gd-home-preview-heading">
+              <h2>Find your “oh, I get it.”</h2>
+              <p>Ask a question. Connect the dots.</p>
+            </div>
+            <div className="gd-home-subjects" role="group" aria-label="Choose a study preview">
+              {(Object.keys(PREVIEW_EXAMPLES) as PreviewSubject[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={subject === key}
+                  onClick={() => setSubject(key)}
+                >
+                  {PREVIEW_EXAMPLES[key].label}
+                </button>
+              ))}
+            </div>
+            <div className="gd-home-example" aria-live="polite" aria-atomic="true">
+              <div className="gd-home-preview-file">
+                <FileText size={14} aria-hidden="true" />
+                <span>{example.file}</span>
+                <Check size={13} aria-hidden="true" />
+              </div>
+              <div className="gd-home-preview-question">{example.question}</div>
+              <div className="gd-home-preview-answer">
+                <span className="gd-home-answer-mark" aria-hidden="true">
+                  G&amp;D
+                </span>
+                <div>
+                  <p>{example.answer}</p>
+                  <ul>
+                    {example.points.map(([title, detail]) => (
+                      <li key={title}>
+                        <strong>{title}</strong>
+                        <span>{detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="gd-home-preview-source">
+                    <BookOpen size={12} aria-hidden="true" /> {example.source}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="gd-home-preview-composer" aria-hidden="true">
+              <Plus size={15} /> <span>Your next question…</span>{" "}
+              <span className="gd-home-send">
+                <ArrowRight size={15} />
+              </span>
+            </div>
+            <p className="gd-home-preview-disclaimer">
+              Interactive preview · example material and answer
+            </p>
+          </div>
+        </div>
+      </div>
+      <div className="gd-home-preview-footnote">
+        <span aria-hidden="true">↳</span> A question away from making it click.
       </div>
     </div>
   );
 }
 
-/* ----------------------------------------------------------------- */
-/* Landing                                                             */
-/* ----------------------------------------------------------------- */
+const FEATURES = [
+  {
+    number: "01",
+    icon: BookOpen,
+    title: "A home for your material.",
+    description:
+      "Keep textbooks, lecture slides and notes together in a library that makes sense to you.",
+    detail: "YOUR LIBRARY, ORGANISED",
+  },
+  {
+    number: "02",
+    icon: MessageSquare,
+    title: "Go straight to the question.",
+    description:
+      "Ask in your own words. Explore explanations grounded in the files you choose, then follow up until it clicks.",
+    detail: "CONVERSATIONS WITH CONTEXT",
+  },
+  {
+    number: "03",
+    icon: Layers,
+    title: "Turn clarity into confidence.",
+    description:
+      "Build a study roadmap, practise with questions and flashcards, and see what needs another look.",
+    detail: "LEARN. PRACTISE. REPEAT.",
+  },
+];
+
 function Landing() {
+  const { user } = useAuth();
   return (
-    <div className="gd-root">
+    <div className="gd-home">
       <link rel="stylesheet" href={FONTS_HREF} />
-      <link rel="preload" as="image" href={MEMES[0]} />
-      <style>{GD_CSS}</style>
-
-      <div className="gd-blob gd-blob-1" aria-hidden="true" />
-      <div className="gd-blob gd-blob-2" aria-hidden="true" />
-
-      <header className="gd-nav">
-        <Link to="/" className="gd-logo">
+      <a href="#main-content" className="gd-home-skip">
+        Skip to content
+      </a>
+      <header className="gd-home-nav gd-home-container">
+        <Link to="/" className="gd-home-logo" aria-label="G and D home">
           G&amp;D
+          <Sparkles size={18} strokeWidth={1.6} aria-hidden="true" />
         </Link>
-        <NavAction className="gd-nav-cta" />
+        <nav className="gd-home-nav-links" aria-label="Main navigation">
+          <a href="#how-it-works">How it works</a>
+          <a href="#workspace-preview">The workspace</a>
+        </nav>
+        <NavAction />
       </header>
 
-      <main className="gd-hero">
-        <section className="gd-hero-copy">
-          <RotatingHeadline />
-          <p className="gd-sub">Google, but for textbooks.</p>
-          <AuthCard />
+      <main id="main-content">
+        <section className="gd-home-hero gd-home-container" aria-labelledby="hero-heading">
+          <div className="gd-home-hero-copy">
+            <p className="gd-home-eyebrow">
+              <span className="gd-home-eyebrow-rule" /> MADE FOR THE WAY YOU STUDY
+            </p>
+            <h1 id="hero-heading">
+              Less searching.
+              <br />
+              <span>More clarity.</span>
+            </h1>
+            <p className="gd-home-intro">
+              Big textbooks. Full lecture folders. That one idea you just can't get your head
+              around.
+            </p>
+            <p className="gd-home-description">
+              Bring your material together. Ask better questions. Make understanding your next
+              habit.
+            </p>
+            <AuthCard />
+            <a className="gd-home-discover" href="#how-it-works">
+              <ArrowDown size={14} aria-hidden="true" /> A better way to work through it
+            </a>
+          </div>
+          <WorkspacePreview />
         </section>
 
-        {/* Ambience. Labelling it would announce an empty region, since the
-            panel inside is aria-hidden. */}
-        <section className="gd-hero-visual">
-          <MemeSlideshow />
+        <div className="gd-home-materials gd-home-container">
+          <p>
+            YOUR MATERIAL. <span>ALL IN ONE PLACE.</span>
+          </p>
+          <div>
+            <span>
+              <FileText size={15} aria-hidden="true" /> PDFs & textbooks
+            </span>
+            <span>
+              <Layers size={15} aria-hidden="true" /> Lecture slides
+            </span>
+            <span>
+              <BookOpen size={15} aria-hidden="true" /> Notes & documents
+            </span>
+          </div>
+        </div>
+
+        <section
+          id="how-it-works"
+          className="gd-home-features gd-home-container"
+          aria-labelledby="features-heading"
+        >
+          <div className="gd-home-section-heading">
+            <p className="gd-home-eyebrow">LESS FRICTION. MORE FOCUS.</p>
+            <h2 id="features-heading">
+              A good study session.
+              <br />
+              <span>From start to finish.</span>
+            </h2>
+            <p>
+              One connected workspace for the material you have and the understanding you’re working
+              towards.
+            </p>
+          </div>
+          <div className="gd-home-feature-grid">
+            {FEATURES.map(({ number, icon: Icon, title, description, detail }) => (
+              <article key={number} className="gd-home-feature">
+                <div className="gd-home-feature-top">
+                  <span>{number}</span>
+                  <Icon size={22} strokeWidth={1.4} aria-hidden="true" />
+                </div>
+                <h3>{title}</h3>
+                <p>{description}</p>
+                <span className="gd-home-feature-detail">{detail}</span>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="gd-home-workflow gd-home-container" aria-labelledby="workflow-heading">
+          <div className="gd-home-workflow-art" aria-hidden="true">
+            <div className="gd-home-workflow-orbit" />
+            <div className="gd-home-workflow-node gd-home-workflow-node-book">
+              <BookOpen size={24} strokeWidth={1.5} />
+              <span>Your material</span>
+            </div>
+            <div className="gd-home-workflow-center">
+              <span>G&amp;D</span>
+            </div>
+            <div className="gd-home-workflow-node gd-home-workflow-node-search">
+              <Search size={21} strokeWidth={1.5} />
+              <span>Your questions</span>
+            </div>
+            <div className="gd-home-workflow-node gd-home-workflow-node-clarity">
+              <Sparkles size={20} strokeWidth={1.5} />
+              <span>Your understanding</span>
+            </div>
+            <span className="gd-home-workflow-caption">CONNECT THE DOTS.</span>
+          </div>
+          <div className="gd-home-workflow-copy">
+            <p className="gd-home-eyebrow">YOUR LEARNING, CONNECTED</p>
+            <h2 id="workflow-heading">
+              Stay with the thought.
+              <br />
+              <span>We’ll help with the rest.</span>
+            </h2>
+            <p>
+              Move from a question to an explanation to practice, without losing your place. Your
+              library and your learning belong together.
+            </p>
+            <ol className="gd-home-workflow-steps">
+              <li>
+                <span>1</span>
+                <div>
+                  <strong>Bring what you’re studying</strong>
+                  <p>Upload your files and organise them into folders.</p>
+                </div>
+              </li>
+              <li>
+                <span>2</span>
+                <div>
+                  <strong>Make the difficult bits clearer</strong>
+                  <p>Choose your material and ask what’s on your mind.</p>
+                </div>
+              </li>
+              <li>
+                <span>3</span>
+                <div>
+                  <strong>Put your understanding to work</strong>
+                  <p>Make a roadmap and practise the topics that matter.</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+        </section>
+
+        <section className="gd-home-final gd-home-container" aria-labelledby="final-heading">
+          <p className="gd-home-eyebrow">YOUR NEXT “I GET IT” STARTS HERE.</p>
+          <h2 id="final-heading">
+            Make room for
+            <br />
+            <span>better understanding.</span>
+          </h2>
+          <Link
+            to={user ? "/app/chat" : "/auth"}
+            search={user ? undefined : { mode: "signup" }}
+            className="gd-home-button"
+          >
+            {user ? "Open your workspace" : "Start your workspace"}{" "}
+            <ArrowRight size={18} aria-hidden="true" />
+          </Link>
+          <p>Your textbooks. Your questions. Your way forward.</p>
         </section>
       </main>
 
-      <footer className="gd-footer">
-        <span className="gd-footer-meta">© {new Date().getFullYear()} G&amp;D</span>
-        <Link to="/privacy" className="gd-footer-meta gd-footer-link">
-          Privacy
-        </Link>
+      <footer className="gd-home-footer gd-home-container">
+        <div className="gd-home-footer-top">
+          <Link to="/" className="gd-home-logo" aria-label="G and D home">
+            G&amp;D
+          </Link>
+          <p>A little clarity goes a long way.</p>
+          <Link to="/privacy">
+            Privacy Policy <ArrowRight size={13} aria-hidden="true" />
+          </Link>
+        </div>
+        <div className="gd-home-footer-bottom">
+          <span>© {new Date().getFullYear()} G&amp;D</span>
+          <span>BUILT FOR CURIOUS MINDS.</span>
+        </div>
       </footer>
     </div>
   );
 }
-
-const GD_CSS = `
-/* This block is self-contained on purpose — the landing does not load the app's
-   token system — so the five colours are restated here. They must stay in step
-   with :root in styles.css or / and the signed-in app stop looking like the
-   same product:
-     Black #070707 · Graphite #2D2D2D · Bone #E9E0D1 · Pale Oak #D5C9AE
-     · Faded Copper #A58763 (the accent). */
-.gd-root {
-  --bg: #070707;
-  --surface: #131211;
-  --surface-2: #1E1D1B;
-  --on: #E9E0D1;
-  --on-dim: #A79C88;
-  --outline: rgba(233,224,209,0.16);
-  --outline-2: rgba(233,224,209,0.09);
-  --accent: #A58763;
-  /* Lifted copper, for the one place the accent is small text on a plate. */
-  --accent-lift: #C2A17A;
-  --accent-soft: rgba(165,135,99,0.15);
-  --font-display: "Schibsted Grotesk", system-ui, sans-serif;
-  --font-body: "Hanken Grotesk", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
-
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-height: 100dvh;
-  overflow-x: hidden;
-  overflow-x: clip;
-  color: var(--on);
-  font-family: var(--font-body);
-  -webkit-font-smoothing: antialiased;
-  isolation: isolate;
-  background:
-    radial-gradient(circle at 14% 10%, var(--accent-soft), transparent 30rem),
-    radial-gradient(circle at 88% 16%, rgba(213,201,174,0.07), transparent 32rem),
-    var(--bg);
-}
-
-.gd-sr-only {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
-}
-
-/* Ambient */
-/* NO filter HERE, deliberately. This was \`filter: blur(120px)\` and it froze the
-   page on the FIRST FOCUS of the email field - measured, not guessed: the
-   on-device log's last line before the stall was \`focusin input[EMAIL]\`, on a
-   1358x682 laptop, with no keystroke and no console error.
-
-   Why focus was enough: \`filter\` puts the element in its own stacking context,
-   and at \`z-index: -1\` it sits behind every pixel of content. Focusing the
-   input changes its border-color and box-shadow, which repaints - and a repaint
-   over a filtered backdrop makes the browser re-rasterise that filter. A 120px
-   blur is O(radius) work across the whole surface, twice, on the main thread,
-   synchronously. Animating it made it worse but was never the cause; the
-   transform animation alone is compositor-only and cannot block script.
-
-   Nothing is lost visually. The background is already
-   \`radial-gradient(circle, ..., transparent 70%)\` - a gradient that fades to
-   nothing on its own. The blur was blurring something blurry by construction. */
-.gd-blob { position: fixed; z-index: -1; border-radius: 9999px; opacity: 0.55; pointer-events: none; }
-.gd-blob-1 {
-  top: -10%; right: -5%; width: 45vw; height: 45vw; max-width: 620px; max-height: 620px;
-  background: radial-gradient(circle, var(--accent-soft), transparent 70%);
-  animation: gd-float-1 22s ease-in-out infinite;
-}
-.gd-blob-2 {
-  bottom: -15%; left: -10%; width: 50vw; height: 50vw; max-width: 700px; max-height: 700px;
-  /* Was a cool blue counterweight to the teal; now Pale Oak, so the two blobs
-     read as one warm light source rather than two. */
-  background: radial-gradient(circle, rgba(213,201,174,0.09), transparent 70%);
-  animation: gd-float-2 26s ease-in-out infinite;
-}
-@keyframes gd-float-1 { 50% { transform: translate(-4%, 6%) scale(1.08); } }
-@keyframes gd-float-2 { 50% { transform: translate(6%, -4%) scale(1.1); } }
-
-/* Nav */
-.gd-nav {
-  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  width: 100%; max-width: 1240px; margin: 0 auto;
-  padding: 1.25rem clamp(1.25rem, 4vw, 3rem);
-}
-.gd-logo {
-  font-family: var(--font-display); font-weight: 700; font-size: 1.5rem;
-  letter-spacing: -0.02em; color: var(--on); text-decoration: none;
-}
-
-/* Buttons */
-.gd-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 0.6rem;
-  border-radius: 9999px; padding: 0.85rem 1.5rem; border: 1px solid transparent;
-  font-family: var(--font-body); font-weight: 600; font-size: 0.98rem;
-  text-decoration: none; cursor: pointer; white-space: nowrap; min-height: 46px;
-  transition: transform 0.2s ease, background 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.3s ease;
-}
-.gd-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.gd-btn:disabled { cursor: progress; opacity: 0.75; transform: none; }
-.gd-btn-block { width: 100%; }
-/* The sign-in button is the accent, same as --primary in the app. Near-black
-   ink on Faded Copper is 6.0:1. */
-.gd-btn-primary { background: var(--accent); color: #0E0B08; box-shadow: 0 16px 42px rgba(165,135,99,0.16); }
-.gd-btn-primary:hover:not(:disabled) { transform: translateY(-1px); background: var(--accent-lift); }
-.gd-btn-ghost { background: transparent; color: var(--on); border-color: var(--outline); padding: 0.6rem 1.2rem; min-height: 42px; }
-.gd-btn-ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.gd-btn-google { width: 100%; background: #ffffff; color: #1b1d1f; }
-.gd-btn-google:hover:not(:disabled) { transform: translateY(-1px); background: #f3f4f6; }
-.gd-google-mark { width: 18px; height: 18px; flex: none; }
-.gd-spinner {
-  width: 17px; height: 17px; border-radius: 9999px; flex: none;
-  border: 2px solid rgba(233,224,209,0.25); border-top-color: var(--on);
-  animation: gd-spin 0.7s linear infinite;
-}
-/* Sits inside the primary/Google buttons, whose ink is dark. */
-.gd-spinner-dark { border-color: rgba(14,11,8,0.25); border-top-color: #0E0B08; }
-@keyframes gd-spin { to { transform: rotate(360deg); } }
-
-/* Hero */
-.gd-hero {
-  flex: 1; width: 100%; max-width: 1240px; margin: 0 auto;
-  display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); align-items: center;
-  gap: clamp(2rem, 5vw, 4.5rem);
-  padding: clamp(1.5rem, 4vw, 3.5rem) clamp(1.25rem, 4vw, 3rem) clamp(2rem, 5vw, 4rem);
-}
-.gd-hero-copy { min-width: 0; max-width: 34rem; }
-
-/* Headline */
-.gd-h1 {
-  margin: 0;
-  font-family: var(--font-display); font-weight: 600;
-  font-size: clamp(2.2rem, 4.9vw, 3.7rem); line-height: 1.08; letter-spacing: -0.035em;
-}
-.gd-h1-lead { display: block; color: var(--on); }
-.gd-rotator { position: relative; display: block; }
-.gd-rotator-sizer { visibility: hidden; display: block; }
-.gd-rotator-word {
-  position: absolute; inset: 0; display: block;
-  /* Bone into copper — was white into teal. Both ends clear AA on the ground
-     (Bone 18:1, copper 6.5:1) so the rotating word never drops out. */
-  background: linear-gradient(135deg, var(--on) 4%, var(--accent-lift) 78%);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .gd-rotator-word { animation: gd-phrase 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
-}
-@keyframes gd-phrase {
-  from { opacity: 0; transform: translateY(0.42em); }
-  to { opacity: 1; transform: none; }
-}
-
-.gd-sub {
-  margin: 1.1rem 0 0; font-size: clamp(1.05rem, 1.5vw, 1.25rem);
-  line-height: 1.5; color: var(--on-dim);
-}
-
-/* Auth card */
-.gd-auth {
-  margin-top: 2rem; max-width: 28rem; display: flex; flex-direction: column;
-  background: var(--surface); border: 1px solid var(--outline-2);
-  border-radius: 1.5rem; padding: 1.35rem;
-  box-shadow: 0 40px 120px rgba(0,0,0,0.55);
-}
-.gd-or {
-  display: flex; align-items: center; gap: 0.85rem; margin: 1.1rem 0;
-  font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.16em; color: var(--on-dim);
-}
-.gd-or-rule { flex: 1; height: 1px; background: var(--outline-2); }
-.gd-email-form { display: flex; flex-direction: column; gap: 0.7rem; }
-.gd-input {
-  width: 100%; min-height: 46px; border-radius: 9999px;
-  background: var(--surface-2); border: 1px solid var(--outline);
-  padding: 0.8rem 1.25rem; color: var(--on);
-  font-family: var(--font-body); font-size: 0.95rem;
-}
-.gd-input::placeholder { color: var(--on-dim); }
-.gd-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.gd-fineprint { margin: 1.1rem 0 0; text-align: center; font-size: 0.75rem; line-height: 1.5; color: var(--on-dim); }
-.gd-fineprint-link { color: var(--on-dim); text-decoration: underline; text-underline-offset: 3px; }
-.gd-fineprint-link:hover { color: var(--accent); }
-
-/* Slideshow */
-.gd-hero-visual { min-width: 0; display: flex; justify-content: center; }
-.gd-slideshow { width: 100%; max-width: 460px; min-width: 0; }
-.gd-slides {
-  position: relative; width: 100%; aspect-ratio: 4 / 5; overflow: hidden;
-  border-radius: 1.75rem; background: var(--surface-2);
-  border: 1px solid var(--outline-2);
-  box-shadow: 0 50px 130px rgba(0,0,0,0.6);
-}
-.gd-slide {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  object-fit: cover; opacity: 0; transition: opacity 0.7s ease; user-select: none;
-}
-.gd-slide.is-on { opacity: 1; }
-
-/* Footer */
-.gd-footer {
-  display: flex; align-items: center; gap: 1.25rem;
-  width: 100%; max-width: 1240px; margin: 0 auto; justify-content: space-between;
-  padding: 1.25rem clamp(1.25rem, 4vw, 3rem) 2rem;
-}
-.gd-footer-meta { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--on-dim); }
-.gd-footer-link { text-decoration: none; }
-.gd-footer-link:hover { color: var(--accent); }
-
-/* Responsive - single column, panel under the card */
-@media (max-width: 760px) {
-  .gd-hero { grid-template-columns: 1fr; padding-top: 2rem; gap: 2.5rem; }
-  .gd-hero-copy { max-width: 32rem; margin: 0 auto; width: 100%; }
-  .gd-hero-visual { order: 2; }
-  .gd-auth { max-width: none; }
-  .gd-slideshow { max-width: 32rem; }
-  .gd-slides { aspect-ratio: 1 / 1; }
-}
-@media (max-width: 420px) {
-  .gd-auth { padding: 1.1rem; border-radius: 1.25rem; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .gd-blob { animation: none; }
-  .gd-slide { transition: none; }
-  .gd-btn:hover { transform: none; }
-}
-`;

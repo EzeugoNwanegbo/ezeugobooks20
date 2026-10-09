@@ -2,7 +2,18 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Check, Copy, Flame, LogOut, Sparkles, Upload } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Flame,
+  LogOut,
+  MessageSquare,
+  Palette,
+  Sparkles,
+  Trophy,
+  Upload,
+  UserRound,
+} from "lucide-react";
 import { LoadingDots } from "@/components/loading-dots";
 import { RankSummary } from "@/components/rank-badge";
 import { uploadAllowance } from "@/lib/allowances";
@@ -14,6 +25,7 @@ import { studyLevelOptions } from "@/lib/study-levels";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { PageHeader } from "@/components/ui/page-header";
 import { Segmented } from "@/components/ui/segmented";
+import "@/study-pages.css";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -179,7 +191,7 @@ export function SettingsPage() {
   const levelOptions = studyLevelOptions(saved.level);
 
   return (
-    <div className="gd-content-page min-h-0 flex-1 overflow-y-auto">
+    <div className="gd-content-page gd-study-page min-h-0 flex-1 overflow-y-auto">
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -205,178 +217,241 @@ export function SettingsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <div className="mx-auto flex max-w-2xl flex-col gap-5">
-        <PageHeader eyebrow="Settings" title="Settings" className="mb-1 sm:mb-2" />
+      <div className="mx-auto flex max-w-5xl flex-col gap-6">
+        <PageHeader
+          eyebrow="Your workspace"
+          title="Make G&D yours."
+          subtitle="A few details help G&D meet you where you are. Shape your study experience here."
+          className="mb-1 sm:mb-2"
+        />
 
-        {/* ── You ── */}
-        <Section title="You">
-          <Field label="Name">
-            <TextInput value={name} onChange={setName} placeholder="Your full name" />
-          </Field>
+        <div className="gd-study-summary">
+          <span
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-pop/25 bg-pop/10 font-display text-xl text-pop"
+            aria-hidden="true"
+          >
+            {(name.trim() || user?.email || "G").slice(0, 1).toUpperCase()}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold">{name.trim() || "Your account"}</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{user?.email}</p>
+          </div>
+          <span
+            className={`inline-flex items-center gap-1.5 text-xs ${dirty ? "text-pop" : "text-muted-foreground"}`}
+          >
+            {!dirty && <Check className="h-3.5 w-3.5" />}
+            {dirty ? "Unsaved changes" : "All changes saved"}
+          </span>
+        </div>
 
-          <Field label="What you study">
-            <TextInput
-              value={course}
-              onChange={setCourse}
-              placeholder="e.g. Mechanical Engineering, Nursing, Accounting, Law"
-            />
-          </Field>
+        <div className="gd-settings-grid">
+          {/* ── You ── */}
+          <Section
+            title="Your study profile"
+            description="Give your explanations the right context."
+            icon={<UserRound className="h-4 w-4" />}
+          >
+            <Field label="Name">
+              <TextInput
+                value={name}
+                onChange={setName}
+                placeholder="Your full name"
+                ariaLabel="Your full name"
+              />
+            </Field>
 
-          <Field label="School or university">
-            <TextInput value={university} onChange={setUniversity} placeholder="Where you study" />
-          </Field>
+            <Field label="What you study">
+              <TextInput
+                value={course}
+                onChange={setCourse}
+                placeholder="e.g. Mechanical Engineering, Nursing, Accounting, Law"
+                ariaLabel="What you study"
+              />
+            </Field>
 
-          <Field label="Level">
-            <ChoiceGrid
-              options={levelOptions}
-              value={level}
-              onChange={setLevel}
-              className="grid-cols-2 sm:grid-cols-4"
-            />
-          </Field>
-        </Section>
+            <Field label="School or university">
+              <TextInput
+                value={university}
+                onChange={setUniversity}
+                placeholder="Where you study"
+                ariaLabel="School or university"
+              />
+            </Field>
 
-        {/* ── Answers ── */}
-        <Section title="Answers">
-          <Field label="Exam format">
-            <Segmented
-              options={EXAM_FORMATS}
-              value={examFormat}
-              onChange={setExamFormat}
-              getLabel={(value) => EXAM_FORMAT_LABEL[value]}
-            />
-          </Field>
+            <Field label="Level">
+              <ChoiceGrid
+                options={levelOptions}
+                value={level}
+                onChange={setLevel}
+                className="grid-cols-2 sm:grid-cols-4"
+              />
+            </Field>
+          </Section>
 
-          <Field label="Explanation style">
-            <Segmented options={MODES} value={mode} onChange={setMode} />
-          </Field>
+          {/* ── Answers ── */}
+          <Section
+            title="How G&D answers"
+            description="Choose the format that works for you."
+            icon={<MessageSquare className="h-4 w-4" />}
+          >
+            <Field label="Exam format">
+              <Segmented
+                options={EXAM_FORMATS}
+                value={examFormat}
+                onChange={setExamFormat}
+                getLabel={(value) => EXAM_FORMAT_LABEL[value]}
+              />
+            </Field>
 
-          {/* Importing a background from another AI is a once-ever setup with a
+            <Field label="Explanation style">
+              <Segmented options={MODES} value={mode} onChange={setMode} />
+            </Field>
+
+            {/* Importing a background from another AI is a once-ever setup with a
               long prompt to copy, so it stays folded away until wanted. The
               summary still carries its state, so nobody has to open it to find
               out whether it is switched on. */}
-          <details className="group rounded-xl border border-border bg-background/40">
-            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-3 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden">
-              <Sparkles className="h-4 w-4 shrink-0 text-pop" />
-              Personalization
-              {background.trim() ? (
-                <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-leaf/30 bg-leaf/12 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-leaf">
-                  <Check className="h-3 w-3" />
-                  On
-                </span>
-              ) : (
-                <span className="ml-auto rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Off
-                </span>
-              )}
-            </summary>
+            <details className="group rounded-xl border border-border bg-background/40">
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-3 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden">
+                <Sparkles className="h-4 w-4 shrink-0 text-pop" />
+                Personalization
+                {background.trim() ? (
+                  <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-leaf/30 bg-leaf/12 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-leaf">
+                    <Check className="h-3 w-3" />
+                    On
+                  </span>
+                ) : (
+                  <span className="ml-auto rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Off
+                  </span>
+                )}
+              </summary>
 
-            <div className="space-y-3 border-t border-border px-3 py-3">
-              <div className="rounded-lg border border-border bg-background/60 p-3">
-                <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-muted-foreground">
-                  {PERSONALIZATION_PROMPT}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void copyPrompt()}
-                  className="btn-pop mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
-                >
-                  {copiedPrompt ? (
-                    <Check className="h-3.5 w-3.5" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                  {copiedPrompt ? "Copied" : "Copy prompt"}
-                </button>
+              <div className="space-y-3 border-t border-border px-3 py-3">
+                <div className="rounded-lg border border-border bg-background/60 p-3">
+                  <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-muted-foreground">
+                    {PERSONALIZATION_PROMPT}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void copyPrompt()}
+                    className="btn-pop mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
+                  >
+                    {copiedPrompt ? (
+                      <Check className="h-3.5 w-3.5" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                    {copiedPrompt ? "Copied" : "Copy prompt"}
+                  </button>
+                </div>
+
+                <textarea
+                  value={background}
+                  onChange={(e) => setBackground(e.target.value)}
+                  rows={5}
+                  placeholder="Paste your AI's reply here…"
+                  aria-label="Personalization background"
+                  className="w-full resize-y rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
+                />
               </div>
+            </details>
+          </Section>
 
-              <textarea
-                value={background}
-                onChange={(e) => setBackground(e.target.value)}
-                rows={5}
-                placeholder="Paste your AI's reply here…"
-                className="w-full resize-y rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
-              />
-            </div>
-          </details>
-        </Section>
-
-        {/* ── Rank + what it has earned. Framed as an expansion, never a budget:
+          {/* ── Rank + what it has earned. Framed as an expansion, never a budget:
             the upload line says what this rank has ADDED, and nothing here is
             enforced (see the header note in src/lib/allowances.ts). ── */}
-        <Section title="Your rank">
-          <RankSummary points={stats.points} />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Stat icon={<Flame className="h-3.5 w-3.5" />} label="Streak">
-              {stats.currentStreak}d
-              <span className="ml-2 text-xs text-muted-foreground">
-                best {stats.longestStreak}d
-              </span>
-            </Stat>
-            <Stat icon={<Upload className="h-3.5 w-3.5" />} label="Daily uploads">
-              {allowance.total}
-              <span className="ml-2 text-xs text-muted-foreground">
-                {/* Two independent bonuses can both be live (a five-day-old
+          <Section
+            title="Your progress"
+            description="Small, consistent steps add up."
+            icon={<Trophy className="h-4 w-4" />}
+          >
+            <RankSummary points={stats.points} />
+            <div className="grid gap-3">
+              <Stat icon={<Flame className="h-3.5 w-3.5" />} label="Streak">
+                {stats.currentStreak}d
+                <span className="ml-2 text-xs text-muted-foreground">
+                  best {stats.longestStreak}d
+                </span>
+              </Stat>
+              <Stat icon={<Upload className="h-3.5 w-3.5" />} label="Daily uploads">
+                {allowance.total}
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {/* Two independent bonuses can both be live (a five-day-old
                     Scout has both), so each names itself rather than folding
                     into one number nobody can trace back. */}
-                {[
-                  `${allowance.base} base`,
-                  allowance.earnedBonusUnlocked
-                    ? `${allowance.earnedBonus} for 5 days active`
-                    : null,
-                  allowance.rankBonus > 0 ? `${allowance.rankBonus} rank bonus` : null,
-                ]
-                  .filter(Boolean)
-                  .join(" + ") +
-                  (allowance.nextBonusRankName
-                    ? ` · ${allowance.nextBonusRankName} makes it ${allowance.nextBonusTotal}`
-                    : "")}
-              </span>
-            </Stat>
-          </div>
-        </Section>
+                  {[
+                    `${allowance.base} base`,
+                    allowance.earnedBonusUnlocked
+                      ? `${allowance.earnedBonus} for 5 days active`
+                      : null,
+                    allowance.rankBonus > 0 ? `${allowance.rankBonus} rank bonus` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" + ") +
+                    (allowance.nextBonusRankName
+                      ? ` · ${allowance.nextBonusRankName} makes it ${allowance.nextBonusTotal}`
+                      : "")}
+                </span>
+              </Stat>
+            </div>
+          </Section>
 
-        {/* ── Appearance + account: the app-level controls, kept out of the way
+          {/* ── Appearance + account: the app-level controls, kept out of the way
             of the study settings above. ── */}
-        <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
-          <div className="flex items-center justify-between gap-4">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-pop">Appearance</h2>
-            <ThemeToggle />
-          </div>
+          <section className="gd-study-panel gd-settings-section">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className="gd-settings-section-icon">
+                  <Palette className="h-4 w-4" />
+                </span>
+                <div>
+                  <h2 className="text-sm font-semibold">Appearance</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Find your focus, in your own style.
+                  </p>
+                </div>
+              </div>
+              <ThemeToggle />
+            </div>
 
-          <div className="mt-5 border-t border-border pt-5">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-pop">Account</h2>
-            <p className="mt-2 truncate text-sm text-muted-foreground">{user?.email}</p>
-            <button
-              type="button"
-              onClick={async () => {
-                await signOut();
-                navigate({ to: "/" });
-              }}
-              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground sm:w-auto"
-            >
-              <LogOut className="h-4 w-4" />
-              Sign out
-            </button>
-          </div>
+            <div className="mt-5 border-t border-border pt-5">
+              <h2 className="text-sm font-semibold">Account</h2>
+              <p className="mt-2 truncate text-sm text-muted-foreground">{user?.email}</p>
+              <button
+                type="button"
+                onClick={async () => {
+                  await signOut();
+                  navigate({ to: "/" });
+                }}
+                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground sm:w-auto"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign out
+              </button>
+            </div>
 
-          {/* Last thing on the page, deliberately quiet: irreversible, rarely
+            {/* Last thing on the page, deliberately quiet: irreversible, rarely
               wanted, and already guarded by a confirmation dialog. */}
-          <div className="mt-5 border-t border-border pt-4">
-            <button
-              type="button"
-              onClick={() => setShowDeleteDialog(true)}
-              className="text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-destructive hover:underline"
-            >
-              Delete account
-            </button>
-          </div>
-        </section>
+            <div className="mt-5 border-t border-border pt-4">
+              <button
+                type="button"
+                onClick={() => setShowDeleteDialog(true)}
+                className="text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-destructive hover:underline"
+              >
+                Delete account
+              </button>
+            </div>
+          </section>
+        </div>
 
         {/* The one primary action, and it only exists when there is something
             to save. Sticky so it stays reachable from anywhere in the scroll. */}
         {dirty && (
-          <div className="sticky bottom-0 z-10 -mx-3 flex items-center justify-end gap-2 border-t border-border bg-background/85 px-3 py-3 backdrop-blur sm:-mx-4 sm:px-4 md:-mx-8 md:px-8">
+          <div className="sticky bottom-0 z-10 flex items-center justify-end gap-2 rounded-2xl border border-pop/25 bg-surface/95 px-3 py-3 shadow-lg backdrop-blur sm:px-4">
+            <span className="mr-auto hidden text-xs text-muted-foreground sm:block">
+              Your preferences have changed.
+            </span>
             <button
               type="button"
               onClick={hydrate}
@@ -406,11 +481,27 @@ export function SettingsPage() {
 // evenly spaced fields, and spelling that out once keeps the rhythm identical
 // without another shared component to maintain.
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({
+  title,
+  description,
+  icon,
+  children,
+}: {
+  title: string;
+  description: string;
+  icon: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-pop">{title}</h2>
-      <div className="mt-4 space-y-4">{children}</div>
+    <section className="gd-study-panel gd-settings-section">
+      <div className="gd-settings-section-heading">
+        <span className="gd-settings-section-icon">{icon}</span>
+        <div>
+          <h2 className="text-sm font-semibold">{title}</h2>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
+        </div>
+      </div>
+      <div className="mt-5 space-y-5">{children}</div>
     </section>
   );
 }
@@ -428,16 +519,19 @@ function TextInput({
   value,
   onChange,
   placeholder,
+  ariaLabel,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
+  ariaLabel: string;
 }) {
   return (
     <input
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
+      aria-label={ariaLabel}
       className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-pop/50 focus:ring-2 focus:ring-pop/40"
     />
   );
@@ -460,6 +554,7 @@ function ChoiceGrid({
         <button
           key={option}
           type="button"
+          aria-pressed={value === option}
           // Re-tapping the active choice clears it, so an answer given by
           // accident can be taken back without a "none" button.
           onClick={() => onChange(value === option ? "" : option)}

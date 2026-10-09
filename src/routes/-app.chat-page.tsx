@@ -1,3 +1,4 @@
+import { ChatStarters } from "@/components/chat-starters";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   Children,
@@ -2551,7 +2552,7 @@ export function ChatPage() {
 
   return (
     <div
-      className="flex h-full min-h-0 flex-1 overflow-hidden bg-background min-w-0"
+      className="gd-chat-page flex h-full min-h-0 flex-1 overflow-hidden bg-background min-w-0"
       style={ACCENT_INHERIT}
     >
       {/* Main column.
@@ -2569,6 +2570,22 @@ export function ChatPage() {
           data-active={emptyChat ? "true" : "false"}
           aria-hidden="true"
         />
+
+        <header className="gd-chat-header">
+          <div>
+            <span className="gd-chat-section-label">STUDY SPACE</span>
+            <h1>Ask G&amp;D</h1>
+          </div>
+          <div className="gd-chat-header-context">
+            <span>{mode === "Detailed+" ? "Study notes" : mode}</span>
+            {!emptyChat && (
+              <button type="button" onClick={newChat}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                New question
+              </button>
+            )}
+          </div>
+        </header>
 
         {/* Messages */}
         {/* On a blank chat the scroller shrinks to its content (usually nothing)
@@ -2650,7 +2667,7 @@ export function ChatPage() {
             emptyChat
               ? // Blank chat: in normal flow, taking the leftover height and
                 // centring the greeting + input as one group.
-                "relative z-10 flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+                "gd-chat-empty-composer relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-5 sm:px-4 md:px-8 md:pb-[max(0.75rem,env(safe-area-inset-bottom))]"
               : // The hidden offset stops SHORT of the composer's full height on
                 // purpose: it used to be `100% + 1rem`, which put the whole
                 // block, handle and all, past the bottom edge with no way back
@@ -2891,7 +2908,7 @@ export function ChatPage() {
               // textarea inside it draws nothing (see .gd-composer-field in
               // styles.css - without it the skins' "fields are wells" rules
               // paint the field a different shade from the bar around it).
-              className="rounded-[1.35rem] border border-border/80 bg-background/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.16)] backdrop-blur-xl transition-colors focus-within:border-pop/45 focus-within:ring-1 focus-within:ring-pop/25"
+              className="gd-main-composer rounded-[1.35rem] border border-border/80 bg-background/95 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.16)] backdrop-blur-xl transition-colors focus-within:border-pop/45 focus-within:ring-1 focus-within:ring-pop/25"
             >
               <div className="flex items-end gap-1.5 sm:gap-2">
                 <ComposerPlusMenu
@@ -2939,6 +2956,7 @@ export function ChatPage() {
                 )}
                 <textarea
                   ref={textareaRef}
+                  aria-label="Your study question"
                   value={input}
                   onChange={(e) => {
                     setInput(e.target.value);
@@ -3013,6 +3031,7 @@ export function ChatPage() {
                 ) : (
                   <button
                     type="submit"
+                    aria-label="Send question"
                     disabled={!input.trim()}
                     onMouseDown={keepFocus}
                     className="btn-pop h-[44px] w-[44px] flex items-center justify-center rounded-xl"
@@ -3022,7 +3041,26 @@ export function ChatPage() {
                 )}
               </div>
             </form>
-            <p className="mt-1.5 hidden text-center text-[11px] text-muted-foreground sm:block">
+            {emptyChat && (
+              <ChatStarters
+                hasFiles={docs.length > 0}
+                onPrepare={(question, useFiles) => {
+                  if (useFiles) applySourceMode("My files only");
+                  setInput(question);
+                  window.requestAnimationFrame(() => {
+                    const field = textareaRef.current;
+                    if (!field) return;
+                    field.focus();
+                    const start = question.indexOf("[");
+                    const end = question.indexOf("]", start);
+                    if (start >= 0 && end > start) field.setSelectionRange(start, end + 1);
+                    field.style.height = "auto";
+                    field.style.height = Math.min(field.scrollHeight, 200) + "px";
+                  });
+                }}
+              />
+            )}
+            <p className="gd-chat-verification mt-1.5 hidden text-center text-[11px] text-muted-foreground sm:block">
               G&D can be wrong. Always verify important work with your teacher, lecturer, or source
               material.
             </p>
@@ -3300,40 +3338,25 @@ function ComposerPlusMenu({
   );
 }
 
-// The blank-chat screen: just the greeting, sitting directly above the one
-// composer (see the "Composer" block above). The old suggestion chips under the
-// input were removed on purpose - a blank chat is the greeting and the input,
-// nothing else.
+// Keep the blank chat useful and calm; suggestions only prepare the question.
 function ChatGreeting({ name }: { name: string }) {
-  // First name only. Guests (and anyone without a saved name) get the
-  // nameless form rather than "there" or an invented "Student".
   const firstName = name.trim().split(/\s+/)[0] ?? "";
-  // Read the student's own clock at render, never at module scope: a tab left
-  // open overnight must greet for the hour the blank chat is actually shown.
-  // Bands: morning 05:00-11:59, afternoon 12:00-17:59, night 18:00-04:59.
-  const hour = new Date().getHours();
-  const band = hour >= 5 && hour < 12 ? "morning" : hour >= 12 && hour < 18 ? "afternoon" : "night";
   return (
-    <h2 className="mb-5 text-balance text-center text-3xl font-semibold tracking-[-0.03em] text-foreground sm:mb-7 sm:text-[2.75rem] sm:leading-[1.05]">
-      {band === "night" ? (
-        // Deliberately nameless - it is a complete line as the owner wrote it.
-        "Burning the midnight candle innit"
-      ) : band === "morning" ? (
-        firstName ? (
-          <>
-            Morning grinder, <span className="gd-name-accent">{firstName}</span>
-          </>
-        ) : (
-          "Morning grinder"
-        )
-      ) : firstName ? (
-        <>
-          No rest for <span className="gd-name-accent">{firstName}</span>
-        </>
-      ) : (
-        "No rest for you"
-      )}
-    </h2>
+    <div className="gd-chat-welcome">
+      <span className="gd-chat-welcome-mark" aria-hidden="true">
+        <BookOpen />
+      </span>
+      <p className="gd-chat-welcome-eyebrow">
+        {firstName ? `YOUR NEXT CHAPTER, ${firstName.toUpperCase()}` : "YOUR NEXT CHAPTER"}
+      </p>
+      <h2>
+        What are we <span>learning today?</span>
+      </h2>
+      <p>
+        A question, a concept, a page you keep rereading.
+        <br className="hidden sm:block" /> Bring it here. We'll work through it.
+      </p>
+    </div>
   );
 }
 

@@ -27,21 +27,22 @@ export function PageHeader({
     <header
       className={`gd-page-header flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between ${className}`}
     >
-      <div className="min-w-0 flex-1">
+      <div className="gd-page-heading min-w-0 flex-1">
         <span className="gd-eyebrow inline-flex items-center text-[11px] font-semibold uppercase tracking-[0.16em] text-pop">
           {eyebrow}
         </span>
-        <h1 className="mt-2 text-balance font-display text-3xl font-light tracking-[-0.02em] text-foreground sm:text-4xl">
+        <h1 className="mt-2 text-balance font-display text-3xl font-medium tracking-[-0.035em] text-foreground sm:text-4xl">
           {title}
         </h1>
         {subtitle && (
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">{subtitle}</p>
         )}
       </div>
-      {/* Always rendered, because the meter belongs here whether or not the
-          screen brought actions of its own. Empty on the screens that have
-          neither - a flex row with no children takes no space. */}
-      <div className="gd-page-actions flex shrink-0 flex-wrap items-center gap-2">
+      {/* Mobile already has a credit meter in the shell; reserve this row
+          there only when the page supplies actions. */}
+      <div
+        className={`gd-page-actions shrink-0 flex-wrap items-center gap-2 ${actions ? "flex" : "hidden md:flex"}`}
+      >
         <CookieHeaderRing />
         {actions}
       </div>

@@ -328,8 +328,8 @@ export function LastMinutePage() {
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
         <PageHeader
           eyebrow="Last minute"
-          title="Build one clean study guide from your lecture files."
-          subtitle="Pick files from one course. G&D merges them into one clean revision sheet, ready to export."
+          title="The essentials, all in one place."
+          subtitle="Turn your lecture files into one focused revision sheet. Pick a course, choose the material, and bring it together."
           actions={
             <button
               type="button"

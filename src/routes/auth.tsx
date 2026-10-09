@@ -1,7 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, ArrowRight, CircleAlert, Eye, EyeOff, Mail, BookOpen } from "lucide-react";
+import { AuthStudyPanel } from "@/components/auth-study-panel";
 import { FounderStory } from "@/components/founder-story";
 import { LoadingDots } from "@/components/loading-dots";
 import { useAuth } from "@/lib/auth-context";
@@ -9,6 +10,7 @@ import { isNativeApp } from "@/lib/native";
 import { lastRoute } from "@/lib/last-route";
 import { signInWithGoogleNative } from "@/lib/native-auth";
 import { ThemeToggle } from "@/components/theme-toggle";
+import "@/styles/auth-flow.css";
 
 // "upgrade" = a guest (anonymous) session attaching a real identity. The page
 // must NOT bounce them to the app, and must link credentials to the existing
@@ -79,6 +81,7 @@ function AuthFlow() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -86,6 +89,7 @@ function AuthFlow() {
   // Guest session attaching a real identity - only valid while the anonymous
   // session is alive; otherwise fall back to the normal sign-in form.
   const isUpgrade = mode === "upgrade" && Boolean(user?.is_anonymous);
+  const authBusy = submitting || googleSubmitting;
 
   useEffect(() => {
     // Navigate as soon as the session + profile are ready. This deliberately
@@ -100,17 +104,16 @@ function AuthFlow() {
 
   if (user && authError && !profile) {
     return (
-      <div className="luxury-auth-page flex min-h-dvh items-center justify-center bg-background px-4">
-        <div className="symbiote-blob auth-blob-one" />
-        <div className="symbiote-blob auth-blob-two" />
-        <div className="luxury-panel w-full max-w-md rounded-lg p-5 text-center shadow-elegant sm:p-6">
-          <h1 className="font-display text-3xl font-light leading-none">Profile could not load</h1>
+      <div className="luxury-auth-page gd-entry-page items-center justify-center px-5">
+        <div className="gd-entry-panel w-full max-w-md">
+          <span className="gd-entry-eyebrow">One more step</span>
+          <h1>Let’s reconnect your workspace.</h1>
           <p className="mt-2 text-sm text-muted-foreground">{authError}</p>
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
             <button
               type="button"
               onClick={() => void refreshProfile()}
-              className="inline-flex flex-1 items-center justify-center rounded-lg bg-gradient-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-glow"
+              className="gd-entry-submit flex-1"
             >
               Try again
             </button>
@@ -129,12 +132,13 @@ function AuthFlow() {
 
   if (loading || (user && !isUpgrade)) {
     return (
-      <div className="luxury-auth-page flex min-h-dvh items-center justify-center bg-background">
-        <div className="symbiote-blob auth-blob-one" />
-        <div className="symbiote-blob auth-blob-two" />
-        <div className="text-center">
+      <div className="luxury-auth-page gd-entry-page items-center justify-center">
+        <div className="gd-entry-loading" role="status" aria-live="polite">
           <div className="luxury-brand-text">G&D</div>
-          <p className="mt-2 text-xs text-muted-foreground">Opening your workspace...</p>
+          <p>Opening your study space…</p>
+          <div className="gd-entry-loading-dots" aria-hidden="true">
+            <LoadingDots />
+          </div>
         </div>
       </div>
     );
@@ -142,10 +146,11 @@ function AuthFlow() {
 
   const handleEmail = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (submitting) return;
+    if (authBusy) return;
 
     setSubmitting(true);
     setAuthNotice(null);
+    setFormError(null);
     // When the action ends with us navigating away (sign-up that returns a
     // session, or a successful sign-in) we keep `submitting` true so the
     // "Creating.../Signing in..." state holds until the auth listener loads
@@ -206,17 +211,20 @@ function AuthFlow() {
         navigate({ to: lastRoute() });
       }
     } catch (err) {
-      toast.error(getAuthErrorMessage(err));
+      const message = getAuthErrorMessage(err);
+      setFormError(message);
+      toast.error(message);
     } finally {
       if (!keepSubmitting) setSubmitting(false);
     }
   };
 
   const handleGoogle = async () => {
-    if (googleSubmitting) return;
+    if (authBusy) return;
 
     setGoogleSubmitting(true);
     setAuthNotice(null);
+    setFormError(null);
     try {
       if (isUpgrade) {
         // Link Google to the existing anonymous user (manual linking must be
@@ -238,8 +246,9 @@ function AuthFlow() {
         // System-browser flow: Google blocks OAuth inside embedded webviews,
         // and the deep-link listener finishes the session on redirect back.
         await withAuthTimeout(signInWithGoogleNative(), "Starting Google sign-in");
-        // Keep the spinner up; we hand off to the browser and the deep-link
-        // handler completes the session when the user returns.
+        // Browser.open resolves after handoff, including when the user later
+        // cancels. Keep email and another Google attempt available on return.
+        setGoogleSubmitting(false);
         return;
       }
 
@@ -255,162 +264,222 @@ function AuthFlow() {
       );
       if (error) throw error;
     } catch (err) {
-      toast.error(getAuthErrorMessage(err, "Google sign-in failed"));
+      const message = getAuthErrorMessage(err, "Google sign-in failed");
+      setFormError(message);
+      toast.error(message);
       setGoogleSubmitting(false);
     }
   };
 
   return (
-    <div className="luxury-auth-page relative flex min-h-dvh flex-col overflow-x-hidden overflow-y-auto bg-background">
-      <div className="symbiote-blob auth-blob-one" />
-      <div className="symbiote-blob auth-blob-two" />
-
-      <header className="relative z-10 flex items-center justify-between px-4 py-4 sm:px-6 sm:py-6">
-        <Link to="/" className="luxury-brand-text">
-          G&D
+    <div className="luxury-auth-page gd-entry-page">
+      <header className="gd-entry-header">
+        <Link to="/" className="gd-entry-brand" aria-label="G&D home">
+          <span className="luxury-brand-text">G&D</span>
+          <span className="gd-entry-brand-label">
+            YOUR PERSONAL
+            <br />
+            STUDY SPACE
+          </span>
         </Link>
-        <ThemeToggle />
+        <div className="gd-entry-header-actions">
+          <Link to="/" className="gd-entry-home-link">
+            <ArrowLeft size={13} /> Back to home
+          </Link>
+          <ThemeToggle />
+        </div>
       </header>
 
-      <main className="relative z-10 flex min-h-0 flex-1 items-start justify-center px-4 pb-8 pt-8 sm:items-center sm:px-6 sm:pb-12 sm:pt-6">
-        <div className="gd-auth-column w-full max-w-md">
-          <div className="gd-auth-panel luxury-panel rounded-lg p-5 shadow-elegant backdrop-blur sm:p-8">
-            <h1 className="font-display text-3xl font-light leading-none sm:text-4xl">
-              {isUpgrade ? "Keep your work" : isSignup ? "Create your account" : "Welcome back"}
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
+      <main className="gd-entry-main">
+        <AuthStudyPanel />
+        <div className="gd-entry-form-column">
+          <div className="gd-entry-panel">
+            <span className="gd-entry-eyebrow">
+              {isUpgrade ? "Make it yours" : isSignup ? "A fresh start" : "Back to your studies"}
+            </span>
+            <h1>
               {isUpgrade
-                ? "Add an email or Google account - everything from your guest session stays with you."
+                ? "Keep your work."
                 : isSignup
-                  ? "Join G&D and start studying smarter."
-                  : "Sign in to continue your studies."}
+                  ? "Your next chapter."
+                  : "Good to see you again."}
+            </h1>
+            <p className="gd-entry-form-intro">
+              {isUpgrade
+                ? "Connect an email or Google account to keep everything from your guest session."
+                : isSignup
+                  ? "Create your account and bring your studies together."
+                  : "Sign in to pick up where you left off."}
             </p>
-            {authNotice && (
-              <div className="mt-4 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 text-sm text-foreground">
-                {authNotice}
+
+            {!isUpgrade && (
+              <div className="gd-entry-mode-toggle" aria-label="Account access">
+                <button
+                  type="button"
+                  aria-pressed={!isSignup}
+                  disabled={authBusy}
+                  onClick={() => {
+                    setAuthNotice(null);
+                    setFormError(null);
+                    setIsSignup(false);
+                  }}
+                >
+                  Sign in
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={isSignup}
+                  disabled={authBusy}
+                  onClick={() => {
+                    setAuthNotice(null);
+                    setFormError(null);
+                    setIsSignup(true);
+                  }}
+                >
+                  Create account
+                </button>
               </div>
             )}
 
-            {/* Native upgrade hides Google: the native flow signs into a separate
-                account instead of linking, which would orphan the guest's work. */}
+            {authNotice && (
+              <div className="gd-entry-notice" role="status">
+                <Mail size={16} />
+                <span>{authNotice}</span>
+              </div>
+            )}
+            {formError && (
+              <div className="gd-entry-error" role="alert">
+                <CircleAlert size={16} />
+                <span>{formError}</span>
+              </div>
+            )}
+
+            {/* Linking must preserve the anonymous user's existing work. */}
             {!(isUpgrade && native) && (
               <>
                 <button
                   onClick={handleGoogle}
                   type="button"
-                  disabled={googleSubmitting}
-                  className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-lg border border-border bg-background/70 hover:bg-surface-elevated transition-colors text-sm font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={authBusy}
+                  className="gd-entry-google"
                 >
                   {googleSubmitting ? <LoadingDots /> : <GoogleIcon />}
-                  {googleSubmitting
-                    ? "Opening Google..."
-                    : isUpgrade
-                      ? "Continue with Google"
-                      : isSignup
-                        ? "Create account with Google"
-                        : "Sign in with Google"}
+                  {googleSubmitting ? "Opening Google…" : "Continue with Google"}
                 </button>
-
-                <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
-                  <div className="h-px flex-1 bg-border" />
-                  or use email
-                  <div className="h-px flex-1 bg-border" />
-                </div>
+                <div className="gd-entry-divider">or continue with email</div>
               </>
             )}
 
-            <form onSubmit={handleEmail} className="space-y-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Email</label>
+            <form
+              onSubmit={handleEmail}
+              className={`gd-entry-form${isUpgrade && native ? " gd-entry-form-direct" : ""}`}
+              aria-busy={authBusy}
+            >
+              <div className="gd-entry-field">
+                <label htmlFor="gd-auth-email">Email address</label>
                 <input
+                  id="gd-auth-email"
+                  name="email"
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="off"
+                  autoComplete="email"
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
                   placeholder="you@example.com"
                 />
               </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Password</label>
-                <div className="relative mt-1">
+              <div className="gd-entry-field">
+                <label htmlFor="gd-auth-password">Password</label>
+                <div className="gd-entry-password">
                   <input
+                    id="gd-auth-password"
+                    name="password"
                     type={showPassword ? "text" : "password"}
                     required
                     minLength={6}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    autoComplete={isSignup ? "new-password" : "current-password"}
-                    className="w-full rounded-lg border border-input bg-background px-3 py-2 pr-24 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-ring"
-                    placeholder="********"
+                    autoComplete={isSignup || isUpgrade ? "new-password" : "current-password"}
+                    aria-describedby={isSignup || isUpgrade ? "gd-auth-password-hint" : undefined}
+                    placeholder={
+                      isSignup || isUpgrade ? "Create a password" : "Enter your password"
+                    }
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((value) => !value)}
-                    className="absolute inset-y-0 right-0 inline-flex min-w-20 items-center justify-center gap-1 rounded-r-lg px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                    className="gd-entry-password-toggle"
                     aria-label={showPassword ? "Hide password" : "Show password"}
-                    title={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
                   >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                     <span>{showPassword ? "Hide" : "Show"}</span>
                   </button>
                 </div>
+                {(isSignup || isUpgrade) && (
+                  <p id="gd-auth-password-hint" className="gd-entry-field-hint">
+                    Use at least 6 characters.
+                  </p>
+                )}
               </div>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-primary text-primary-foreground font-medium shadow-glow hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              <button type="submit" disabled={authBusy} className="gd-entry-submit">
                 {submitting && <LoadingDots />}
                 {submitting
                   ? isUpgrade
-                    ? "Saving..."
+                    ? "Saving your account…"
                     : isSignup
-                      ? "Creating..."
-                      : "Signing in..."
+                      ? "Creating your account…"
+                      : "Signing you in…"
                   : isUpgrade
                     ? "Save my account"
                     : isSignup
-                      ? "Create account"
-                      : "Sign in"}
+                      ? "Create my account"
+                      : "Sign in to G&D"}
+                {!submitting && <ArrowRight size={15} />}
               </button>
             </form>
 
             {isUpgrade ? (
-              <p className="text-xs text-muted-foreground text-center mt-5">
+              <p className="gd-entry-switch">
                 Not ready yet?{" "}
                 <button
                   type="button"
-                  className="text-primary hover:underline font-medium"
+                  disabled={authBusy}
                   onClick={() => navigate({ to: lastRoute() })}
                 >
                   Keep exploring as a guest
                 </button>
               </p>
             ) : (
-              <p className="text-xs text-muted-foreground text-center mt-5">
-                {isSignup ? "Already have an account?" : "New here?"}{" "}
+              <p className="gd-entry-switch">
+                {isSignup ? "Already part of G&D?" : "Starting something new?"}{" "}
                 <button
                   type="button"
-                  className="text-primary hover:underline font-medium"
+                  disabled={authBusy}
                   onClick={() => {
                     setAuthNotice(null);
+                    setFormError(null);
                     setIsSignup(!isSignup);
                   }}
                 >
-                  {isSignup ? "Sign in" : "Create one"}
+                  {isSignup ? "Sign in" : "Create an account"}
                 </button>
               </p>
             )}
           </div>
-
-          <FounderStory className="mt-4" />
+          <FounderStory className="gd-entry-founder" />
         </div>
       </main>
+
+      <footer className="gd-entry-footer">
+        <span>
+          <BookOpen size={13} /> A little curiosity goes a long way.
+        </span>
+        <span>Make room for understanding.</span>
+      </footer>
     </div>
   );
 }

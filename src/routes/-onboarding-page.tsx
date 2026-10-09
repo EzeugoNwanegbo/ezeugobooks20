@@ -1,5 +1,5 @@
-import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { ArrowLeft, ArrowRight, BookOpen, Check, CircleAlert } from "lucide-react";
 import { FounderStory } from "@/components/founder-story";
 import { LoadingDots } from "@/components/loading-dots";
 import { useEffect, useState } from "react";
@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { STUDY_LEVELS } from "@/lib/study-levels";
 import { ThemeToggle } from "@/components/theme-toggle";
+import "@/styles/auth-flow.css";
 
 // Onboarding used to open with a medicine-or-law card picker, and the rest of
 // the app branched off that one choice. G&D is open to every course now, so the
@@ -30,6 +31,7 @@ function OnboardingFlow() {
   const { user, profile, loading, refreshProfile } = useAuth();
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Step 0 - the two answers that actually change how G&D replies.
   const [name, setName] = useState("");
@@ -60,8 +62,9 @@ function OnboardingFlow() {
   const canContinueStep0 = name.trim().length > 0 && course.trim().length > 0;
 
   const finish = async () => {
-    if (!user) return;
+    if (!user || saving) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const { error } = await supabase.from("user_profiles").upsert({
         id: user.id,
@@ -82,13 +85,16 @@ function OnboardingFlow() {
       toast.success("All set. Ask your first question.");
       navigate({ to: "/app/chat" });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not save profile");
+      const message = err instanceof Error ? err.message : "Could not save profile";
+      setSaveError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
   };
 
   const onNext = () => {
+    if (saving || !canContinueStep0) return;
     if (step === 0) {
       next();
     } else {
@@ -98,167 +104,219 @@ function OnboardingFlow() {
 
   if (loading || !user) {
     return (
-      <div className="luxury-auth-page flex min-h-dvh items-center justify-center">
-        <div className="symbiote-blob auth-blob-one" />
-        <div className="symbiote-blob auth-blob-two" />
-        <div className="text-center">
+      <div className="luxury-auth-page gd-entry-page items-center justify-center">
+        <div className="gd-entry-loading" role="status" aria-live="polite">
           <div className="luxury-brand-text">G&D</div>
-          <p className="mt-2 text-xs text-muted-foreground">Preparing your setup...</p>
+          <p>Preparing your study space…</p>
+          <div className="gd-entry-loading-dots" aria-hidden="true">
+            <LoadingDots />
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="luxury-auth-page relative flex min-h-dvh flex-col overflow-x-hidden overflow-y-auto bg-background">
-      <div className="symbiote-blob auth-blob-one" />
-      <div className="symbiote-blob auth-blob-two" />
-
-      <header className="relative z-10 flex items-center justify-between gap-3 px-4 py-4 sm:px-6 sm:py-6">
-        <div className="luxury-brand-text">G&D</div>
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <span className="truncate text-xs text-muted-foreground">
+    <div className="luxury-auth-page gd-entry-page">
+      <header className="gd-entry-header">
+        <Link to="/" className="gd-entry-brand" aria-label="G&D home">
+          <span className="luxury-brand-text">G&D</span>
+          <span className="gd-entry-brand-label">
+            YOUR PERSONAL
+            <br />
+            STUDY SPACE
+          </span>
+        </Link>
+        <div className="gd-entry-header-actions">
+          <span className="text-xs text-muted-foreground">
             Step {step + 1} of {totalSteps}
           </span>
           <ThemeToggle />
         </div>
       </header>
 
-      <main className="relative z-10 flex min-h-0 flex-1 items-start justify-center px-4 pb-8 pt-6 sm:items-center sm:px-6 sm:pb-12 sm:pt-6">
-        <div className="w-full max-w-lg">
-          {/* Progress bar */}
-          <div className="mb-4 flex gap-1 sm:mb-6">
-            {Array.from({ length: totalSteps }).map((_, i) => (
-              <div
-                key={i}
-                className={`h-1 flex-1 rounded-full transition-colors ${
-                  i <= step ? "bg-primary" : "bg-border"
-                }`}
-              />
-            ))}
+      <main className="gd-entry-main gd-setup-main">
+        <aside className="gd-entry-story gd-setup-story" aria-label="Your setup progress">
+          <span className="gd-entry-eyebrow">Start with what matters</span>
+          <h2>
+            Your studies.
+            <br />
+            <span>Your starting point.</span>
+          </h2>
+          <p className="gd-entry-story-copy">
+            A little context helps G&D explain things in the language of your course.
+          </p>
+          <ol className="gd-setup-step-list">
+            <li
+              className={`gd-setup-step${step > 0 ? " gd-setup-step-complete" : ""}`}
+              aria-current={step === 0 ? "step" : undefined}
+            >
+              <span className="gd-setup-step-number">{step > 0 ? <Check size={14} /> : "01"}</span>
+              <div>
+                <span className="gd-setup-step-title">Your starting point</span>
+                <span className="gd-setup-step-detail">Your name and what you study</span>
+              </div>
+            </li>
+            <li className="gd-setup-step" aria-current={step === 1 ? "step" : undefined}>
+              <span className="gd-setup-step-number">02</span>
+              <div>
+                <span className="gd-setup-step-title">A little more context</span>
+                <span className="gd-setup-step-detail">Your school and level, if you like</span>
+              </div>
+            </li>
+          </ol>
+          <div className="gd-setup-course-note">
+            <BookOpen size={17} />
+            <span>
+              {course.trim()
+                ? `A study space for ${course.trim()}.`
+                : "Every course has a place here."}
+            </span>
           </div>
+        </aside>
 
-          <div className="luxury-panel rounded-lg p-5 shadow-elegant backdrop-blur sm:p-8">
-            {/* ── Step 0: name + field of study (both required) ── */}
-            {step === 0 && (
-              <>
-                <h2 className="text-xs font-medium uppercase tracking-wider text-primary-glow">
-                  About you
-                </h2>
-                <h1 className="mt-3 font-display text-3xl font-light leading-none sm:text-4xl">
-                  What are you studying?
-                </h1>
+        <div className="gd-entry-form-column">
+          <div className="gd-entry-panel gd-setup-panel">
+            <div className="gd-setup-progress" aria-hidden="true">
+              {Array.from({ length: totalSteps }).map((_, i) => (
+                <span key={i} data-active={i <= step} />
+              ))}
+            </div>
+            <span className="gd-entry-eyebrow">
+              {step === 0 ? "01 / Your starting point" : "02 / Your studies"}
+            </span>
+            <h1>{step === 0 ? "Let’s make this yours." : "A little more context."}</h1>
+            <p className="gd-entry-form-intro">
+              {step === 0
+                ? "Tell us what to call you and what you’re studying."
+                : "Help us match your stage of study. Both fields are optional."}
+            </p>
 
-                <div className="mt-6 space-y-4">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                      Your name
-                    </label>
-                    <input
-                      autoFocus
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="Full name"
-                      className="w-full rounded-lg border border-input bg-background px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-ring"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                      Course or field of study
-                    </label>
-                    <input
-                      value={course}
-                      onChange={(e) => setCourse(e.target.value)}
-                      placeholder="e.g. Mechanical Engineering, Nursing, Accounting, Law"
-                      className="w-full rounded-lg border border-input bg-background px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-ring"
-                    />
-                  </div>
-                </div>
-              </>
+            {saveError && (
+              <div className="gd-entry-error" role="alert">
+                <CircleAlert size={16} />
+                <span>{saveError}</span>
+              </div>
             )}
 
-            {/* ── Step 1: school + level (both optional, never blocking) ── */}
-            {step === 1 && (
-              <>
-                <h2 className="text-xs font-medium uppercase tracking-wider text-primary-glow">
-                  Your studies
-                </h2>
-                <h1 className="mt-3 font-display text-3xl font-light leading-none sm:text-4xl">
-                  Where are you studying?
-                </h1>
+            <form
+              className="gd-entry-form"
+              aria-busy={saving}
+              onSubmit={(event) => {
+                event.preventDefault();
+                onNext();
+              }}
+            >
+              {step === 0 && (
+                <>
+                  <div className="gd-entry-field">
+                    <label htmlFor="gd-setup-name">Your name</label>
+                    <input
+                      id="gd-setup-name"
+                      name="name"
+                      autoFocus
+                      autoComplete="name"
+                      required
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="What should we call you?"
+                    />
+                  </div>
+                  <div className="gd-entry-field">
+                    <label htmlFor="gd-setup-course">Course or field of study</label>
+                    <input
+                      id="gd-setup-course"
+                      name="course"
+                      required
+                      value={course}
+                      onChange={(e) => setCourse(e.target.value)}
+                      placeholder="e.g. Nursing, Engineering, Accounting"
+                      aria-describedby="gd-setup-course-hint"
+                    />
+                    <p id="gd-setup-course-hint" className="gd-entry-field-hint">
+                      This helps us tailor explanations and examples.
+                    </p>
+                  </div>
+                  <p className="gd-setup-required-note">Both fields are needed to get started.</p>
+                </>
+              )}
 
-                <div className="mt-6 space-y-4">
-                  <div>
-                    <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                      School or university
-                      <span className="text-[10px] font-normal opacity-60">optional</span>
+              {step === 1 && (
+                <>
+                  <div className="gd-entry-field">
+                    <label htmlFor="gd-setup-university">
+                      School or university <span className="gd-setup-field-optional">Optional</span>
                     </label>
                     <input
+                      id="gd-setup-university"
+                      name="university"
                       autoFocus
                       value={university}
                       onChange={(e) => setUniversity(e.target.value)}
                       placeholder="Where you study"
-                      className="w-full rounded-lg border border-input bg-background px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                   </div>
-
-                  <div>
-                    <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                      Level
-                      <span className="text-[10px] font-normal opacity-60">optional</span>
-                    </label>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <fieldset>
+                    <legend className="gd-entry-field-label">
+                      Study level <span className="gd-setup-field-optional">Optional</span>
+                    </legend>
+                    <div className="gd-setup-levels">
                       {STUDY_LEVELS.map((l) => (
                         <button
                           key={l}
                           type="button"
-                          // Tapping the selected level again clears it, so an
-                          // optional field stays genuinely optional once
-                          // someone has touched it.
+                          aria-pressed={level === l}
+                          disabled={saving}
                           onClick={() => setLevel((current) => (current === l ? "" : l))}
-                          className={`rounded-lg border py-2.5 text-sm font-medium transition-colors ${
-                            level === l
-                              ? "border-primary bg-primary/15 text-primary"
-                              : "border-border bg-background hover:bg-surface-elevated"
-                          }`}
                         >
                           {l}
                         </button>
                       ))}
                     </div>
-                  </div>
-                </div>
-              </>
-            )}
+                    <p className="gd-entry-field-hint">
+                      You can leave these blank and start studying now.
+                    </p>
+                  </fieldset>
+                </>
+              )}
 
-            {/* Navigation */}
-            <div className="mt-7 flex items-center justify-between gap-3 sm:mt-8">
-              <button
-                type="button"
-                onClick={prev}
-                disabled={step === 0}
-                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-30 sm:px-3"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back
-              </button>
-              <button
-                type="button"
-                onClick={onNext}
-                disabled={saving || (step === 0 && !canContinueStep0)}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-primary px-4 py-2.5 font-medium text-primary-foreground shadow-glow hover:opacity-90 disabled:opacity-50 sm:px-5"
-              >
-                {saving && <LoadingDots />}
-                {step === totalSteps - 1 ? "Start studying" : "Continue"}
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
+              <div className="gd-setup-navigation">
+                {step > 0 ? (
+                  <button type="button" onClick={prev} disabled={saving} className="gd-setup-back">
+                    <ArrowLeft size={14} /> Back
+                  </button>
+                ) : (
+                  <span className="gd-setup-required-note">Step 1 of 2</span>
+                )}
+                <button
+                  type="submit"
+                  disabled={saving || (step === 0 && !canContinueStep0)}
+                  className="gd-entry-submit"
+                >
+                  {saving ? (
+                    <>
+                      <LoadingDots /> Getting things ready…
+                    </>
+                  ) : (
+                    <>
+                      {step === totalSteps - 1 ? "Start studying" : "Continue"}
+                      <ArrowRight size={15} />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
-
-          <FounderStory className="mt-4" />
+          <FounderStory className="gd-entry-founder" />
         </div>
       </main>
+
+      <footer className="gd-entry-footer">
+        <span>
+          <BookOpen size={13} /> Your next good question starts here.
+        </span>
+        <span>Made for your way of learning.</span>
+      </footer>
     </div>
   );
 }

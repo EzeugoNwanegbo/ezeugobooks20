@@ -33,13 +33,16 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function PrivacyPage() {
   return (
-    <main className="luxury-page">
+    <main className="gd-legal-page luxury-page">
       <div className="symbiote-blob blob-one" />
       <div className="symbiote-blob blob-two" />
 
       <nav className="luxury-nav" aria-label="Primary navigation">
         <Link to="/" className="luxury-logo">
           G&D
+        </Link>
+        <Link to="/" className="gd-legal-back">
+          Back to G&amp;D <span aria-hidden="true">↗</span>
         </Link>
       </nav>
 
@@ -52,8 +55,9 @@ function PrivacyPage() {
       </section>
 
       <div
+        className="gd-legal-body"
         style={{
-          maxWidth: "680px",
+          maxWidth: "720px",
           margin: "0 auto",
           padding: "0 1.5rem 5rem",
         }}
@@ -84,13 +88,17 @@ function PrivacyPage() {
           >
             <thead>
               <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
-                <th style={{ textAlign: "left", padding: "0.4rem 0.6rem 0.4rem 0", fontWeight: 600 }}>
+                <th
+                  style={{ textAlign: "left", padding: "0.4rem 0.6rem 0.4rem 0", fontWeight: 600 }}
+                >
                   Category
                 </th>
                 <th style={{ textAlign: "left", padding: "0.4rem 0.6rem", fontWeight: 600 }}>
                   Examples
                 </th>
-                <th style={{ textAlign: "left", padding: "0.4rem 0 0.4rem 0.6rem", fontWeight: 600 }}>
+                <th
+                  style={{ textAlign: "left", padding: "0.4rem 0 0.4rem 0.6rem", fontWeight: 600 }}
+                >
                   Purpose
                 </th>
               </tr>
@@ -120,11 +128,14 @@ function PrivacyPage() {
                   "Improving the app (via Supabase logs)",
                 ],
               ].map(([cat, ex, purpose]) => (
-                <tr
-                  key={cat}
-                  style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
-                >
-                  <td style={{ padding: "0.45rem 0.6rem 0.45rem 0", verticalAlign: "top", fontWeight: 500 }}>
+                <tr key={cat} style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <td
+                    style={{
+                      padding: "0.45rem 0.6rem 0.45rem 0",
+                      verticalAlign: "top",
+                      fontWeight: 500,
+                    }}
+                  >
                     {cat}
                   </td>
                   <td style={{ padding: "0.45rem 0.6rem", verticalAlign: "top" }}>{ex}</td>
@@ -142,16 +153,26 @@ function PrivacyPage() {
         </Section>
 
         <Section title="3. How we use your data">
-          <ul style={{ paddingLeft: "1.25rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+          <ul
+            style={{
+              paddingLeft: "1.25rem",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.4rem",
+            }}
+          >
             <li>To provide and operate the G&D service</li>
-            <li>To personalise AI responses using your study profile (name, university, course, preferences)</li>
+            <li>
+              To personalise AI responses using your study profile (name, university, course,
+              preferences)
+            </li>
             <li>To retrieve relevant passages from your uploaded documents</li>
             <li>To store and display your conversation and study history</li>
             <li>To authenticate you and secure your account</li>
           </ul>
           <p style={{ marginTop: "0.75rem" }}>
-            We do not use your data for advertising, sell it to third parties, or use it to train
-            AI models.
+            We do not use your data for advertising, sell it to third parties, or use it to train AI
+            models.
           </p>
         </Section>
 
@@ -159,7 +180,14 @@ function PrivacyPage() {
           <p style={{ marginBottom: "0.75rem" }}>
             To operate the service we share certain data with the following third parties:
           </p>
-          <ul style={{ paddingLeft: "1.25rem", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+          <ul
+            style={{
+              paddingLeft: "1.25rem",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.6rem",
+            }}
+          >
             <li>
               <strong>Supabase</strong> - our backend provider. Stores your account, profile,
               documents, conversations, and study data. Data is encrypted at rest and in transit.
@@ -176,8 +204,8 @@ function PrivacyPage() {
             </li>
             <li>
               <strong>DeepSeek</strong> - AI provider used for document retrieval and drafting
-              answers. Your study profile and relevant document excerpts are sent with each
-              request. See{" "}
+              answers. Your study profile and relevant document excerpts are sent with each request.
+              See{" "}
               <a
                 href="https://www.deepseek.com/privacy"
                 target="_blank"
@@ -219,19 +247,17 @@ function PrivacyPage() {
 
         <Section title="5. Data security">
           <p>
-            All data is transmitted over HTTPS. Your data is stored in Supabase, which encrypts
-            data at rest. Access to your data is restricted by row-level security policies -
-            you can only read and write your own records. Authentication uses industry-standard
-            JWT tokens.
+            All data is transmitted over HTTPS. Your data is stored in Supabase, which encrypts data
+            at rest. Access to your data is restricted by row-level security policies - you can only
+            read and write your own records. Authentication uses industry-standard JWT tokens.
           </p>
         </Section>
 
         <Section title="6. Data retention">
           <p>
             We retain your data for as long as your account is active. If you delete your account,
-            all associated data - profile, documents, conversations, study plans, and
-            authentication credentials - is permanently and immediately deleted with no retention
-            period. See our{" "}
+            all associated data - profile, documents, conversations, study plans, and authentication
+            credentials - is permanently and immediately deleted with no retention period. See our{" "}
             <Link to="/delete-account" style={{ textDecoration: "underline" }}>
               account deletion page
             </Link>{" "}
@@ -241,14 +267,21 @@ function PrivacyPage() {
 
         <Section title="7. Your rights">
           <p style={{ marginBottom: "0.6rem" }}>You have the right to:</p>
-          <ul style={{ paddingLeft: "1.25rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+          <ul
+            style={{
+              paddingLeft: "1.25rem",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.4rem",
+            }}
+          >
             <li>
-              <strong>Delete your account and all data</strong> - from within the app (menu →
-              Delete account) or by emailing us
+              <strong>Delete your account and all data</strong> - from within the app (menu → Delete
+              account) or by emailing us
             </li>
             <li>
-              <strong>Delete specific data</strong> - delete individual documents, conversations,
-              or messages from within the app at any time
+              <strong>Delete specific data</strong> - delete individual documents, conversations, or
+              messages from within the app at any time
             </li>
             <li>
               <strong>Access your data</strong> - email us and we will provide a copy of the
@@ -269,9 +302,9 @@ function PrivacyPage() {
 
         <Section title="8. Children's privacy">
           <p>
-            G&D is not directed at children under 13. We do not knowingly collect personal data
-            from children under 13. If you believe a child under 13 has provided us with personal
-            data, please contact us and we will delete it promptly.
+            G&D is not directed at children under 13. We do not knowingly collect personal data from
+            children under 13. If you believe a child under 13 has provided us with personal data,
+            please contact us and we will delete it promptly.
           </p>
         </Section>
 
@@ -292,6 +325,10 @@ function PrivacyPage() {
           </p>
         </Section>
       </div>
+      <footer className="gd-legal-footer">
+        <span>G&amp;D · A little more understanding, every day.</span>
+        <Link to="/privacy">Privacy</Link>
+      </footer>
     </main>
   );
 }

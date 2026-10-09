@@ -46,10 +46,18 @@ export function FeedbackPage() {
   return (
     <div className="gd-content-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 overflow-x-hidden">
-        <PageHeader eyebrow="G&D" title="Feedback" />
+        <PageHeader
+          eyebrow="Make G&D better"
+          title="We’re listening."
+          subtitle="A rough edge, a missing feature, or something you love. Tell us about it."
+        />
 
-        <div className="luxury-panel rounded-lg p-4 sm:p-5">
+        <div className="luxury-panel rounded-2xl p-5 sm:p-7">
+          <label htmlFor="feedback-message" className="mb-3 block text-sm font-medium">
+            Your feedback
+          </label>
           <textarea
+            id="feedback-message"
             value={message}
             onChange={(event) => setMessage(event.target.value)}
             placeholder="What's on your mind?"
@@ -63,7 +71,7 @@ export function FeedbackPage() {
             className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
           >
             <Send className="h-4 w-4" />
-            Send
+            Send feedback
           </button>
         </div>
       </div>
