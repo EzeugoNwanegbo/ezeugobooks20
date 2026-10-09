@@ -1,4 +1,11 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  fetchAiWithLimits,
+  readAiBody,
+  UsageLimitError,
+  chargeAiCredits,
+  chargeAiCreditsFor,
+  refundAiCredits,
+} from "../_shared/usage-limits.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -167,7 +174,9 @@ function difficultyInstruction(level: DifficultyLevel, type: "mcq" | "essay"): s
     // Written as its own line rather than an inline escape so the prompt text
     // stays readable in the source.
     const distractorLine =
-      type === "mcq" ? "- Make every distractor clearly wrong to someone who read the material." : "";
+      type === "mcq"
+        ? "- Make every distractor clearly wrong to someone who read the material."
+        : "";
     return `DIFFICULTY: EASY.
 - Test direct recall and recognition of facts that are stated plainly in the excerpts.
 - One step to answer. Use clear, unambiguous wording.
@@ -240,7 +249,7 @@ async function fetchWithTimeout(
   const timeout = setTimeout(() => controller.abort("timeout"), timeoutMs);
 
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    return await fetchAiWithLimits(input, { ...init, signal: controller.signal }, 8192);
   } finally {
     clearTimeout(timeout);
   }
@@ -399,8 +408,7 @@ function salvageObjects(text: string): Record<string, unknown>[] {
   // happily as the item itself, so shape is what separates a question from its
   // own innards. Anything carrying one of these reads as a whole item.
   const ITEM_KEYS = ["prompt", "question", "front", "term", "title"];
-  const looksLikeItem = (o: Record<string, unknown>) =>
-    ITEM_KEYS.some((k) => k in o);
+  const looksLikeItem = (o: Record<string, unknown>) => ITEM_KEYS.some((k) => k in o);
 
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
@@ -412,8 +420,14 @@ function salvageObjects(text: string): Record<string, unknown>[] {
       continue;
     }
 
-    if (ch === '"') { inString = true; continue; }
-    if (ch === "{") { opens.push(i); continue; }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") {
+      opens.push(i);
+      continue;
+    }
     if (ch === "}") {
       const start = opens.pop();
       if (start === undefined) continue;
@@ -460,9 +474,7 @@ function parseJsonObject(text: string): Record<string, unknown> {
         : /"topics"\s*:/.test(cleaned)
           ? "topics"
           : "questions";
-      console.warn(
-        `studybody: recovered ${salvaged.length} ${key} from malformed model JSON`,
-      );
+      console.warn(`studybody: recovered ${salvaged.length} ${key} from malformed model JSON`);
       return { [key]: salvaged };
     }
 
@@ -622,7 +634,9 @@ async function callOpenAIJson(
   const choice = json.choices?.[0];
   const content: string = choice?.message?.content ?? "";
   if (!content.trim()) {
-    throw new Error(`OpenAI fallback returned an empty response (${choice?.finish_reason ?? "unknown"})`);
+    throw new Error(
+      `OpenAI fallback returned an empty response (${choice?.finish_reason ?? "unknown"})`,
+    );
   }
   return parseJsonObject(content);
 }
@@ -851,12 +865,14 @@ ${
 // One sentence that names the deciding fact teaches more than five that restate
 // the stem, and it is output tokens saved on every question.
 function mcqShape(level: DifficultyLevel): string {
-  const explanation = level === "hard"
-    ? "ONE short sentence: the deciding fact from the excerpt, and the tempting wrong option it rules out"
-    : "ONE short sentence, pointing at the source excerpt";
-  const options = level === "hard"
-    ? `[{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."},{"id":"D","text":"..."}]`
-    : `[{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."}]`;
+  const explanation =
+    level === "hard"
+      ? "ONE short sentence: the deciding fact from the excerpt, and the tempting wrong option it rules out"
+      : "ONE short sentence, pointing at the source excerpt";
+  const options =
+    level === "hard"
+      ? `[{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."},{"id":"D","text":"..."}]`
+      : `[{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."}]`;
   return `    {
       "prompt": "question text grounded in the excerpts",
       "options": ${options},
@@ -935,7 +951,12 @@ function makeSlotBag(size: number): () => number {
 function relabelExplanation(text: string, swap: Record<string, string>): string {
   return text.replace(
     /\b(options?|choices?|answers?)\s+\(?([A-Za-z])\)?(?![\w])|\(([A-Za-z])\)/g,
-    (whole: string, word: string | undefined, labelled: string | undefined, bracketed: string | undefined) => {
+    (
+      whole: string,
+      word: string | undefined,
+      labelled: string | undefined,
+      bracketed: string | undefined,
+    ) => {
       const next = swap[(labelled ?? bracketed ?? "").toUpperCase()];
       if (!next) return whole;
       return word ? `${word} ${next}` : `(${next})`;
@@ -1024,7 +1045,10 @@ async function generateOneType(
   // punctuation count as the same one.
   const key = (q: Record<string, unknown>) =>
     typeof q.prompt === "string"
-      ? q.prompt.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
+      ? q.prompt
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, " ")
+          .trim()
       : "";
 
   // Returns the items actually added (not just a count) so a streaming caller
@@ -1036,7 +1060,7 @@ async function generateOneType(
     const added: Record<string, unknown>[] = [];
     for (const question of picked) {
       const k = key(question);
-      if (k && seen.has(k)) continue;   // a duplicate across parallel batches
+      if (k && seen.has(k)) continue; // a duplicate across parallel batches
       if (k) seen.add(k);
       // `type` and `difficulty` are stamped HERE rather than asked for. Both
       // are constants for the whole batch — the caller named them — so making
@@ -1087,36 +1111,40 @@ async function generateOneType(
       // remainder.
       const need = Math.min(batchSize, target - i * batchSize);
       const startedAt = Date.now() - t0;
-      return callGenerationJson(
-        deepSeekKey,
-        openAiKey,
-        QUESTION_SYSTEM,
-        questionUserPrompt(body, type, need, exclude, difficulty),
-      )
-        .then((r) => {
-          console.log(
-            `studybody: batch ${i + 1}/${rounds} ok start=+${startedAt}ms dur=${Date.now() - t0 - startedAt}ms`,
-          );
-          const raw = Array.isArray(r.questions) ? (r.questions as Record<string, unknown>[]) : [];
-          // ABSORBED AND REPORTED THE MOMENT THIS ONE BATCH RESOLVES, not after
-          // every parallel round in this Promise.all has finished. That is the
-          // entire point of streaming per batch instead of per generateOneType
-          // call: a caller that wants to render/report progress sees it the
-          // instant it exists rather than waiting for the slowest sibling batch
-          // too. Safe to mutate the shared collected/seen/exclude state from
-          // several in-flight .then() handlers here because absorb() has no
-          // `await` in it - the JS event loop still runs one handler fully to
-          // completion before starting the next, so there is no interleaving.
-          const added = absorb(raw);
-          if (added.length) onBatch?.(added);
-        })
-        // A failed batch must not take the others down: nine questions beat an
-        // error, and the top-up below can recover the shortfall.
-        .catch((err) => {
-          console.error(
-            `studybody: batch ${i + 1}/${rounds} FAILED start=+${startedAt}ms dur=${Date.now() - t0 - startedAt}ms err=${err?.message ?? err}`,
-          );
-        });
+      return (
+        callGenerationJson(
+          deepSeekKey,
+          openAiKey,
+          QUESTION_SYSTEM,
+          questionUserPrompt(body, type, need, exclude, difficulty),
+        )
+          .then((r) => {
+            console.log(
+              `studybody: batch ${i + 1}/${rounds} ok start=+${startedAt}ms dur=${Date.now() - t0 - startedAt}ms`,
+            );
+            const raw = Array.isArray(r.questions)
+              ? (r.questions as Record<string, unknown>[])
+              : [];
+            // ABSORBED AND REPORTED THE MOMENT THIS ONE BATCH RESOLVES, not after
+            // every parallel round in this Promise.all has finished. That is the
+            // entire point of streaming per batch instead of per generateOneType
+            // call: a caller that wants to render/report progress sees it the
+            // instant it exists rather than waiting for the slowest sibling batch
+            // too. Safe to mutate the shared collected/seen/exclude state from
+            // several in-flight .then() handlers here because absorb() has no
+            // `await` in it - the JS event loop still runs one handler fully to
+            // completion before starting the next, so there is no interleaving.
+            const added = absorb(raw);
+            if (added.length) onBatch?.(added);
+          })
+          // A failed batch must not take the others down: nine questions beat an
+          // error, and the top-up below can recover the shortfall.
+          .catch((err) => {
+            console.error(
+              `studybody: batch ${i + 1}/${rounds} FAILED start=+${startedAt}ms dur=${Date.now() - t0 - startedAt}ms err=${err?.message ?? err}`,
+            );
+          })
+      );
     }),
   );
   console.log(
@@ -1137,9 +1165,9 @@ async function generateOneType(
     const raw = Array.isArray(result.questions)
       ? (result.questions as Record<string, unknown>[])
       : [];
-    if (raw.length === 0) break;          // material exhausted, or the call failed
+    if (raw.length === 0) break; // material exhausted, or the call failed
     const added = absorb(raw);
-    if (added.length === 0) break;        // only repeats coming back now
+    if (added.length === 0) break; // only repeats coming back now
     onBatch?.(added);
   }
 
@@ -1175,7 +1203,15 @@ async function generateQuestions(
       made += added.length;
       onBatch?.(added, made, overallTarget);
     };
-    const mcqs = await generateOneType(body, deepSeekKey, openAiKey, "mcq", mcqTarget, seedExclude, relay);
+    const mcqs = await generateOneType(
+      body,
+      deepSeekKey,
+      openAiKey,
+      "mcq",
+      mcqTarget,
+      seedExclude,
+      relay,
+    );
     const essayExclude = [
       ...seedExclude,
       ...mcqs.map((q) => q.prompt).filter((p): p is string => typeof p === "string"),
@@ -1199,7 +1235,15 @@ async function generateQuestions(
     made += added.length;
     onBatch?.(added, made, target);
   };
-  const questions = await generateOneType(body, deepSeekKey, openAiKey, onlyType, target, seedExclude, relay);
+  const questions = await generateOneType(
+    body,
+    deepSeekKey,
+    openAiKey,
+    onlyType,
+    target,
+    seedExclude,
+    relay,
+  );
   return { questions };
 }
 
@@ -1297,7 +1341,10 @@ function gradeObjectively(body: Body): Record<string, unknown> | null {
   if (questions.some((q) => q.type !== "mcq")) return null;
 
   const answers = (body.answers || {}) as Record<string, string>;
-  const norm = (v: unknown) => String(v ?? "").trim().toUpperCase();
+  const norm = (v: unknown) =>
+    String(v ?? "")
+      .trim()
+      .toUpperCase();
 
   let score = 0;
   const graded = questions.map((q) => {
@@ -1383,98 +1430,19 @@ Return JSON:
   return { grading, coaching };
 }
 
-// ── Cookies: the daily AI budget ────────────────────────────────────────────
-//
-// Prices here are a deliberate second copy of COOKIE_COSTS in
-// src/lib/cookies.ts, the one place they are meant to live - Edge Functions
-// deploy separately and cannot import that module (it is browser code: the
-// browser Supabase client, import.meta.env). If the two ever disagree, this
-// one is what is actually being billed, so fix src/lib/cookies.ts to match.
-//   generate_plan       2 flat
-//   generate_questions  ceil(count / 10), minimum 1 - a 40-question set is 4
-//   generate_flashcards ceil(count / 20), minimum 1 - a 20-card set is 1
-//   review_answers      0 - marking never charges, the set already paid for
-//                          itself when it was generated
-//
-// FAILS OPEN, WITHOUT EXCEPTION - see the identical note in
-// supabase/functions/chat/index.ts, which this mirrors line for line. The
-// short version: supabase/migrations/20260824130000_cookies_daily_budget.sql
-// is applied by hand, separately from this function's own deploy, so a
-// missing function, a thrown error or an unresolvable caller (a guest on the
-// anon key has no `sub` to charge against) must all fall through to
-// `{ status: "skipped" }` - treated by every caller below exactly like
-// "charged for free". Only spend_cookies_for() answering ok:false may refuse.
-function decodeUserId(authHeader: string | null): string | null {
-  if (!authHeader?.startsWith("Bearer ")) return null;
-  try {
-    const token = authHeader.slice("Bearer ".length);
-    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))) as {
-      sub?: unknown;
-    };
-    return typeof payload.sub === "string" && payload.sub ? payload.sub : null;
-  } catch {
-    return null;
-  }
-}
-
-type CookieCharge =
-  | { status: "charged"; spendId: number | null }
-  | { status: "refused"; remaining: number; allowance: number }
-  | { status: "skipped" };
+// Credits are enforced server-side. Missing billing controls refuse paid work.
+type CookieCharge = Awaited<ReturnType<typeof chargeAiCredits>>;
 
 async function chargeCookies(
   authHeaderRaw: string | null,
   action: string,
   cost: number,
 ): Promise<CookieCharge> {
-  if (cost <= 0) return { status: "skipped" };
-  const userId = decodeUserId(authHeaderRaw);
-  if (!userId) return { status: "skipped" };
-
-  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!SUPABASE_URL || !SERVICE_ROLE) return { status: "skipped" };
-
-  try {
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const { data, error } = await admin.rpc("spend_cookies_for", {
-      p_user: userId,
-      p_action: action,
-      p_cost: cost,
-    });
-    if (error) return { status: "skipped" }; // missing function, RPC error, etc. - fail open
-    const row = Array.isArray(data) ? data[0] : data;
-    if (!row) return { status: "skipped" };
-    if (row.ok === false) {
-      return { status: "refused", remaining: row.remaining ?? 0, allowance: row.allowance ?? 0 };
-    }
-    return { status: "charged", spendId: row.spend_id ?? null };
-  } catch {
-    return { status: "skipped" };
-  }
+  return chargeAiCredits(authHeaderRaw, action, cost);
 }
 
-// Called AS the student (their own forwarded Authorization header, not the
-// service role's) because refund_cookie_spend() checks `user_id = auth.uid()`
-// internally rather than taking a user parameter - see the matching note in
-// chat/index.ts for why the two functions need different calling identities.
 async function refundCookies(authHeaderRaw: string, spendId: number | null): Promise<void> {
-  if (spendId == null) return;
-  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!SUPABASE_URL || !SERVICE_ROLE) return;
-  try {
-    const asStudent = createClient(SUPABASE_URL, SERVICE_ROLE, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: authHeaderRaw } },
-    });
-    await asStudent.rpc("refund_cookie_spend", { p_spend_id: spendId });
-  } catch {
-    // Best effort. A missed refund costs the student one cookie on a
-    // generation that already failed them once - unfortunate, never blocking.
-  }
+  await refundAiCredits(authHeaderRaw, spendId);
 }
 
 const GENERATE_PLAN_COOKIE_COST = 2;
@@ -1513,7 +1481,7 @@ Deno.serve(async (req: Request) => {
   let cookieCharge: CookieCharge | null = null;
 
   try {
-    const body = (await req.json()) as Body;
+    const body = (await readAiBody(req)) as Body;
     const deepSeekKey = Deno.env.get("DEEPSEEK_API_KEY");
     // Optional: only gates the OpenAI rescue in callWithFallback. Already
     // configured project-wide for chat/index.ts and embed/index.ts, but stays
@@ -1645,6 +1613,19 @@ Deno.serve(async (req: Request) => {
     }
 
     if (body.action === "review_answers") {
+      // Objective grading is local arithmetic; only model coaching spends credits.
+      if (!gradeObjectively(body)) {
+        cookieCharge = await chargeCookies(authHeaderRaw, "review_answers", 1);
+        if (cookieCharge.status === "refused")
+          return jsonResponse(
+            {
+              error: "out_of_cookies",
+              remaining: cookieCharge.remaining,
+              allowance: cookieCharge.allowance,
+            },
+            402,
+          );
+      }
       return jsonResponse(await reviewAnswers(body, deepSeekKey));
     }
 
@@ -1660,6 +1641,9 @@ Deno.serve(async (req: Request) => {
     if (cookieCharge?.status === "charged" && authHeaderRaw) {
       await refundCookies(authHeaderRaw, cookieCharge.spendId);
     }
-    return jsonResponse({ error: e instanceof Error ? e.message : "Unknown error" }, 500);
+    return jsonResponse(
+      { error: e instanceof Error ? e.message : "Unknown error" },
+      e instanceof UsageLimitError ? e.status : 500,
+    );
   }
 });

@@ -43,9 +43,10 @@ function cookieCostForPayload(payload: Record<string, unknown>): number {
     }
     case "generate_flashcards":
       return costFor("generate_flashcards", Number(payload.count) || 10);
+    case "review_answers":
+      // Objective grading is free; reconcile the server balance afterwards.
+      return costFor("review_answers");
     default:
-      // review_answers, or anything this client does not recognise - priced
-      // at 0 both here and on the server, so there is nothing to decrement.
       return 0;
   }
 }

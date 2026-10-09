@@ -1,3 +1,11 @@
+import {
+  fetchAiWithLimits,
+  readAiBody,
+  UsageLimitError,
+  chargeAiCredits,
+  chargeAiCreditsFor,
+  refundAiCredits,
+} from "../_shared/usage-limits.ts";
 // G&D - chat edge function
 //
 // Provider boundary:
@@ -6,8 +14,6 @@
 // - OpenAI receives DeepSeek's draft/summary and applies the selected final style.
 // - OpenAI is also used for explicit web search because the app needs live
 //   source metadata for reference icons.
-
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -190,7 +196,17 @@ async function fetchWithTimeout(
   const timeout = setTimeout(() => controller.abort("timeout"), timeoutMs);
 
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    // Source-image lookups are ordinary GETs, not paid model requests.
+    if (init.method !== "POST") return await fetch(input, { ...init, signal: controller.signal });
+    return await fetchAiWithLimits(input, { ...init, signal: controller.signal }, 4096);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new StudentFacingError(
+        "The AI service took too long to respond. Please try again with fewer selected files or a more focused question.",
+        504,
+      );
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -273,8 +289,12 @@ async function fetchOgImage(url: string): Promise<string | undefined> {
     }
 
     const match =
-      html.match(/<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]*content=["']([^"']+)["']/i) ||
-      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:image(?::secure_url)?["']/i) ||
+      html.match(
+        /<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]*content=["']([^"']+)["']/i,
+      ) ||
+      html.match(
+        /<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:image(?::secure_url)?["']/i,
+      ) ||
       html.match(/<meta[^>]+name=["']twitter:image(?::src)?["'][^>]*content=["']([^"']+)["']/i) ||
       html.match(/<meta[^>]+content=["']([^"']+)["'][^>]*name=["']twitter:image(?::src)?["']/i);
 
@@ -987,12 +1007,29 @@ async function callDeepSeekSync(
 
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`DeepSeek error ${resp.status}: ${text}`);
+    console.error("DeepSeek research error:", resp.status, text);
+    const message =
+      resp.status === 401 || resp.status === 403
+        ? "The document AI service rejected its credentials. The site owner needs to check the DeepSeek key in Supabase Edge Function secrets."
+        : resp.status === 402
+          ? "The document AI service has insufficient credit. The site owner needs to check the DeepSeek account balance."
+          : resp.status === 429
+            ? "The document AI service is busy. Please wait a moment and try again."
+            : resp.status >= 500
+              ? "The document AI service is temporarily unavailable. Please try again shortly."
+              : "The document AI service could not process this request. Please try fewer selected files; the site owner can check the chat function logs for details.";
+    throw new StudentFacingError(message, resp.status);
   }
 
   const json = await resp.json();
   const choice = json.choices?.[0];
-  return withLengthLimitNote(choice?.message?.content ?? "", choice?.finish_reason);
+  const content = choice?.message?.content;
+  if (typeof content !== "string" || !content.trim()) {
+    throw new StudentFacingError(
+      "The document AI service returned an empty answer. Please try again.",
+    );
+  }
+  return withLengthLimitNote(content, choice?.finish_reason);
 }
 
 /**
@@ -1761,7 +1798,10 @@ function progressStreamResponse({
         } catch (err) {
           console.error("progress stream failed:", err);
           if (onFailure) await onFailure().catch(() => {});
-          const message = err instanceof StudentFacingError ? err.message : failureMessage;
+          const message =
+            err instanceof StudentFacingError || err instanceof UsageLimitError
+              ? err.message
+              : failureMessage;
           emit({
             type: "step",
             id: lastActive ?? "writing",
@@ -1982,106 +2022,19 @@ Create the final animation package now.`,
   return finalAnimation;
 }
 
-// ── Cookies: the daily AI budget ────────────────────────────────────────────
-//
-// A chat message costs 1 cookie - see COOKIE_COSTS.chat in src/lib/cookies.ts,
-// the one place this price is meant to live. This is a deliberate second copy
-// of that single number, not a fork of the pricing logic: Edge Functions
-// deploy separately from the frontend and cannot import src/lib/cookies.ts
-// (it is browser code - it imports the browser Supabase client and reads
-// import.meta.env). If the two numbers are ever found to disagree, this one is
-// the one actually being billed, so src/lib/cookies.ts is the one to fix.
-//
-// FAILS OPEN, WITHOUT EXCEPTION. supabase/migrations/20260824130000_cookies_
-// daily_budget.sql is applied BY HAND, separately from this function's own
-// deploy, so there will be a real window where this code runs against a
-// database that does not have spend_cookies_for() yet. The only outcome
-// allowed to refuse a student is that function answering ok:false in so many
-// words - see the migration's own header. Everything else (the function
-// missing, a thrown error, a caller with no resolvable user id - e.g. a guest
-// on the publishable/anon key, which carries no `sub` claim to charge against)
-// falls through to `{ status: "skipped" }`, which every caller below treats
-// exactly like "charged for free": the request proceeds.
-//
-// WHY A SERVICE-ROLE CLIENT FOR THE CHARGE BUT NOT THE REFUND. spend_cookies_
-// for() is deliberately REVOKED from `authenticated` in the migration - only
-// the service role may call it, naming the user explicitly as p_user, which is
-// what makes it trustworthy to charge someone OTHER than "whoever's JWT this
-// is". refund_cookie_spend() is the opposite shape: it takes no user
-// parameter and checks `user_id = auth.uid()` internally, which means it must
-// be called AS the student, not as the service role (a service-role JWT has
-// no `sub` claim, so auth.uid() would be NULL and the ownership check would
-// never match). So the refund client below is built with the service-role key
-// for gateway auth but the STUDENT'S OWN forwarded Authorization header for
-// the RLS-visible identity - a standard Supabase pattern for "call this one
-// RPC as the caller, using a privileged key to reach it."
-function decodeUserId(authHeader: string | null): string | null {
-  if (!authHeader?.startsWith("Bearer ")) return null;
-  try {
-    const token = authHeader.slice("Bearer ".length);
-    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))) as {
-      sub?: unknown;
-    };
-    return typeof payload.sub === "string" && payload.sub ? payload.sub : null;
-  } catch {
-    return null;
-  }
-}
-
-type CookieCharge =
-  | { status: "charged"; spendId: number | null }
-  | { status: "refused"; remaining: number; allowance: number }
-  | { status: "skipped" };
+// Credits are enforced server-side. Missing billing controls refuse paid work.
+type CookieCharge = Awaited<ReturnType<typeof chargeAiCredits>>;
 
 async function chargeCookies(
   authHeaderRaw: string | null,
   action: string,
   cost: number,
 ): Promise<CookieCharge> {
-  if (cost <= 0) return { status: "skipped" };
-  const userId = decodeUserId(authHeaderRaw);
-  if (!userId) return { status: "skipped" };
-
-  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!SUPABASE_URL || !SERVICE_ROLE) return { status: "skipped" };
-
-  try {
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const { data, error } = await admin.rpc("spend_cookies_for", {
-      p_user: userId,
-      p_action: action,
-      p_cost: cost,
-    });
-    if (error) return { status: "skipped" }; // missing function, RPC error, etc. - fail open
-    const row = Array.isArray(data) ? data[0] : data;
-    if (!row) return { status: "skipped" };
-    if (row.ok === false) {
-      return { status: "refused", remaining: row.remaining ?? 0, allowance: row.allowance ?? 0 };
-    }
-    return { status: "charged", spendId: row.spend_id ?? null };
-  } catch {
-    return { status: "skipped" };
-  }
+  return chargeAiCredits(authHeaderRaw, action, cost);
 }
 
 async function refundCookies(authHeaderRaw: string, spendId: number | null): Promise<void> {
-  if (spendId == null) return;
-  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!SUPABASE_URL || !SERVICE_ROLE) return;
-  try {
-    const asStudent = createClient(SUPABASE_URL, SERVICE_ROLE, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: authHeaderRaw } },
-    });
-    await asStudent.rpc("refund_cookie_spend", { p_spend_id: spendId });
-  } catch {
-    // Best effort. A missed refund costs the student one cookie on a
-    // generation that already failed them once - unfortunate, never blocking.
-  }
+  await refundAiCredits(authHeaderRaw, spendId);
 }
 
 const CHAT_COOKIE_COST = 1;
@@ -2097,7 +2050,7 @@ Deno.serve(async (req: Request) => {
   let cookieCharge: CookieCharge | null = null;
 
   try {
-    const body = (await req.json()) as ChatBody;
+    const body = (await readAiBody(req)) as ChatBody;
     const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY");
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
@@ -2669,7 +2622,10 @@ ${curriculumGuidance}
     }
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      {
+        status: e instanceof UsageLimitError ? e.status : 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
     );
   }
 });

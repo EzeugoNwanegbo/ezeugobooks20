@@ -1,3 +1,9 @@
+import {
+  fetchAiWithLimits,
+  readAiBody,
+  UsageLimitError,
+  withAiCredits,
+} from "../_shared/usage-limits.ts";
 // G&D - embedding edge function
 //
 // Turns text into OpenAI text-embedding-3-small vectors (1536-dim). Used for two
@@ -36,7 +42,7 @@ async function fetchWithTimeout(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort("timeout"), timeoutMs);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    return await fetchAiWithLimits(input, { ...init, signal: controller.signal }, 4096);
   } finally {
     clearTimeout(timeout);
   }
@@ -78,54 +84,63 @@ async function embedBatch(apiKey: string, inputs: string[]): Promise<number[][]>
     .map((item) => item.embedding);
 }
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+Deno.serve(
+  withAiCredits(
+    async (req: Request) => {
+      if (req.method === "OPTIONS") {
+        return new Response(null, { headers: corsHeaders });
+      }
 
-  try {
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) {
-      return new Response(JSON.stringify({ error: "OpenAI API key not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+      try {
+        const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+        if (!OPENAI_API_KEY) {
+          return new Response(JSON.stringify({ error: "OpenAI API key not configured" }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
 
-    const body = (await req.json()) as EmbedBody;
-    const rawTexts = Array.isArray(body.texts) ? body.texts : [];
-    const texts = rawTexts.map((text) => (text ?? "").toString().slice(0, MAX_CHARS_PER_INPUT));
+        const body = (await readAiBody(req)) as EmbedBody;
+        const rawTexts = Array.isArray(body.texts) ? body.texts : [];
+        const texts = rawTexts.map((text) => (text ?? "").toString().slice(0, MAX_CHARS_PER_INPUT));
 
-    if (texts.length === 0) {
-      return new Response(JSON.stringify({ error: "Provide a non-empty 'texts' array." }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+        if (texts.length === 0) {
+          return new Response(JSON.stringify({ error: "Provide a non-empty 'texts' array." }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
 
-    // OpenAI rejects empty strings; substitute a single space so indexes line up
-    // with the caller's input array.
-    const safeTexts = texts.map((text) => (text.trim().length === 0 ? " " : text));
+        // OpenAI rejects empty strings; substitute a single space so indexes line up
+        // with the caller's input array.
+        const safeTexts = texts.map((text) => (text.trim().length === 0 ? " " : text));
 
-    const vectors: number[][] = [];
-    for (let i = 0; i < safeTexts.length; i += MAX_INPUTS_PER_REQUEST) {
-      const batch = safeTexts.slice(i, i + MAX_INPUTS_PER_REQUEST);
-      vectors.push(...(await embedBatch(OPENAI_API_KEY, batch)));
-    }
+        const vectors: number[][] = [];
+        for (let i = 0; i < safeTexts.length; i += MAX_INPUTS_PER_REQUEST) {
+          const batch = safeTexts.slice(i, i + MAX_INPUTS_PER_REQUEST);
+          vectors.push(...(await embedBatch(OPENAI_API_KEY, batch)));
+        }
 
-    return new Response(
-      JSON.stringify({
-        model: EMBEDDING_MODEL,
-        dimensions: EMBEDDING_DIMENSIONS,
-        embeddings: vectors.map(toVectorLiteral),
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
-  } catch (e) {
-    console.error("embed error:", e);
-    return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
-  }
-});
+        return new Response(
+          JSON.stringify({
+            model: EMBEDDING_MODEL,
+            dimensions: EMBEDDING_DIMENSIONS,
+            embeddings: vectors.map(toVectorLiteral),
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      } catch (e) {
+        console.error("embed error:", e);
+        return new Response(
+          JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
+          {
+            status: e instanceof UsageLimitError ? e.status : 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+    },
+    "embed",
+    1,
+  ),
+);

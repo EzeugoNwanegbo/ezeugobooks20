@@ -1,3 +1,11 @@
+import {
+  fetchAiWithLimits,
+  readAiBody,
+  UsageLimitError,
+  chargeAiCredits,
+  chargeAiCreditsFor,
+  refundAiCredits,
+} from "../_shared/usage-limits.ts";
 // G&D - Last Minute study synthesis.
 //
 // Turns up to 10 of the user's ready study files into one topic-organized master note.
@@ -38,7 +46,7 @@ async function fetchWithTimeout(input: string, init: RequestInit, ms: number): P
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort("timeout"), ms);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    return await fetchAiWithLimits(input, { ...init, signal: controller.signal }, 4096);
   } finally {
     clearTimeout(timeout);
   }
@@ -133,79 +141,18 @@ Content...
 ## Final revision checklist`;
 }
 
-// ── Cookies: the daily AI budget ────────────────────────────────────────────
-//
-// 2 flat - a deliberate second copy of COOKIE_COSTS.last_minute in
-// src/lib/cookies.ts, the one place this price is meant to live. Edge
-// Functions deploy separately and cannot import that module (it is browser
-// code), so if the two numbers are ever found to disagree, this one is what
-// is actually being billed - fix src/lib/cookies.ts to match.
-//
-// FAILS OPEN, WITHOUT EXCEPTION - see the identical note in
-// supabase/functions/chat/index.ts, which this mirrors. The short version:
-// supabase/migrations/20260824130000_cookies_daily_budget.sql is applied by
-// hand, separately from this function's own deploy, so a missing function, a
-// thrown error, or any outcome that is not spend_cookies_for() explicitly
-// answering ok:false must fall through to "proceed, uncharged" - see the
-// migration's own header for why refusing here would be worse than free AI.
+// Credits are enforced server-side. Missing billing controls refuse paid work.
 const LAST_MINUTE_COOKIE_COST = 2;
 
-type CookieCharge =
-  | { status: "charged"; spendId: number | null }
-  | { status: "refused"; remaining: number; allowance: number }
-  | { status: "skipped" };
+type CookieCharge = Awaited<ReturnType<typeof chargeAiCredits>>;
 
-// Reuses the caller's already-verified `user.id` - unlike chat/studybody this
-// function already resolves the caller via admin.auth.getUser(token) rather
-// than decoding the JWT itself, so there is no second identity-resolution
-// step to duplicate here. Still builds its own service-role client rather
-// than taking the surrounding `admin` as a parameter: passing an already-
-// constructed SupabaseClient across a function boundary pins both to the
-// exact same inferred generic instantiation, and supabase-js@2's overloads
-// do not always agree with themselves on what that is.
+// Last Minute has already verified the user through Supabase Auth.
 async function chargeCookies(userId: string, action: string, cost: number): Promise<CookieCharge> {
-  if (cost <= 0) return { status: "skipped" };
-  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!SUPABASE_URL || !SERVICE_ROLE) return { status: "skipped" };
-  try {
-    const client = createClient(SUPABASE_URL, SERVICE_ROLE);
-    const { data, error } = await client.rpc("spend_cookies_for", {
-      p_user: userId,
-      p_action: action,
-      p_cost: cost,
-    });
-    if (error) return { status: "skipped" }; // missing function, RPC error, etc. - fail open
-    const row = Array.isArray(data) ? data[0] : data;
-    if (!row) return { status: "skipped" };
-    if (row.ok === false) {
-      return { status: "refused", remaining: row.remaining ?? 0, allowance: row.allowance ?? 0 };
-    }
-    return { status: "charged", spendId: row.spend_id ?? null };
-  } catch {
-    return { status: "skipped" };
-  }
+  return chargeAiCreditsFor(userId, action, cost);
 }
 
-// Called AS the student (their own forwarded Authorization header, not the
-// service role's) because refund_cookie_spend() checks `user_id = auth.uid()`
-// internally rather than taking a user parameter - a service-role JWT has no
-// `sub` claim, so auth.uid() would be NULL and the ownership check would
-// never match. Same reasoning as chat/index.ts's refundCookies().
 async function refundCookies(authHeaderRaw: string, spendId: number | null): Promise<void> {
-  if (spendId == null) return;
-  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!SUPABASE_URL || !SERVICE_ROLE) return;
-  try {
-    const asStudent = createClient(SUPABASE_URL, SERVICE_ROLE, {
-      global: { headers: { Authorization: authHeaderRaw } },
-    });
-    await asStudent.rpc("refund_cookie_spend", { p_spend_id: spendId });
-  } catch {
-    // Best effort. A missed refund costs the student one cookie on a
-    // synthesis that already failed them once - unfortunate, never blocking.
-  }
+  await refundAiCredits(authHeaderRaw, spendId);
 }
 
 Deno.serve(async (req: Request) => {
@@ -233,7 +180,7 @@ Deno.serve(async (req: Request) => {
     const user = userData?.user;
     if (userErr || !user) return json({ error: "Invalid session." }, 401);
 
-    const body = (await req.json()) as { docIds?: string[] };
+    const body = (await readAiBody(req)) as { docIds?: string[] };
     const docIds = Array.isArray(body.docIds)
       ? [...new Set(body.docIds.filter(Boolean))].slice(0, MAX_DOCS)
       : [];
@@ -266,14 +213,20 @@ Deno.serve(async (req: Request) => {
     if (invalid) {
       const kind = fileKind(invalid);
       if (!kind) {
-        return json({
-          error: `${invalid.file_name} is not a supported Last Minute file. Use PDF, PowerPoint, Word, text, or image notes.`,
-        }, 400);
+        return json(
+          {
+            error: `${invalid.file_name} is not a supported Last Minute file. Use PDF, PowerPoint, Word, text, or image notes.`,
+          },
+          400,
+        );
       }
       if ((kind === "pdf" || kind === "pptx") && (invalid.page_count ?? 0) > MAX_PAGES) {
-        return json({
-          error: `${invalid.file_name} is over ${MAX_PAGES} ${kind === "pptx" ? "slides" : "pages"}.`,
-        }, 400);
+        return json(
+          {
+            error: `${invalid.file_name} is over ${MAX_PAGES} ${kind === "pptx" ? "slides" : "pages"}.`,
+          },
+          400,
+        );
       }
       if (invalid.extract_status && invalid.extract_status !== "ready") {
         return json({ error: `${invalid.file_name} is still processing.` }, 409);
@@ -388,6 +341,9 @@ Deno.serve(async (req: Request) => {
     if (cookieCharge?.status === "charged") {
       await refundCookies(authHeader, cookieCharge.spendId);
     }
-    return json({ error: e instanceof Error ? e.message : "Unknown error" }, 500);
+    return json(
+      { error: e instanceof Error ? e.message : "Unknown error" },
+      e instanceof UsageLimitError ? e.status : 500,
+    );
   }
 });

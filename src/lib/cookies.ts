@@ -24,17 +24,10 @@
 // see. Those readers therefore return null on any error and latch nothing;
 // each one says so at its own definition.
 //
-// ── FAILS OPEN. THIS FILE NEVER BLOCKS ANYTHING ─────────────────────────────
-// Every function here is a READ (the balance, for the ring) or a CLIENT-SIDE
-// CHARGE (spendCookiesClientSide, whose only caller - Battle Royale - is
-// priced at 0 today, so in practice this file is all reads). The functions that
-// can actually refuse a student - chat, studybody, last-minute - charge
-// SERVER-SIDE, inside their own Edge Functions, with their own copy of this
-// exact fail-open contract written out in full (see the header comment above
-// chargeCookies() in supabase/functions/chat/index.ts). Nothing in THIS module
-// ever turns a missing function or a network error into a refusal; the worst
-// outcome anything here produces is "unavailable" - the ring does not render,
-// and the caller who asked proceeds exactly as if cookies did not exist yet.
+// Meter reads can degrade gracefully, but paid work is enforced server-side.
+// The Edge Functions verify sessions and refuse provider calls if billing is
+// unavailable. Auxiliary AI routes also charge credits. No client-side meter
+// determines whether a provider call is permitted.
 //
 // ── THE PRICE LIST LIVES HERE, ONCE ─────────────────────────────────────────
 // COOKIE_COSTS below is the one editable copy. Edge Functions cannot import
@@ -50,13 +43,11 @@ import { supabase } from "@/integrations/supabase/client";
 
 // ── The price list ───────────────────────────────────────────────────────────
 //
-// Chat at 1 is the number the daily budget of 15 is built around: 15 chat
-// messages, or a full 40-question set (4) and eleven messages, or two Last
-// Minutes (2 each) and eleven. Every price here was halved-or-better when the
-// allowance came down from the 30-60 earned ladder to a flat 15 - see
-// supabase/migrations/20260829120000_cookie_budget_15.sql, which carries the
-// whole decision, and docs/cookies-and-milestones-plan.md for the reasoning
-// behind the shape. The numbers themselves are not up for renegotiation here.
+// The daily base allowance is now ten credits, enforced by the database.
+// Chat costs one; generation costs scale with set size. AI coaching costs one,
+// while objective grading stays free. Auxiliary server routes charge separately
+// (folder suggestion / embedding: one; connections / legacy OCR: two).
+// See docs/ai-usage-limits.md for the provider-wide safety budgets.
 export type CookieAction =
   | "chat"
   | "generate_questions"
@@ -110,7 +101,8 @@ export const COOKIE_COSTS: Record<CookieAction, number | ((count: number) => num
   // Marking already-generated answers. The set already paid for itself when
   // it was generated; charging again here would be paying twice for one AI
   // action split across two requests.
-  review_answers: 0,
+  // Model-based coaching only; objective MCQ grading remains free.
+  review_answers: 1,
 };
 
 /** `count` is ignored by every flat-rate action; only the two generators read it. */

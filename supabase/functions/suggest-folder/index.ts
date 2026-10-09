@@ -1,3 +1,9 @@
+import {
+  fetchAiWithLimits,
+  readAiBody,
+  UsageLimitError,
+  withAiCredits,
+} from "../_shared/usage-limits.ts";
 // G&D - folder suggestion
 // Given a document excerpt + the user's existing folders, suggest a subject.
 // Uses DeepSeek for folder classification.
@@ -24,30 +30,32 @@ async function fetchWithTimeout(
   const timeout = setTimeout(() => controller.abort("timeout"), timeoutMs);
 
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    return await fetchAiWithLimits(input, { ...init, signal: controller.signal }, 256);
   } finally {
     clearTimeout(timeout);
   }
 }
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-  try {
-    const body = (await req.json()) as Body;
-    const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY");
-    if (!DEEPSEEK_API_KEY) {
-      return new Response(JSON.stringify({ error: "AI not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+Deno.serve(
+  withAiCredits(
+    async (req: Request) => {
+      if (req.method === "OPTIONS") {
+        return new Response(null, { headers: corsHeaders });
+      }
+      try {
+        const body = (await readAiBody(req)) as Body;
+        const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY");
+        if (!DEEPSEEK_API_KEY) {
+          return new Response(JSON.stringify({ error: "AI not configured" }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
 
-    const excerpt = (body.excerpt || "").slice(0, 6000);
-    const existing = (body.existingFolders || []).join(", ") || "(none)";
+        const excerpt = (body.excerpt || "").slice(0, 6000);
+        const existing = (body.existingFolders || []).join(", ") || "(none)";
 
-    const prompt = `You are organising a student's study library.
+        const prompt = `You are organising a student's study library.
 
 EXISTING FOLDERS: ${existing}
 
@@ -65,70 +73,82 @@ Pick the best subject folder for this document.
 Respond with ONLY a JSON object: {"folder":"<name>","isNew":<true|false>}
 No prose, no markdown.`;
 
-    const upstream = await fetchWithTimeout(
-      "https://api.deepseek.com/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: Deno.env.get("DEEPSEEK_MODEL") || "deepseek-v4-pro",
-          messages: [
-            { role: "system", content: "You output strict JSON only. No markdown, no prose." },
-            { role: "user", content: prompt },
-          ],
-          temperature: 0.2,
-        }),
-      },
-      DEEPSEEK_TIMEOUT_MS,
-    );
+        const upstream = await fetchWithTimeout(
+          "https://api.deepseek.com/v1/chat/completions",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: Deno.env.get("DEEPSEEK_MODEL") || "deepseek-v4-pro",
+              messages: [
+                { role: "system", content: "You output strict JSON only. No markdown, no prose." },
+                { role: "user", content: prompt },
+              ],
+              temperature: 0.2,
+            }),
+          },
+          DEEPSEEK_TIMEOUT_MS,
+        );
 
-    if (!upstream.ok) {
-      const text = await upstream.text();
-      console.error("DeepSeek error:", upstream.status, text);
-      return new Response(
-        JSON.stringify({ folder: "Uncategorised", isNew: true, fallback: true }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-
-    const json = await upstream.json();
-    let raw = json.choices?.[0]?.message?.content ?? "";
-    raw = raw
-      .trim()
-      .replace(/^```json\s*/i, "")
-      .replace(/```$/, "")
-      .trim();
-    let parsed: { folder?: string; isNew?: boolean } = {};
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      // Try to extract first {...}
-      const m = raw.match(/\{[^}]+\}/);
-      if (m) {
-        try {
-          parsed = JSON.parse(m[0]);
-        } catch {
-          /* ignore */
+        if (!upstream.ok) {
+          const text = await upstream.text();
+          console.error("DeepSeek error:", upstream.status, text);
+          return new Response(
+            JSON.stringify({ folder: "Uncategorised", isNew: true, fallback: true }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
         }
+
+        const json = await upstream.json();
+        let raw = json.choices?.[0]?.message?.content ?? "";
+        raw = raw
+          .trim()
+          .replace(/^```json\s*/i, "")
+          .replace(/```$/, "")
+          .trim();
+        let parsed: { folder?: string; isNew?: boolean } = {};
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          // Try to extract first {...}
+          const m = raw.match(/\{[^}]+\}/);
+          if (m) {
+            try {
+              parsed = JSON.parse(m[0]);
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+
+        const folder = (parsed.folder || "Uncategorised").toString().slice(0, 50);
+        const lower = folder.toLowerCase();
+        const isNew =
+          parsed.isNew ?? !(body.existingFolders || []).some((f) => f.toLowerCase() === lower);
+
+        return new Response(JSON.stringify({ folder, isNew }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (e) {
+        console.error("suggest-folder error:", e);
+        if (e instanceof UsageLimitError)
+          return new Response(JSON.stringify({ error: e.message }), {
+            status: e.status,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        return new Response(
+          JSON.stringify({ folder: "Uncategorised", isNew: true, fallback: true }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
-    }
-
-    const folder = (parsed.folder || "Uncategorised").toString().slice(0, 50);
-    const lower = folder.toLowerCase();
-    const isNew =
-      parsed.isNew ?? !(body.existingFolders || []).some((f) => f.toLowerCase() === lower);
-
-    return new Response(JSON.stringify({ folder, isNew }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (e) {
-    console.error("suggest-folder error:", e);
-    return new Response(JSON.stringify({ folder: "Uncategorised", isNew: true, fallback: true }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-});
+    },
+    "suggest-folder",
+    1,
+  ),
+);
