@@ -2580,7 +2580,7 @@ export function ChatPage() {
         >
           <div
             ref={transcriptRef}
-            className="mx-auto max-w-3xl px-3 pt-4 sm:px-4 md:px-8 md:pt-8"
+            className="gd-chat-transcript mx-auto max-w-3xl px-3 pt-4 sm:px-4 md:px-8 md:pt-8"
             style={{ paddingBottom: emptyChat ? 0 : (composerHeight || 150) + 24 }}
           >
             {/* A blank chat is blank. The personalization panel used to open

@@ -126,8 +126,8 @@ export function HistoryPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-3 py-5 sm:px-4 sm:py-8 md:px-8">
+    <div className="gd-content-page min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-3xl">
         <PageHeader
           eyebrow="History"
           title="History"

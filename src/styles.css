@@ -3686,3 +3686,34 @@ html.gd-low-power [style*="gd-dot-wave"] {
 :root .neo input.gd-composer-field:focus-visible {
   box-shadow: none;
 }
+
+/* Shared layout rhythm: retain each theme's palette and surface treatment. */
+.gd-workspace { container-type: inline-size; }
+.gd-content-page {
+  padding: clamp(1.25rem, 3vw, 2.5rem) clamp(1rem, 3vw, 2.5rem);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 2rem);
+  scrollbar-gutter: stable;
+}
+.gd-page-header { padding-bottom: 1.25rem; border-bottom: 1px solid var(--border); }
+.gd-page-header h1 { line-height: 1.15; overflow-wrap: break-word; }
+.gd-page-actions:empty { display: none; }
+.gd-auth-column { max-width: 28rem; }
+.gd-auth-panel { padding: clamp(1.5rem, 4vw, 2.5rem); }
+.luxury-auth-page > header { width: 100%; max-width: 1240px; margin-inline: auto; }
+.luxury-auth-page form input { min-height: 2.75rem; }
+.gd-side-nav-item { min-height: 2.75rem; }
+.gd-page-actions > * { max-width: 100%; }
+@container (max-width: 700px) {
+  .gd-page-header { flex-direction: column; align-items: stretch; }
+  .gd-page-actions { flex-shrink: 1; }
+}
+@media (max-width: 640px) {
+  .gd-content-page { padding-top: 1.5rem; }
+  .gd-page-header h1 { font-size: 1.75rem; }
+  .gd-page-actions { gap: 0.625rem; }
+  .luxury-auth-page > main { padding-top: 1.5rem; }
+}
+
+.gd-chat-transcript { padding-inline: clamp(1rem, 3vw, 2rem); }
+.luxury-auth-page > main > .max-w-lg { max-width: 32rem; }
+.luxury-page > .luxury-nav { max-width: 1240px; margin-inline: auto; }

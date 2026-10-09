@@ -273,8 +273,8 @@ function AuthFlow() {
       </header>
 
       <main className="relative z-10 flex min-h-0 flex-1 items-start justify-center px-4 pb-8 pt-8 sm:items-center sm:px-6 sm:pb-12 sm:pt-6">
-        <div className="w-full max-w-md">
-          <div className="luxury-panel rounded-lg p-5 shadow-elegant backdrop-blur sm:p-8">
+        <div className="gd-auth-column w-full max-w-md">
+          <div className="gd-auth-panel luxury-panel rounded-lg p-5 shadow-elegant backdrop-blur sm:p-8">
             <h1 className="font-display text-3xl font-light leading-none sm:text-4xl">
               {isUpgrade ? "Keep your work" : isSignup ? "Create your account" : "Welcome back"}
             </h1>

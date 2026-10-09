@@ -1404,7 +1404,7 @@ function AppLayout() {
         <main
           onTouchStart={onContentTouchStart}
           onTouchEnd={onContentTouchEnd}
-          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:pb-0"
+          className="gd-workspace flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:pb-0"
         >
           {isGuest && (
             <Link

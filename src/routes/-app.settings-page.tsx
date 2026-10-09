@@ -179,7 +179,7 @@ export function SettingsPage() {
   const levelOptions = studyLevelOptions(saved.level);
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="gd-content-page min-h-0 flex-1 overflow-y-auto">
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -205,7 +205,7 @@ export function SettingsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <div className="mx-auto flex max-w-2xl flex-col gap-4 px-3 py-5 sm:gap-5 sm:px-4 sm:py-8 md:px-8">
+      <div className="mx-auto flex max-w-2xl flex-col gap-5">
         <PageHeader eyebrow="Settings" title="Settings" className="mb-1 sm:mb-2" />
 
         {/* ── You ── */}

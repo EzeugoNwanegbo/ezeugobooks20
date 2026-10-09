@@ -44,7 +44,7 @@ export function FeedbackPage() {
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 lg:px-8">
+    <div className="gd-content-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 overflow-x-hidden">
         <PageHeader eyebrow="G&D" title="Feedback" />
 

@@ -344,7 +344,7 @@ export function PracticePage() {
 
   if (!planId) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-10 sm:px-6 lg:px-8">
+      <div className="gd-content-page min-h-0 flex-1 overflow-y-auto px-3 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto flex max-w-2xl flex-col items-start">
           <p className="text-sm text-muted-foreground">No roadmap selected.</p>
           <Link
@@ -713,7 +713,7 @@ function ConfigView({ planId }: { planId: string }) {
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
+    <div className="gd-content-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 overflow-x-hidden">
         <div className="flex flex-col gap-4">
           <Link
@@ -1903,7 +1903,7 @@ function SessionView({
   const showSessionProgress = !loading && !completed && (isFlashcards ? !fcDone : true);
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
+    <div className="gd-content-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 overflow-x-hidden">
         <div className="flex flex-col gap-4">
           <button

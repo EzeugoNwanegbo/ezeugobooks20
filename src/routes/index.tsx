@@ -429,7 +429,8 @@ const GD_CSS = `
 /* Nav */
 .gd-nav {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: 1.1rem clamp(1.25rem, 5vw, 4rem);
+  width: 100%; max-width: 1240px; margin: 0 auto;
+  padding: 1.25rem clamp(1.25rem, 4vw, 3rem);
 }
 .gd-logo {
   font-family: var(--font-display); font-weight: 700; font-size: 1.5rem;
@@ -467,12 +468,12 @@ const GD_CSS = `
 
 /* Hero */
 .gd-hero {
-  flex: 1; width: 100%; max-width: 1180px; margin: 0 auto;
-  display: grid; grid-template-columns: 1.05fr 0.95fr; align-items: center;
-  gap: clamp(2.5rem, 6vw, 5rem);
-  padding: clamp(1.5rem, 4vw, 3.5rem) clamp(1.25rem, 5vw, 4rem) clamp(3rem, 6vw, 5rem);
+  flex: 1; width: 100%; max-width: 1240px; margin: 0 auto;
+  display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); align-items: center;
+  gap: clamp(2rem, 5vw, 4.5rem);
+  padding: clamp(1.5rem, 4vw, 3.5rem) clamp(1.25rem, 4vw, 3rem) clamp(2rem, 5vw, 4rem);
 }
-.gd-hero-copy { min-width: 0; max-width: 30rem; }
+.gd-hero-copy { min-width: 0; max-width: 34rem; }
 
 /* Headline */
 .gd-h1 {
@@ -505,7 +506,7 @@ const GD_CSS = `
 
 /* Auth card */
 .gd-auth {
-  margin-top: 2.25rem; display: flex; flex-direction: column;
+  margin-top: 2rem; max-width: 28rem; display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--outline-2);
   border-radius: 1.5rem; padding: 1.35rem;
   box-shadow: 0 40px 120px rgba(0,0,0,0.55);
@@ -546,17 +547,19 @@ const GD_CSS = `
 /* Footer */
 .gd-footer {
   display: flex; align-items: center; gap: 1.25rem;
-  padding: 1.25rem clamp(1.25rem, 5vw, 4rem) 2rem;
+  width: 100%; max-width: 1240px; margin: 0 auto; justify-content: space-between;
+  padding: 1.25rem clamp(1.25rem, 4vw, 3rem) 2rem;
 }
 .gd-footer-meta { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--on-dim); }
 .gd-footer-link { text-decoration: none; }
 .gd-footer-link:hover { color: var(--accent); }
 
 /* Responsive - single column, panel under the card */
-@media (max-width: 900px) {
-  .gd-hero { grid-template-columns: 1fr; padding-top: 1rem; }
+@media (max-width: 760px) {
+  .gd-hero { grid-template-columns: 1fr; padding-top: 2rem; gap: 2.5rem; }
   .gd-hero-copy { max-width: 32rem; margin: 0 auto; width: 100%; }
   .gd-hero-visual { order: 2; }
+  .gd-auth { max-width: none; }
   .gd-slideshow { max-width: 32rem; }
   .gd-slides { aspect-ratio: 1 / 1; }
 }

@@ -77,7 +77,7 @@ export function FriendsPageFrame({
   const isGuest = isGuestUser(user);
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
+    <div className="gd-content-page min-h-0 flex-1 overflow-y-auto px-3 py-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 sm:py-8 lg:px-8">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
         <PageHeader eyebrow="Friends" title={title} subtitle={subtitle} actions={actions} />
         {enabled && <FriendsSubNav active={active} />}

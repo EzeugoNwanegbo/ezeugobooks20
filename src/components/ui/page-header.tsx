@@ -25,9 +25,9 @@ export function PageHeader({
 }) {
   return (
     <header
-      className={`flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between ${className}`}
+      className={`gd-page-header flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between ${className}`}
     >
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <span className="gd-eyebrow inline-flex items-center text-[11px] font-semibold uppercase tracking-[0.16em] text-pop">
           {eyebrow}
         </span>
@@ -41,7 +41,7 @@ export function PageHeader({
       {/* Always rendered, because the meter belongs here whether or not the
           screen brought actions of its own. Empty on the screens that have
           neither - a flex row with no children takes no space. */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="gd-page-actions flex shrink-0 flex-wrap items-center gap-2">
         <CookieHeaderRing />
         {actions}
       </div>
