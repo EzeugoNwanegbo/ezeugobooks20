@@ -1,0 +1,330 @@
+{
+  "fixtureOnly": true,
+  "privateUserData": false,
+  "timeline": [
+    {
+      "name": "library",
+      "time": 2.444
+    },
+    {
+      "name": "file-search",
+      "time": 4.787
+    },
+    {
+      "name": "question",
+      "time": 7.806
+    },
+    {
+      "name": "answer",
+      "time": 10.039
+    },
+    {
+      "name": "friends",
+      "time": 11.523
+    },
+    {
+      "name": "battle-setup",
+      "time": 11.778
+    },
+    {
+      "name": "battle-quiz",
+      "time": 12.661
+    },
+    {
+      "name": "battle-result",
+      "time": 18.054
+    },
+    {
+      "name": "battle-record",
+      "time": 20.09
+    }
+  ],
+  "calls": [
+    {
+      "name": "user_profiles",
+      "method": "GET"
+    },
+    {
+      "name": "cookie_balance",
+      "method": "POST"
+    },
+    {
+      "name": "conversations",
+      "method": "GET"
+    },
+    {
+      "name": "conversations",
+      "method": "GET"
+    },
+    {
+      "name": "folders",
+      "method": "GET"
+    },
+    {
+      "name": "documents",
+      "method": "GET"
+    },
+    {
+      "name": "document_chunks",
+      "method": "GET"
+    },
+    {
+      "name": "library_documents",
+      "method": "GET"
+    },
+    {
+      "name": "library_documents",
+      "method": "GET"
+    },
+    {
+      "name": "folders",
+      "method": "GET"
+    },
+    {
+      "name": "documents",
+      "method": "GET"
+    },
+    {
+      "name": "document_chunks",
+      "method": "GET"
+    },
+    {
+      "name": "library_documents",
+      "method": "GET"
+    },
+    {
+      "name": "library_documents",
+      "method": "GET"
+    },
+    {
+      "name": "document_chunks",
+      "method": "GET"
+    },
+    {
+      "name": "document_chunks",
+      "method": "GET"
+    },
+    {
+      "name": "conversations",
+      "method": "GET"
+    },
+    {
+      "name": "documents",
+      "method": "GET"
+    },
+    {
+      "name": "messages",
+      "method": "HEAD"
+    },
+    {
+      "name": "documents",
+      "method": "GET"
+    },
+    {
+      "name": "messages",
+      "method": "HEAD"
+    },
+    {
+      "name": "conversations",
+      "method": "POST"
+    },
+    {
+      "name": "conversations",
+      "method": "GET"
+    },
+    {
+      "name": "embed",
+      "action": "chat",
+      "method": "POST"
+    },
+    {
+      "name": "search_document_chunks_hybrid",
+      "method": "POST"
+    },
+    {
+      "name": "messages",
+      "method": "POST"
+    },
+    {
+      "name": "chat",
+      "action": "chat",
+      "method": "POST"
+    },
+    {
+      "name": "cookie_balance",
+      "method": "POST"
+    },
+    {
+      "name": "messages",
+      "method": "POST"
+    },
+    {
+      "name": "conversations",
+      "method": "PATCH"
+    },
+    {
+      "name": "user_profiles",
+      "method": "PATCH"
+    },
+    {
+      "name": "conversations",
+      "method": "GET"
+    },
+    {
+      "name": "user_profiles",
+      "method": "GET"
+    },
+    {
+      "name": "cookie_balance",
+      "method": "POST"
+    },
+    {
+      "name": "conversations",
+      "method": "GET"
+    },
+    {
+      "name": "conversations",
+      "method": "GET"
+    },
+    {
+      "name": "friend_list",
+      "method": "POST"
+    },
+    {
+      "name": "documents",
+      "method": "GET"
+    },
+    {
+      "name": "friend_list",
+      "method": "POST"
+    },
+    {
+      "name": "documents",
+      "method": "GET"
+    },
+    {
+      "name": "cookie_balance",
+      "method": "POST"
+    },
+    {
+      "name": "documents",
+      "method": "GET"
+    },
+    {
+      "name": "document_chunks_effective",
+      "method": "GET"
+    },
+    {
+      "name": "documents",
+      "method": "GET"
+    },
+    {
+      "name": "studybody",
+      "action": "generate_questions",
+      "method": "POST"
+    },
+    {
+      "name": "cookie_balance",
+      "method": "POST"
+    },
+    {
+      "name": "study_plans",
+      "method": "POST"
+    },
+    {
+      "name": "study_topics",
+      "method": "POST"
+    },
+    {
+      "name": "study_sessions",
+      "method": "POST"
+    },
+    {
+      "name": "study_questions",
+      "method": "POST"
+    },
+    {
+      "name": "challenge_create",
+      "method": "POST"
+    },
+    {
+      "name": "study_sessions",
+      "method": "GET"
+    },
+    {
+      "name": "study_questions",
+      "method": "GET"
+    },
+    {
+      "name": "studybody",
+      "action": "review_answers",
+      "method": "POST"
+    },
+    {
+      "name": "cookie_balance",
+      "method": "POST"
+    },
+    {
+      "name": "study_answers",
+      "method": "POST"
+    },
+    {
+      "name": "study_sessions",
+      "method": "PATCH"
+    },
+    {
+      "name": "challenge_submit_for_session",
+      "method": "POST"
+    },
+    {
+      "name": "challenge_sync_mine",
+      "method": "POST"
+    },
+    {
+      "name": "challenge_list_mine",
+      "method": "POST"
+    },
+    {
+      "name": "user_profiles",
+      "method": "GET"
+    },
+    {
+      "name": "cookie_balance",
+      "method": "POST"
+    },
+    {
+      "name": "conversations",
+      "method": "GET"
+    },
+    {
+      "name": "conversations",
+      "method": "GET"
+    },
+    {
+      "name": "challenge_sync_mine",
+      "method": "POST"
+    },
+    {
+      "name": "challenge_sync_mine",
+      "method": "POST"
+    },
+    {
+      "name": "challenge_list_mine",
+      "method": "POST"
+    },
+    {
+      "name": "challenge_list_mine",
+      "method": "POST"
+    },
+    {
+      "name": "points_summary",
+      "method": "POST"
+    },
+    {
+      "name": "points_summary",
+      "method": "POST"
+    }
+  ],
+  "errors": [],
+  "blockedWrites": []
+}

@@ -1,0 +1,44 @@
+[
+  {
+    "start": 0.3,
+    "budget": 3.5,
+    "text": "Three hundred pages. One question. Brain still buffering?",
+    "raw_seconds": 3.959002267573696,
+    "tempo": 1.131143505021056
+  },
+  {
+    "start": 4.3,
+    "budget": 7.3,
+    "text": "Choose your textbook. Ask your question. Let pinpoint search find the relevant parts.",
+    "raw_seconds": 5.23609977324263,
+    "tempo": 1.0
+  },
+  {
+    "start": 12.3,
+    "budget": 5.2,
+    "text": "Get an explanation grounded in your files. See where it came from.",
+    "raw_seconds": 4.4117913832199545,
+    "tempo": 1.0
+  },
+  {
+    "start": 18.3,
+    "budget": 7.2,
+    "text": "Ready to test yourself? Pick a friend. Set up Battle Royale and send the challenge.",
+    "raw_seconds": 5.305759637188209,
+    "tempo": 1.0
+  },
+  {
+    "start": 26.3,
+    "budget": 6.2,
+    "text": "Same questions. Play at your own pace, then compare your scores.",
+    "raw_seconds": 4.365351473922902,
+    "tempo": 1.0
+  },
+  {
+    "start": 33.2,
+    "budget": 6.3,
+    "text": "For law and medicine. Find it. Understand it. Prove it. G D one dot online.",
+    "raw_seconds": 5.828208616780046,
+    "tempo": 1.0
+  }
+]

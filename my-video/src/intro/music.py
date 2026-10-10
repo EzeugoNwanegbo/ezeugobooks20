@@ -1,11 +1,11 @@
-"""Generate the original 30-second instrumental bed; no external audio assets."""
+"""Generate the original instrumental bed; optionally pass a duration in seconds."""
 import math
 import struct
 import sys
 import wave
 
 rate = 44100
-seconds = 30
+seconds = int(sys.argv[2]) if len(sys.argv) > 2 else 30
 chords = [(130.81, 164.81, 196.00), (110.00, 130.81, 164.81),
           (87.31, 110.00, 130.81), (98.00, 123.47, 146.83)]
 with wave.open(sys.argv[1], 'w') as output:

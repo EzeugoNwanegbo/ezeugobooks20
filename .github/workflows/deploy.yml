@@ -111,3 +111,14 @@ jobs:
           done
           echo "::error::gd1.online did not serve commit ${expected} within five minutes."
           exit 1
+
+      - name: Verify the social promo is a downloadable MP4
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --range 0-31 \
+            --dump-header /tmp/gandd-promo-headers \
+            --output /tmp/gandd-promo-header \
+            "https://gd1.online/promos/gandd-in-action.mp4?verify=${{ github.sha }}"
+          grep -iq '^content-type: video/mp4' /tmp/gandd-promo-headers
+          grep -aq 'ftyp' /tmp/gandd-promo-header
+          echo "The promo URL serves an MP4, not the app HTML."
