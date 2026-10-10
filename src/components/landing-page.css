@@ -1,4 +1,103 @@
 /* Marketing page styles are scoped so saved app themes remain independent. */
+.gd-home-memes {
+  min-width: 0;
+}
+.gd-home-meme-photo {
+  position: relative;
+  margin-top: 20px;
+  padding: 14px;
+  border: 1px solid #eee6d821;
+  border-radius: 18px;
+  background: #1b1b18;
+  transform: rotate(2deg);
+  box-shadow: 0 24px 65px #0005;
+}
+.gd-home-meme-photo img {
+  display: block;
+  width: 100%;
+  height: clamp(280px, 31vw, 440px);
+  object-fit: contain;
+  border-radius: 9px;
+  background: #10100f;
+}
+.gd-home-meme-sticker {
+  position: absolute;
+  bottom: 30px;
+  left: -16px;
+  padding: 14px 21px;
+  background: #eee6d8;
+  color: #171410;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.2;
+  transform: rotate(-7deg);
+  box-shadow: 0 5px 18px #0003;
+}
+.gd-home-meme-controls {
+  margin-top: 27px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.gd-home-meme-controls > span {
+  color: #aaa496;
+  font-family: var(--home-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+.gd-home-meme-controls > span > span {
+  margin-left: 12px;
+  color: #eee6d8;
+}
+.gd-home-meme-controls > div {
+  display: flex;
+  gap: 6px;
+}
+.gd-home-meme-controls button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #eee6d826;
+  border-radius: 50%;
+  color: #eee6d8;
+  background: #141413;
+  cursor: pointer;
+}
+.gd-home-meme-controls button:hover {
+  background: #292722;
+}
+.gd-home-meme-controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.gd-home-showcase {
+  padding-block: 64px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 40px;
+  align-items: center;
+}
+.gd-home-showcase > .gd-home-section-heading {
+  grid-column: 1 / -1;
+}
+.gd-home-showcase > .gd-home-preview-wrap {
+  width: min(100%, 900px);
+  margin-inline: auto;
+}
+@media (max-width: 760px) {
+  .gd-home-showcase {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  .gd-home-meme-photo {
+    transform: rotate(1deg);
+  }
+  .gd-home-meme-sticker {
+    left: -8px;
+  }
+}
 .gd-home {
   --home-bg: #0b0b0a;
   --home-surface: #141413;

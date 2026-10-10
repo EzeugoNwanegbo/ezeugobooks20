@@ -18,6 +18,7 @@ import { useAuth } from "@/lib/auth-context";
 import { isNativeApp } from "@/lib/native";
 import { signInWithGoogleNative } from "@/lib/native-auth";
 import "@/components/landing-page.css";
+import { EntranceMemes } from "@/components/entrance-memes";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -352,7 +353,7 @@ function Landing() {
               <ArrowDown size={14} aria-hidden="true" /> A better way to work through it
             </a>
           </div>
-          <WorkspacePreview />
+          <EntranceMemes />
         </section>
 
         <div className="gd-home-materials gd-home-container">
@@ -402,6 +403,22 @@ function Landing() {
               </article>
             ))}
           </div>
+        </section>
+
+        <section
+          className="gd-home-showcase gd-home-container"
+          aria-label="Explore the G and D workspace"
+        >
+          <div className="gd-home-section-heading">
+            <p className="gd-home-eyebrow">FROM STUDY MOOD TO STUDY FLOW</p>
+            <h2>
+              Your next “I get it.”
+              <br />
+              <span>See how it starts.</span>
+            </h2>
+            <p>Choose a subject and explore how a question becomes a clearer understanding.</p>
+          </div>
+          <WorkspacePreview />
         </section>
 
         <section className="gd-home-workflow gd-home-container" aria-labelledby="workflow-heading">
