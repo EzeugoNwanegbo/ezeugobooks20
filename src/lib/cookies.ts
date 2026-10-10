@@ -50,6 +50,7 @@ import { supabase } from "@/integrations/supabase/client";
 // See docs/ai-usage-limits.md for the provider-wide safety budgets.
 export type CookieAction =
   | "chat"
+  | "clerking"
   | "generate_questions"
   | "generate_flashcards"
   | "generate_plan"
@@ -59,6 +60,7 @@ export type CookieAction =
 
 export const COOKIE_COSTS: Record<CookieAction, number | ((count: number) => number)> = {
   chat: 1,
+  clerking: 2,
   // ceil(count / 10), minimum 1 - a 40-question set is 4.
   generate_questions: (count) => Math.max(1, Math.ceil((count || 0) / 10)),
   // ceil(count / 20), minimum 1 - a 20-card set is 1.

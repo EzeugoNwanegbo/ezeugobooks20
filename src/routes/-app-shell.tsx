@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronUp,
   Clock,
+  ClipboardList,
   Heart,
   ListChecks,
   LogOut,
@@ -504,6 +505,7 @@ function AppLayout() {
   const goToMobileRoute = (
     to:
       | "/app/chat"
+      | "/app/clerking"
       | "/app/library"
       | "/app/last-minute"
       | "/app/history"
@@ -860,6 +862,7 @@ function AppLayout() {
             <div className="gd-shell-nav-section">
               {!isSidebarCollapsed && <p className="gd-shell-section-label">Study</p>}
               {navItem("/app/chat", <MessageSquare className="h-4 w-4 shrink-0" />, "Chat", "blue")}
+              {navItem("/app/clerking", <ClipboardList className="h-4 w-4 shrink-0" />, "Patient clerking", "coral")}
               {navItem(
                 "/app/library",
                 <BookOpen className="h-4 w-4 shrink-0" />,
@@ -1215,6 +1218,12 @@ function AppLayout() {
                   icon={<MessageSquare className="h-4 w-4" />}
                   label="Chat"
                   onPick={() => goToMobileRoute("/app/chat")}
+                />
+                <MobileDrawerNavItem
+                  active={location.pathname.startsWith("/app/clerking")}
+                  icon={<ClipboardList className="h-4 w-4" />}
+                  label="Patient clerking"
+                  onPick={() => goToMobileRoute("/app/clerking")}
                 />
                 <MobileDrawerNavItem
                   active={location.pathname.startsWith("/app/library")}

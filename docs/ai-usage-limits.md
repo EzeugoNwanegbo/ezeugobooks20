@@ -5,6 +5,7 @@ The daily base allowance is **10 credits per user**, resetting at 00:00 UTC (01:
 | Action                                     | Credits                        |
 | ------------------------------------------ | ------------------------------ |
 | Chat, including web and document questions | 1                              |
+| Patient clerking draft (each generation)    | 2                              |
 | Questions                                  | 1 per 10 questions, rounded up |
 | Flashcards                                 | 1 per 20 cards, rounded up     |
 | Study plan or Last Minute guide            | 2                              |
@@ -30,6 +31,7 @@ Every paid provider hop, including fallback attempts, reserves from a shared dat
 | Standard chat / Last Minute / image OCR output           | 4,096 tokens    |
 | StudyBody output (up to 40 questions per set)            | 8,192 tokens    |
 | Connections output                                       | 2,048 tokens    |
+| Patient clerking draft output                            | 3,000 tokens    |
 | Folder suggestion output                                 | 256 tokens      |
 | Web search tool calls per request                        | 1               |
 

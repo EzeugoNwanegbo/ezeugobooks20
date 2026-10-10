@@ -18,6 +18,7 @@ import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as AppAdminRouteImport } from './routes/app.admin'
 import { Route as AppBattleRoyaleRouteImport } from './routes/app.battle-royale'
 import { Route as AppChatRouteImport } from './routes/app.chat'
+import { Route as AppClerkingRouteImport } from './routes/app.clerking'
 import { Route as AppFeedbackRouteImport } from './routes/app.feedback'
 import { Route as AppFriendsRouteImport } from './routes/app.friends'
 import { Route as AppFriendsAddRouteImport } from './routes/app.friends-add'
@@ -73,6 +74,11 @@ const AppBattleRoyaleRoute = AppBattleRoyaleRouteImport.update({
 const AppChatRoute = AppChatRouteImport.update({
   id: '/chat',
   path: '/chat',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppClerkingRoute = AppClerkingRouteImport.update({
+  id: '/clerking',
+  path: '/clerking',
   getParentRoute: () => AppRoute,
 } as any)
 const AppFeedbackRoute = AppFeedbackRouteImport.update({
@@ -141,6 +147,7 @@ export interface FileRoutesByFullPath {
   '/app/admin': typeof AppAdminRoute
   '/app/battle-royale': typeof AppBattleRoyaleRoute
   '/app/chat': typeof AppChatRoute
+  '/app/clerking': typeof AppClerkingRoute
   '/app/feedback': typeof AppFeedbackRoute
   '/app/friends': typeof AppFriendsRoute
   '/app/friends-add': typeof AppFriendsAddRoute
@@ -163,6 +170,7 @@ export interface FileRoutesByTo {
   '/app/admin': typeof AppAdminRoute
   '/app/battle-royale': typeof AppBattleRoyaleRoute
   '/app/chat': typeof AppChatRoute
+  '/app/clerking': typeof AppClerkingRoute
   '/app/feedback': typeof AppFeedbackRoute
   '/app/friends': typeof AppFriendsRoute
   '/app/friends-add': typeof AppFriendsAddRoute
@@ -186,6 +194,7 @@ export interface FileRoutesById {
   '/app/admin': typeof AppAdminRoute
   '/app/battle-royale': typeof AppBattleRoyaleRoute
   '/app/chat': typeof AppChatRoute
+  '/app/clerking': typeof AppClerkingRoute
   '/app/feedback': typeof AppFeedbackRoute
   '/app/friends': typeof AppFriendsRoute
   '/app/friends-add': typeof AppFriendsAddRoute
@@ -210,6 +219,7 @@ export interface FileRouteTypes {
     | '/app/admin'
     | '/app/battle-royale'
     | '/app/chat'
+    | '/app/clerking'
     | '/app/feedback'
     | '/app/friends'
     | '/app/friends-add'
@@ -232,6 +242,7 @@ export interface FileRouteTypes {
     | '/app/admin'
     | '/app/battle-royale'
     | '/app/chat'
+    | '/app/clerking'
     | '/app/feedback'
     | '/app/friends'
     | '/app/friends-add'
@@ -254,6 +265,7 @@ export interface FileRouteTypes {
     | '/app/admin'
     | '/app/battle-royale'
     | '/app/chat'
+    | '/app/clerking'
     | '/app/feedback'
     | '/app/friends'
     | '/app/friends-add'
@@ -341,6 +353,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppChatRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/clerking': {
+      id: '/app/clerking'
+      path: '/clerking'
+      fullPath: '/app/clerking'
+      preLoaderRoute: typeof AppClerkingRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/feedback': {
       id: '/app/feedback'
       path: '/feedback'
@@ -425,6 +444,7 @@ interface AppRouteChildren {
   AppAdminRoute: typeof AppAdminRoute
   AppBattleRoyaleRoute: typeof AppBattleRoyaleRoute
   AppChatRoute: typeof AppChatRoute
+  AppClerkingRoute: typeof AppClerkingRoute
   AppFeedbackRoute: typeof AppFeedbackRoute
   AppFriendsRoute: typeof AppFriendsRoute
   AppFriendsAddRoute: typeof AppFriendsAddRoute
@@ -442,6 +462,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAdminRoute: AppAdminRoute,
   AppBattleRoyaleRoute: AppBattleRoyaleRoute,
   AppChatRoute: AppChatRoute,
+  AppClerkingRoute: AppClerkingRoute,
   AppFeedbackRoute: AppFeedbackRoute,
   AppFriendsRoute: AppFriendsRoute,
   AppFriendsAddRoute: AppFriendsAddRoute,

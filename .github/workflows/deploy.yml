@@ -63,6 +63,11 @@ jobs:
 
       - run: npm ci
 
+      - name: Check clerking contracts and usage controls
+        run: |
+          node --test supabase/functions/clerking/contract.test.mjs
+          node scripts/test-clerking-edge.cjs
+
       - run: npm run build:static
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}

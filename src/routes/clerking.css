@@ -1,0 +1,106 @@
+.clerk-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 0.65rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  min-height: 44px;
+  background: var(--card);
+  cursor: pointer;
+}
+.clerk-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.clerk-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}
+.clerk-text {
+  display: block;
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--background);
+  color: var(--foreground);
+  padding: 0.85rem;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+.clerk-text:focus {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.clerk-print-only {
+  display: none;
+}
+.clerk-page-two {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border);
+}
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm;
+  }
+  body:has(.clerk-draft) {
+    background: white !important;
+    color: black !important;
+  }
+  body:has(.clerk-draft) * {
+    display: none !important;
+  }
+  body:has(.clerk-draft) *:has(.clerk-draft) {
+    display: block !important;
+    position: static !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .clerk-draft,
+  .clerk-draft * {
+    display: block !important;
+    color: black !important;
+    box-shadow: none !important;
+  }
+  .clerk-draft {
+    position: static;
+    width: 100%;
+    border: 0 !important;
+    padding: 0 !important;
+    font-size: 11pt;
+    line-height: 1.45;
+    background: white !important;
+  }
+  .clerk-no-print,
+  .clerk-no-print * {
+    display: none !important;
+  }
+  .clerk-print-only {
+    display: block;
+  }
+  .clerk-page-two {
+    break-before: page;
+    border: 0;
+    margin: 0;
+    padding: 0;
+  }
+  .clerk-clarifications {
+    break-before: page;
+    border: 0;
+    padding: 0;
+  }
+  .clerk-paper section {
+    break-inside: avoid;
+  }
+}
