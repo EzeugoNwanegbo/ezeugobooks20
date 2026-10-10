@@ -121,6 +121,7 @@ jobs:
             "https://gd1.online/promos/gandd-in-action.mp4?verify=${{ github.sha }}"
           cat /tmp/gandd-promo-headers
           od -An -tx1 -N32 /tmp/gandd-promo-header
+          { echo '### Promo response'; echo '```'; cat /tmp/gandd-promo-headers; od -An -tx1 -N32 /tmp/gandd-promo-header; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           grep -iq '^content-type: video/mp4' /tmp/gandd-promo-headers
           grep -aq 'ftyp' /tmp/gandd-promo-header
           echo "The promo URL serves an MP4, not the app HTML."
