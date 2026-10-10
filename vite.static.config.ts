@@ -27,7 +27,20 @@ export default defineConfig({
     // This config mounts into <div id="root"> via index.html -> main.tsx.
     __STATIC_SPA__: JSON.stringify(true),
   },
-  plugins: [react(), tailwindcss(), tsconfigPaths()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    tsconfigPaths(),
+    {
+      name: "gd-static-build-marker",
+      transformIndexHtml(html) {
+        return html.replace(
+          /(<meta name="app-build" content=")[^"]*(")/,
+          (_, prefix, suffix) => `${prefix}${BUILD_ID}${suffix}`,
+        );
+      },
+    },
+  ],
   server: {
     watch: {
       ignored: ["**/android/**", "**/gandd-mobile/**"],

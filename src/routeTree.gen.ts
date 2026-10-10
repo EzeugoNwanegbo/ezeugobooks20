@@ -9,45 +9,30 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as PrivacyRouteImport } from './routes/privacy'
-import { Route as OnboardingRouteImport } from './routes/onboarding'
-import { Route as DeleteAccountRouteImport } from './routes/delete-account'
-import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AppStudybodyRouteImport } from './routes/app.studybody'
-import { Route as AppSettingsRouteImport } from './routes/app.settings'
-import { Route as AppPracticeRouteImport } from './routes/app.practice'
-import { Route as AppLibraryRouteImport } from './routes/app.library'
-import { Route as AppLeaderboardRouteImport } from './routes/app.leaderboard'
-import { Route as AppLastMinuteRouteImport } from './routes/app.last-minute'
-import { Route as AppHistoryRouteImport } from './routes/app.history'
-import { Route as AppFriendsBattlesRouteImport } from './routes/app.friends-battles'
-import { Route as AppFriendsAddRouteImport } from './routes/app.friends-add'
-import { Route as AppFriendsRouteImport } from './routes/app.friends'
-import { Route as AppFeedbackRouteImport } from './routes/app.feedback'
-import { Route as AppChatRouteImport } from './routes/app.chat'
-import { Route as AppBattleRoyaleRouteImport } from './routes/app.battle-royale'
+import { Route as AppRouteImport } from './routes/app'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as DeleteAccountRouteImport } from './routes/delete-account'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as AppAdminRouteImport } from './routes/app.admin'
+import { Route as AppBattleRoyaleRouteImport } from './routes/app.battle-royale'
+import { Route as AppChatRouteImport } from './routes/app.chat'
+import { Route as AppFeedbackRouteImport } from './routes/app.feedback'
+import { Route as AppFriendsRouteImport } from './routes/app.friends'
+import { Route as AppFriendsAddRouteImport } from './routes/app.friends-add'
+import { Route as AppFriendsBattlesRouteImport } from './routes/app.friends-battles'
+import { Route as AppHistoryRouteImport } from './routes/app.history'
+import { Route as AppLastMinuteRouteImport } from './routes/app.last-minute'
+import { Route as AppLeaderboardRouteImport } from './routes/app.leaderboard'
+import { Route as AppLibraryRouteImport } from './routes/app.library'
+import { Route as AppPracticeRouteImport } from './routes/app.practice'
+import { Route as AppSettingsRouteImport } from './routes/app.settings'
+import { Route as AppStudybodyRouteImport } from './routes/app.studybody'
 
-const PrivacyRoute = PrivacyRouteImport.update({
-  id: '/privacy',
-  path: '/privacy',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OnboardingRoute = OnboardingRouteImport.update({
-  id: '/onboarding',
-  path: '/onboarding',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DeleteAccountRoute = DeleteAccountRouteImport.update({
-  id: '/delete-account',
-  path: '/delete-account',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppRoute = AppRouteImport.update({
@@ -55,69 +40,29 @@ const AppRoute = AppRouteImport.update({
   path: '/app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppStudybodyRoute = AppStudybodyRouteImport.update({
-  id: '/studybody',
-  path: '/studybody',
-  getParentRoute: () => AppRoute,
+const DeleteAccountRoute = DeleteAccountRouteImport.update({
+  id: '/delete-account',
+  path: '/delete-account',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AppSettingsRoute = AppSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AppRoute,
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AppPracticeRoute = AppPracticeRouteImport.update({
-  id: '/practice',
-  path: '/practice',
-  getParentRoute: () => AppRoute,
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AppLibraryRoute = AppLibraryRouteImport.update({
-  id: '/library',
-  path: '/library',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppLeaderboardRoute = AppLeaderboardRouteImport.update({
-  id: '/leaderboard',
-  path: '/leaderboard',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppLastMinuteRoute = AppLastMinuteRouteImport.update({
-  id: '/last-minute',
-  path: '/last-minute',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppHistoryRoute = AppHistoryRouteImport.update({
-  id: '/history',
-  path: '/history',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppFriendsBattlesRoute = AppFriendsBattlesRouteImport.update({
-  id: '/friends-battles',
-  path: '/friends-battles',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppFriendsAddRoute = AppFriendsAddRouteImport.update({
-  id: '/friends-add',
-  path: '/friends-add',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppFriendsRoute = AppFriendsRouteImport.update({
-  id: '/friends',
-  path: '/friends',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppFeedbackRoute = AppFeedbackRouteImport.update({
-  id: '/feedback',
-  path: '/feedback',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppChatRoute = AppChatRouteImport.update({
-  id: '/chat',
-  path: '/chat',
+const AppAdminRoute = AppAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => AppRoute,
 } as any)
 const AppBattleRoyaleRoute = AppBattleRoyaleRouteImport.update({
@@ -125,9 +70,64 @@ const AppBattleRoyaleRoute = AppBattleRoyaleRouteImport.update({
   path: '/battle-royale',
   getParentRoute: () => AppRoute,
 } as any)
-const AppAdminRoute = AppAdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
+const AppChatRoute = AppChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFeedbackRoute = AppFeedbackRouteImport.update({
+  id: '/feedback',
+  path: '/feedback',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFriendsRoute = AppFriendsRouteImport.update({
+  id: '/friends',
+  path: '/friends',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFriendsAddRoute = AppFriendsAddRouteImport.update({
+  id: '/friends-add',
+  path: '/friends-add',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFriendsBattlesRoute = AppFriendsBattlesRouteImport.update({
+  id: '/friends-battles',
+  path: '/friends-battles',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppHistoryRoute = AppHistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLastMinuteRoute = AppLastMinuteRouteImport.update({
+  id: '/last-minute',
+  path: '/last-minute',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLeaderboardRoute = AppLeaderboardRouteImport.update({
+  id: '/leaderboard',
+  path: '/leaderboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLibraryRoute = AppLibraryRouteImport.update({
+  id: '/library',
+  path: '/library',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPracticeRoute = AppPracticeRouteImport.update({
+  id: '/practice',
+  path: '/practice',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppStudybodyRoute = AppStudybodyRouteImport.update({
+  id: '/studybody',
+  path: '/studybody',
   getParentRoute: () => AppRoute,
 } as any)
 
@@ -278,32 +278,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/privacy': {
-      id: '/privacy'
-      path: '/privacy'
-      fullPath: '/privacy'
-      preLoaderRoute: typeof PrivacyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/onboarding': {
-      id: '/onboarding'
-      path: '/onboarding'
-      fullPath: '/onboarding'
-      preLoaderRoute: typeof OnboardingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/delete-account': {
-      id: '/delete-account'
-      path: '/delete-account'
-      fullPath: '/delete-account'
-      preLoaderRoute: typeof DeleteAccountRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app': {
@@ -313,95 +292,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/app/studybody': {
-      id: '/app/studybody'
-      path: '/studybody'
-      fullPath: '/app/studybody'
-      preLoaderRoute: typeof AppStudybodyRouteImport
-      parentRoute: typeof AppRoute
+    '/delete-account': {
+      id: '/delete-account'
+      path: '/delete-account'
+      fullPath: '/delete-account'
+      preLoaderRoute: typeof DeleteAccountRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/app/settings': {
-      id: '/app/settings'
-      path: '/settings'
-      fullPath: '/app/settings'
-      preLoaderRoute: typeof AppSettingsRouteImport
-      parentRoute: typeof AppRoute
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/app/practice': {
-      id: '/app/practice'
-      path: '/practice'
-      fullPath: '/app/practice'
-      preLoaderRoute: typeof AppPracticeRouteImport
-      parentRoute: typeof AppRoute
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/app/library': {
-      id: '/app/library'
-      path: '/library'
-      fullPath: '/app/library'
-      preLoaderRoute: typeof AppLibraryRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/leaderboard': {
-      id: '/app/leaderboard'
-      path: '/leaderboard'
-      fullPath: '/app/leaderboard'
-      preLoaderRoute: typeof AppLeaderboardRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/last-minute': {
-      id: '/app/last-minute'
-      path: '/last-minute'
-      fullPath: '/app/last-minute'
-      preLoaderRoute: typeof AppLastMinuteRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/history': {
-      id: '/app/history'
-      path: '/history'
-      fullPath: '/app/history'
-      preLoaderRoute: typeof AppHistoryRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/friends-battles': {
-      id: '/app/friends-battles'
-      path: '/friends-battles'
-      fullPath: '/app/friends-battles'
-      preLoaderRoute: typeof AppFriendsBattlesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/friends-add': {
-      id: '/app/friends-add'
-      path: '/friends-add'
-      fullPath: '/app/friends-add'
-      preLoaderRoute: typeof AppFriendsAddRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/friends': {
-      id: '/app/friends'
-      path: '/friends'
-      fullPath: '/app/friends'
-      preLoaderRoute: typeof AppFriendsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/feedback': {
-      id: '/app/feedback'
-      path: '/feedback'
-      fullPath: '/app/feedback'
-      preLoaderRoute: typeof AppFeedbackRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/chat': {
-      id: '/app/chat'
-      path: '/chat'
-      fullPath: '/app/chat'
-      preLoaderRoute: typeof AppChatRouteImport
+    '/app/admin': {
+      id: '/app/admin'
+      path: '/admin'
+      fullPath: '/app/admin'
+      preLoaderRoute: typeof AppAdminRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/battle-royale': {
@@ -411,11 +334,88 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppBattleRoyaleRouteImport
       parentRoute: typeof AppRoute
     }
-    '/app/admin': {
-      id: '/app/admin'
-      path: '/admin'
-      fullPath: '/app/admin'
-      preLoaderRoute: typeof AppAdminRouteImport
+    '/app/chat': {
+      id: '/app/chat'
+      path: '/chat'
+      fullPath: '/app/chat'
+      preLoaderRoute: typeof AppChatRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/feedback': {
+      id: '/app/feedback'
+      path: '/feedback'
+      fullPath: '/app/feedback'
+      preLoaderRoute: typeof AppFeedbackRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/friends': {
+      id: '/app/friends'
+      path: '/friends'
+      fullPath: '/app/friends'
+      preLoaderRoute: typeof AppFriendsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/friends-add': {
+      id: '/app/friends-add'
+      path: '/friends-add'
+      fullPath: '/app/friends-add'
+      preLoaderRoute: typeof AppFriendsAddRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/friends-battles': {
+      id: '/app/friends-battles'
+      path: '/friends-battles'
+      fullPath: '/app/friends-battles'
+      preLoaderRoute: typeof AppFriendsBattlesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/history': {
+      id: '/app/history'
+      path: '/history'
+      fullPath: '/app/history'
+      preLoaderRoute: typeof AppHistoryRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/last-minute': {
+      id: '/app/last-minute'
+      path: '/last-minute'
+      fullPath: '/app/last-minute'
+      preLoaderRoute: typeof AppLastMinuteRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/leaderboard': {
+      id: '/app/leaderboard'
+      path: '/leaderboard'
+      fullPath: '/app/leaderboard'
+      preLoaderRoute: typeof AppLeaderboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/library': {
+      id: '/app/library'
+      path: '/library'
+      fullPath: '/app/library'
+      preLoaderRoute: typeof AppLibraryRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/practice': {
+      id: '/app/practice'
+      path: '/practice'
+      fullPath: '/app/practice'
+      preLoaderRoute: typeof AppPracticeRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/settings': {
+      id: '/app/settings'
+      path: '/settings'
+      fullPath: '/app/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/studybody': {
+      id: '/app/studybody'
+      path: '/studybody'
+      fullPath: '/app/studybody'
+      preLoaderRoute: typeof AppStudybodyRouteImport
       parentRoute: typeof AppRoute
     }
   }

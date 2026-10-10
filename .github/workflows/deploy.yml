@@ -1,18 +1,7 @@
-# CI for pushes to main (or manual runs from the Actions tab):
-#   1. deploy-edge-functions - publishes every Supabase Edge Function.
-#   2. build-and-deploy      - builds the static site as a sanity check.
-#
-# NOTE ON PRODUCTION HOSTING: gd1.online is NOT published by this workflow.
-# Hostinger's own GitHub auto-deployment (configured in hPanel) rebuilds the
-# repo on every push and serves the SSR app (server.mjs + dist/server) - the
-# live site updates within ~2 minutes of a push regardless of this workflow.
-# This workflow used to also FTP the static dist/ into public_html/, but those
-# files are never served (LiteSpeed routes requests to the Node SSR app), and
-# the upload raced Hostinger's own deploy of the same push, which kept killing
-# the transfer mid-flight with "FTPError: 550 <file>: No such file or
-# directory" / ".in.<file> rename failed". The FTP step was removed for that
-# reason - do not re-add it while Hostinger's Git deployment is active.
-name: Deploy to Hostinger
+# Vercel's Git integration publishes the frontend from main. This workflow
+# deploys Supabase functions, validates the static build, and checks the live
+# production build marker after Vercel deploys the same commit.
+name: Build and verify production
 
 on:
   push:
@@ -61,9 +50,7 @@ jobs:
           echo "SUPABASE_ACCESS_TOKEN is not configured, so the Edge Functions were not deployed."
           echo "Set the SUPABASE_ACCESS_TOKEN repo secret to enable automatic function deploys."
 
-  # Build-only CI check. Production is built and served by Hostinger's GitHub
-  # auto-deployment (see the note at the top of this file); this job just
-  # proves the static build still compiles with production env values.
+  # Build-only CI check; Vercel independently builds and publishes the frontend.
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
@@ -99,9 +86,8 @@ jobs:
             exit 1
           fi
 
-  # Hostinger deploys this same commit through its GitHub integration, outside
-  # Actions. Poll the public build marker so a green workflow also proves the
-  # production site actually moved to this revision.
+  # Vercel deploys this same commit outside Actions. The static HTML carries
+  # the build marker, so this check does not require client-side JavaScript.
   verify-live:
     needs: build-and-deploy
     runs-on: ubuntu-latest
