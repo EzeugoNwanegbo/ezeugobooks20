@@ -67,6 +67,8 @@ jobs:
         run: |
           node --test supabase/functions/clerking/contract.test.mjs
           node scripts/test-clerking-edge.cjs
+          node --test supabase/functions/studybody/question-quality.test.mjs
+          node scripts/test-question-generation.cjs
 
       - run: npm run build:static
         env:

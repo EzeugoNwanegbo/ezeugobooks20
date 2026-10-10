@@ -12,6 +12,7 @@ import { takeLastMinuteForCoach } from "@/lib/last-minute-handoff";
 import { generateStudyPlan, type StudyRoadmapTopic } from "@/lib/studybody-client";
 import { PageHeader } from "@/components/ui/page-header";
 import { Segmented } from "@/components/ui/segmented";
+import { difficultyLabel } from "@/lib/question-difficulty";
 import "@/study-pages.css";
 import {
   createStraightInSession,
@@ -172,9 +173,7 @@ export function StudyBodyPage() {
   // "mixed" is what this flow has always built, so it stays the fallback. It is
   // replaced below by the student's own last-used style when we know one.
   const [straightType, setStraightType] = useState<StraightInType>("mixed");
-  const [straightDifficulty, setStraightDifficulty] = useState<"easy" | "medium" | "hard">(
-    "medium",
-  );
+  const [straightDifficulty, setStraightDifficulty] = useState<"medium" | "hard">("medium");
   // Which real step the build is on, and the failure that stopped it.
   const [stageIndex, setStageIndex] = useState(0);
   const [stageError, setStageError] = useState<string | null>(null);
@@ -823,16 +822,18 @@ export function StudyBodyPage() {
                       className="h-10"
                     />
                     <Segmented
-                      options={["easy", "medium", "hard"] as const}
+                      options={["medium", "hard"] as const}
                       value={straightDifficulty}
                       onChange={setStraightDifficulty}
-                      getLabel={(value) =>
-                        value === "easy" ? "Easy" : value === "medium" ? "Medium" : "Hard"
-                      }
+                      getLabel={difficultyLabel}
                       className="h-10"
                     />
                   </div>
 
+                  <p className="text-xs text-muted-foreground">
+                    Recall tests precise facts and distinctions. Applied tests using them in
+                    scenarios. Both use challenging, closely matched options.
+                  </p>
                   {straightSupportsTimer && <TimerPicker choice={timer} />}
 
                   <input

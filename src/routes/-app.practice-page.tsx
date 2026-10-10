@@ -19,6 +19,7 @@ import {
 import { LoadingDots } from "@/components/loading-dots";
 import { PageHeader } from "@/components/ui/page-header";
 import { Segmented } from "@/components/ui/segmented";
+import { difficultyLabel } from "@/lib/question-difficulty";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -382,7 +383,7 @@ function ConfigView({ planId }: { planId: string }) {
   const [mixedEssay, setMixedEssay] = useState(3);
   const [customMode, setCustomMode] = useState(false);
   const [practiceMode, setPracticeMode] = useState<PracticeMode>("learning");
-  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
+  const [difficulty, setDifficulty] = useState<"medium" | "hard">("medium");
   // Whether the folded settings row is open. Purely presentational -
   // every value inside it keeps its default whether it is shown or not.
   const [showMoreOptions, setShowMoreOptions] = useState(false);
@@ -410,13 +411,7 @@ function ConfigView({ planId }: { planId: string }) {
   const optionsSummary =
     [
       supportsModes ? (practiceMode === "learning" ? "Learning" : "Exam") : null,
-      supportsDifficulty
-        ? difficulty === "easy"
-          ? "Easy"
-          : difficulty === "medium"
-            ? "Medium"
-            : "Hard"
-        : null,
+      supportsDifficulty ? difficultyLabel(difficulty) : null,
     ]
       .filter(Boolean)
       .join(" \u00b7 ") || "Options";
@@ -1059,15 +1054,13 @@ function ConfigView({ planId }: { planId: string }) {
                           {supportsDifficulty && (
                             <div>
                               <div className="mb-1.5 text-xs font-medium text-muted-foreground">
-                                Difficulty
+                                Question mode
                               </div>
                               <Segmented
-                                options={["easy", "medium", "hard"] as const}
+                                options={["medium", "hard"] as const}
                                 value={difficulty}
                                 onChange={setDifficulty}
-                                getLabel={(value) =>
-                                  value === "easy" ? "Easy" : value === "medium" ? "Medium" : "Hard"
-                                }
+                                getLabel={difficultyLabel}
                                 className="h-10"
                               />
                             </div>
@@ -2154,7 +2147,8 @@ function SessionView({
                           className="rounded-2xl border border-border bg-background/40 p-3 sm:p-4"
                         >
                           <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                            {question.question_type} · {question.difficulty} · {index + 1}
+                            {question.question_type} · {difficultyLabel(question.difficulty)} ·{" "}
+                            {index + 1}
                           </div>
                           <p className="text-sm font-medium break-words">{question.prompt}</p>
                           <SourceOrWarn question={question} sourcesStripped={!!challengeId} />
@@ -2292,7 +2286,8 @@ function SessionView({
                     className="rounded-2xl border border-border bg-background/40 p-3 sm:p-4"
                   >
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      {question.question_type} - {question.difficulty} - {index + 1}
+                      {question.question_type} - {difficultyLabel(question.difficulty)} -{" "}
+                      {index + 1}
                     </div>
                     <p className="text-sm font-medium break-words">{question.prompt}</p>
                     {/* Same line as every other question list, rather than a

@@ -6,6 +6,7 @@ import {
   chargeAiCreditsFor,
   refundAiCredits,
 } from "../_shared/usage-limits.ts";
+import { balanceMcqs, questionDifficulty, validMcq } from "./question-quality.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,7 +58,7 @@ interface Body {
   difficultyHint?: "easier" | "medium" | "harder";
   // Explicit level chosen by the student in the test setup. When present it
   // overrides the adaptive difficultyHint.
-  difficulty?: "easy" | "medium" | "hard";
+  difficulty?: "easy" | "medium" | "hard" | "recall" | "applied";
   // Opt-in only. generate_questions and generate_flashcards accumulate their
   // whole result in memory today either way (a batch either lands in
   // `collected` or it doesn't) - `stream` only changes HOW that accumulation
@@ -67,7 +68,7 @@ interface Body {
   stream?: boolean;
 }
 
-type DifficultyLevel = "easy" | "medium" | "hard";
+type DifficultyLevel = "medium" | "hard";
 
 // The distractor half of HARD, kept out of the template literal below so the
 // essay path is not shipped a page of option rules it must ignore. This is the
@@ -80,6 +81,9 @@ const TRAP_OPTION_RULES = `
 - Build EVERY distractor from the excerpts, using one of these four moves: (a) a statement that is TRUE in the material but does not answer THIS question; (b) the right idea applied to the wrong condition, stage, case or population; (c) a near-miss that changes exactly one decisive detail - a number, a direction, an order, a qualifier; (d) the precise misconception the material exists to correct.
 - Never invent a nonsense, off-topic or absurd option. If a student can strike an option out without knowing the material, that option is broken - rewrite it.
 - Make the options SURFACE-IDENTICAL: same length (within a few words), same grammatical form, same level of detail, same technical vocabulary. The correct answer must NEVER be the longest, the most detailed, the most hedged, or the only one written in the book's exact phrasing.
+- Keep the word-count spread within two words for short options, or 25% for longer options. Keep character lengths close as well. Do not pad the correct option with an explanation. Put all explanations AFTER the options.
+- Use parallel, closely related statements that differ in a decisive condition, direction, mechanism, threshold or sequence. Similar wording must test precise knowledge, not make two options simultaneously correct. Verify that EXACTLY ONE option answers the stem; if the source cannot distinguish the best two, rewrite the item.
+- Never use ambiguous grammar, hidden assumptions, misleading negatives or irrelevant complexity to manufacture difficulty. Distractors must be plausible to someone with incomplete knowledge, and decisively incorrect for THIS stem according to the source.
 - No "all of the above", no "none of the above", and no absolutes ("always", "never", "only") that appear only in the wrong options.
 - Choosing between the best two options must turn on ONE specific fact from the excerpts - not on general reasoning, tone or plausibility.
 - No wording match between the stem and the correct option. If a student can find the answer by spotting the option that reuses the stem's words, the question is broken - reword the option, not the stem.
@@ -170,20 +174,8 @@ THE ANSWER (what a full-mark response must contain):
 // input spent to describe a field the model is told to return empty. Each type
 // gets the half that applies to it.
 function difficultyInstruction(level: DifficultyLevel, type: "mcq" | "essay"): string {
-  if (level === "easy") {
-    // Written as its own line rather than an inline escape so the prompt text
-    // stays readable in the source.
-    const distractorLine =
-      type === "mcq"
-        ? "- Make every distractor clearly wrong to someone who read the material."
-        : "";
-    return `DIFFICULTY: EASY.
-- Test direct recall and recognition of facts that are stated plainly in the excerpts.
-- One step to answer. Use clear, unambiguous wording.
-${distractorLine}`.trim();
-  }
   if (level === "hard") {
-    return `DIFFICULTY: HARD - exam-topper level. Your target: a student who read the material once and understood it shallowly must get this WRONG. A student who genuinely understands it must get it right without guessing.
+    return `QUESTION MODE: APPLIED — challenging application and integration. A student must understand the material well enough to use it, not merely recognise a phrase.
 
 THE QUESTION (stem):
 - Do NOT ask what something is. Ask what FOLLOWS from it: give a concrete scenario, case, dataset or worked situation and ask for the consequence, the mechanism, the exception, the next step, or the best explanation.
@@ -193,7 +185,7 @@ THE QUESTION (stem):
 ${type === "essay" ? HARD_ESSAY_RULES : HARD_OPTION_RULES}
 ABSOLUTE GROUNDING RULE: despite the difficulty, every question, the correct answer, every distractor, and the explanation must remain fully verifiable from the provided excerpts ONLY. Do NOT pull in any fact, term, or scenario that is not in the files. Hard means deeper use of the material, never outside material.`;
   }
-  return `DIFFICULTY: MEDIUM - hard questions about FACTS. Pitched to punish like HARD does, but by demanding precise RECALL rather than reasoning through a story. Your target: a student who skimmed the material gets this WRONG; a student who actually learned it answers it without guessing.
+  return `QUESTION MODE: RECALL — challenging, precise retrieval of facts. Recall is NOT an easy mode. Test the distinctions, exceptions and details that a student who skimmed the material would confuse, without a scenario.
 
 THE QUESTION (stem):
 - ASK FOR THE FACT, DIRECTLY. Name the thing and ask what is true of it: the value, the threshold, the order, the classification, the exception, the mechanism, the definition, or which of several it is.
@@ -788,7 +780,7 @@ Hard rules:
 Return strict JSON only.`;
 
 function hasSourceRef(item: unknown): boolean {
-  const refs = (item as { source_refs?: unknown }).source_refs;
+  const refs = (item as { source_refs?: unknown } | null)?.source_refs;
   return Array.isArray(refs) && refs.length > 0;
 }
 
@@ -818,12 +810,12 @@ ${documentContext(body.documents)}
 Return JSON:
 {
   "questions": [
-${type === "mcq" ? mcqShape(difficulty) : ESSAY_SHAPE}
+${type === "mcq" ? mcqShape() : ESSAY_SHAPE}
   ]
 }
 ${
   type === "mcq"
-    ? `Exactly ${difficulty === "hard" ? "four" : "three"} options, one correct option id. "correct_answer" is that option's id. The options are RE-LETTERED after you return them, so never refer to an option by its letter in the prompt or the explanation - name it by what it says.`
+    ? `Exactly FOUR options (A–D), one correct option id. "correct_answer" is that option's id. The options are RE-LETTERED after you return them, so never refer to an option by its letter in the prompt or the explanation - name it by what it says. All options must be closely matched in length and structure, with one defensible best answer.`
     : "options must be []. correct_answer is the ideal written answer."
 }`;
 }
@@ -852,27 +844,17 @@ ${
 // does not touch what a student sees beyond shorter explanations, and it makes
 // every count faster rather than only rescuing the large ones.
 //
-// FOUR options at hard, three below it. A third option set is one more trap to
-// write, so it is spent only where the student asked for a fight: it drops a
-// blind guess from 33% to 25% and, more to the point, removes the "two look
-// wrong, so it is the third" shortcut that makes a three-option hard question
-// answerable without the material. Everything downstream renders whatever
-// options it is handed, so nothing else changes.
+// Four closely matched options in BOTH Recall and Applied. The question mode
+// changes the cognitive task, not how easy it is to eliminate a distractor.
 //
 // The explanation is ONE sentence at every level. It was one-or-two, and the
 // hard variant asks it to carry the trap as well, which came back as a
 // paragraph the student has to read after every single answer in Learning mode.
 // One sentence that names the deciding fact teaches more than five that restate
 // the stem, and it is output tokens saved on every question.
-function mcqShape(level: DifficultyLevel): string {
-  const explanation =
-    level === "hard"
-      ? "ONE short sentence: the deciding fact from the excerpt, and the tempting wrong option it rules out"
-      : "ONE short sentence, pointing at the source excerpt";
-  const options =
-    level === "hard"
-      ? `[{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."},{"id":"D","text":"..."}]`
-      : `[{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."}]`;
+function mcqShape(): string {
+  const explanation = "ONE short sentence: the deciding source fact and why the closest distractor is wrong";
+  const options = `[{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."},{"id":"D","text":"..."}]`;
   return `    {
       "prompt": "question text grounded in the excerpts",
       "options": ${options},
@@ -892,108 +874,6 @@ const ESSAY_SHAPE = `    {
       "rubric": ["point 1", "point 2"],
       "source_refs": [{"file":"name", "page":"Page N, or omit if the excerpt has no page"}]
     }`;
-
-// ── WHERE THE CORRECT OPTION SITS ───────────────────────────────────────────
-//
-// Models have a hard position bias: asked for one correct option out of three,
-// they answer "A" far more often than a third of the time. The prompt used to
-// ask them to vary it, which is the kind of instruction a model agrees with and
-// then ignores - and a student who notices scores 60-70% without reading a
-// word, which makes every set feel easy no matter how good the questions are.
-//
-// So the position is DECIDED HERE rather than requested. Each MCQ has its
-// correct option's TEXT swapped into a slot drawn from a bag that refills once
-// empty: every run of N questions covers all N letters, and the order inside
-// each run is random - as balanced as a rotation, without being a pattern a
-// student can learn ("last one was A, so this is B").
-//
-// Only the texts move; the ids stay A, B, C(, D) in order. So a stored row is
-// still self-consistent and nothing downstream has to know this happened: the
-// screen renders options in the order given, and both grading paths (SQL
-// study_mcq_grade, and the client fallback) compare the submitted id against
-// correct_answer.
-type McqOption = { id: string; text: string };
-
-function isOptionList(value: unknown): value is McqOption[] {
-  return (
-    Array.isArray(value) &&
-    value.length > 1 &&
-    value.every(
-      (option) =>
-        !!option &&
-        typeof option === "object" &&
-        typeof (option as McqOption).id === "string" &&
-        typeof (option as McqOption).text === "string",
-    )
-  );
-}
-
-function makeSlotBag(size: number): () => number {
-  let bag: number[] = [];
-  return () => {
-    if (bag.length === 0) {
-      bag = Array.from({ length: size }, (_, i) => i);
-      for (let i = bag.length - 1; i > 0; i -= 1) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [bag[i], bag[j]] = [bag[j], bag[i]];
-      }
-    }
-    return bag.pop() as number;
-  };
-}
-
-// The model is told the letters are not final and to name options by what they
-// say, but it will still sometimes write "option B" in an explanation - and a
-// letter left pointing at the wrong option after a swap is worse than no
-// explanation at all. Only letters that are unambiguously labels are rewritten
-// ("option B", "choice B", "answer B", "(B)"); a bare capital is left alone,
-// because in ordinary prose that is usually the word "A".
-function relabelExplanation(text: string, swap: Record<string, string>): string {
-  return text.replace(
-    /\b(options?|choices?|answers?)\s+\(?([A-Za-z])\)?(?![\w])|\(([A-Za-z])\)/g,
-    (
-      whole: string,
-      word: string | undefined,
-      labelled: string | undefined,
-      bracketed: string | undefined,
-    ) => {
-      const next = swap[(labelled ?? bracketed ?? "").toUpperCase()];
-      if (!next) return whole;
-      return word ? `${word} ${next}` : `(${next})`;
-    },
-  );
-}
-
-function placeAnswerAt(question: Record<string, unknown>, slot: number): Record<string, unknown> {
-  const options = question.options;
-  if (!isOptionList(options)) return question;
-  const key =
-    typeof question.correct_answer === "string" ? question.correct_answer.trim().toUpperCase() : "";
-  const from = options.findIndex((option) => option.id.trim().toUpperCase() === key);
-  // The key names no option at all - a malformed question. Move nothing: a
-  // swap here would only turn one broken row into a differently broken one.
-  if (from < 0) return question;
-  const to = ((slot % options.length) + options.length) % options.length;
-  if (to === from) return question;
-
-  const moved = options.map((option, i) => ({
-    ...option,
-    text: i === from ? options[to].text : i === to ? options[from].text : option.text,
-  }));
-  const swap: Record<string, string> = {
-    [options[from].id.trim().toUpperCase()]: options[to].id.trim().toUpperCase(),
-    [options[to].id.trim().toUpperCase()]: options[from].id.trim().toUpperCase(),
-  };
-  return {
-    ...question,
-    options: moved,
-    correct_answer: options[to].id,
-    explanation:
-      typeof question.explanation === "string"
-        ? relabelExplanation(question.explanation, swap)
-        : question.explanation,
-  };
-}
 
 // Large sets (e.g. 50 MCQs) overflow a single DeepSeek response, so generate in
 // batches and accumulate, feeding already-asked prompts forward each round so we
@@ -1026,19 +906,10 @@ async function generateOneType(
   const batchSize = 10;
   const maxBatches = Math.ceil(target / batchSize) + 1;
   // Prefer the student's explicit level; fall back to mapping the adaptive hint.
-  const difficulty: DifficultyLevel = body.difficulty
-    ? body.difficulty
-    : body.difficultyHint === "easier"
-      ? "easy"
-      : body.difficultyHint === "harder"
-        ? "hard"
-        : "medium";
+  const difficulty: DifficultyLevel = questionDifficulty(body.difficulty, body.difficultyHint);
   const collected: Record<string, unknown>[] = [];
   const seen = new Set<string>();
-  // See placeAnswerAt: which letter is correct is assigned here, not left to
-  // the model's habit of answering "A". Sized to the option count mcqShape asks
-  // for at this level, so hard's fourth slot gets its share.
-  const nextSlot = type === "mcq" ? makeSlotBag(difficulty === "hard" ? 4 : 3) : null;
+  // Correct positions are balanced across the final accepted set, not batches.
   const exclude = [...seedExclude];
 
   // Normalised so two questions differing only by whitespace, case or trailing
@@ -1059,6 +930,9 @@ async function generateOneType(
     const picked = grounded.length ? grounded : raw;
     const added: Record<string, unknown>[] = [];
     for (const question of picked) {
+      if (collected.length >= target) break;
+      if (!question || typeof question !== "object" || Array.isArray(question)) continue;
+      if (type === "mcq" && !validMcq(question)) continue;
       const k = key(question);
       if (k && seen.has(k)) continue; // a duplicate across parallel batches
       if (k) seen.add(k);
@@ -1067,8 +941,7 @@ async function generateOneType(
       // the model write them on every question was output tokens spent to be
       // told something we already knew. Stamping keeps every stored row's shape
       // exactly as it was, so nothing downstream notices the prompt got cheaper.
-      const placed = nextSlot ? placeAnswerAt(question, nextSlot()) : question;
-      const withType = { ...placed, type, difficulty };
+      const withType = { ...question, type, difficulty };
       collected.push(withType);
       if (typeof question.prompt === "string") exclude.push(question.prompt);
       added.push(withType);
@@ -1171,7 +1044,8 @@ async function generateOneType(
     onBatch?.(added);
   }
 
-  return collected.slice(0, target);
+  // Batch frames carry progress; both clients use the final canonical list.
+  return type === "mcq" ? balanceMcqs(collected) : collected;
 }
 
 async function generateQuestions(
