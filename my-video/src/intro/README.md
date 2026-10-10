@@ -9,7 +9,7 @@ From `my-video`, after `npm ci`:
 ```sh
 npx remotion render src/intro/social.tsx GandDSocial /tmp/gd-intro-silent.mp4 --browser-executable=/usr/bin/chromium --crf=22
 python3 src/intro/music.py /tmp/gd-intro-music.wav
-ffmpeg -i /tmp/gd-intro-silent.mp4 -i /tmp/gd-intro-music.wav -vf scale=in_range=pc:out_range=tv -c:v libx264 -preset fast -crf 22 -pix_fmt yuv420p -color_range tv -af volume=2 -c:a aac -b:a 128k -shortest -movflags +faststart /tmp/gandd-social-promo.mp4
+ffmpeg -i /tmp/gd-intro-silent.mp4 -i /tmp/gd-intro-music.wav -map 0:v:0 -map 1:a:0 -vf scale=in_range=pc:out_range=tv -c:v libx264 -preset fast -crf 22 -pix_fmt yuv420p -color_range tv -af volume=2 -c:a aac -b:a 128k -shortest -movflags +faststart /tmp/gandd-social-promo.mp4
 ```
 
 Adjust the browser executable for other machines. All copy is baked into the
